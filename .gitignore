@@ -6,3 +6,6 @@ node_modules/
 # Claude Code: estado local e planos de execução (efêmeros)
 .claude/scheduled_tasks.lock
 docs/superpowers/plans/
+
+# Build
+dist/
