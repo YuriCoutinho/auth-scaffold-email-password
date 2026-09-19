@@ -11,6 +11,21 @@ try {
 
 const app = buildApp();
 
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, () => {
+    app.log.info(`${signal} received, shutting down`);
+    app
+      .close()
+      .then(() => {
+        process.exit(0);
+      })
+      .catch((error) => {
+        app.log.error(error);
+        process.exit(1);
+      });
+  });
+}
+
 app.listen({ port: env.PORT, host: "0.0.0.0" }).catch((error) => {
   app.log.error(error);
   process.exit(1);
