@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildApp } from "../../src/app.js";
 
 describe("GET /health", () => {
-  it("responde 200 com status ok", async () => {
+  it("responds 200 with status ok", async () => {
     const app = buildApp();
     const response = await app.inject({ method: "GET", url: "/health" });
     expect(response.statusCode).toBe(200);
