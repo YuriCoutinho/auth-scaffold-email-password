@@ -1,5 +1,7 @@
 # auth-scaffold-email-password
 
+[![CI](https://github.com/YuriCoutinho/auth-scaffold-email-password/actions/workflows/ci.yml/badge.svg)](https://github.com/YuriCoutinho/auth-scaffold-email-password/actions/workflows/ci.yml)
+
 Backend de autenticação com email e senha. Fastify + TypeScript strict + Drizzle ORM (Postgres) + Zod.
 
 ## Pré-requisitos
@@ -39,6 +41,8 @@ Healthcheck: `GET http://localhost:3000/health` → `{"status":"ok"}`.
 | `pnpm typecheck` | `tsc --noEmit` |
 | `pnpm db:generate` | Gera migrations a partir do schema (drizzle-kit) |
 | `pnpm db:migrate` | Aplica migrations no banco |
+
+Qualidade: a CI (GitHub Actions) roda `typecheck` + `lint` + `test` + `build` em toda PR e push na `main`; o pre-commit local roda lint-staged (Biome) + testes.
 
 ## Estrutura
 
