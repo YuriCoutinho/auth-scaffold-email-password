@@ -14,18 +14,23 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
     "@types/node": "^26.6.1",
+    "drizzle-kit": "^0.31.10",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"
   },
   "dependencies": {
+    "drizzle-orm": "^0.45.2",
     "fastify": "^5.12.5",
     "fastify-type-provider-zod": "^7.0.0",
+    "postgres": "^3.4.9",
     "zod": "^4.6.5"
   }
 }
