@@ -24,6 +24,8 @@
     "vitest": "^5.0.1"
   },
   "dependencies": {
+    "fastify": "^5.12.5",
+    "fastify-type-provider-zod": "^7.0.0",
     "zod": "^4.6.5"
   }
 }
