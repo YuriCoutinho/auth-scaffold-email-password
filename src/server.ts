@@ -11,19 +11,19 @@ try {
 
 const app = buildApp();
 
+function shutdown(signal: NodeJS.Signals): void {
+  app.log.info(`${signal} received, shutting down`);
+  app
+    .close()
+    .then(() => process.exit(0))
+    .catch((error) => {
+      app.log.error(error);
+      process.exit(1);
+    });
+}
+
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
-  process.once(signal, () => {
-    app.log.info(`${signal} received, shutting down`);
-    app
-      .close()
-      .then(() => {
-        process.exit(0);
-      })
-      .catch((error) => {
-        app.log.error(error);
-        process.exit(1);
-      });
-  });
+  process.once(signal, shutdown);
 }
 
 app.listen({ port: env.PORT, host: "0.0.0.0" }).catch((error) => {
