@@ -127,7 +127,8 @@ describe("signup service", () => {
     await createSignupService(deps).signup("user@example.com", PASSWORD);
     const upsertOrder =
       deps.repo.upsertPendingSignup.mock.invocationCallOrder[0];
-    const emailOrder = deps.emailSender.mock.invocationCallOrder[0];
+    const emailOrder =
+      deps.emailSender.mock.invocationCallOrder[0] ?? Number.NaN;
     expect(upsertOrder).toBeLessThan(emailOrder);
   });
 });
