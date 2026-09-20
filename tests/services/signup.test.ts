@@ -14,7 +14,8 @@ function makeDeps() {
     repo: {
       findAuthUserByEmail: vi.fn().mockResolvedValue(undefined),
       findPendingSignupByEmail: vi.fn().mockResolvedValue(undefined),
-      upsertPendingSignup: vi.fn().mockResolvedValue(undefined),
+      upsertPendingSignup: vi.fn().mockResolvedValue({ id: 1 }),
+      resetPendingSignupSendState: vi.fn().mockResolvedValue(undefined),
     },
     emailSender: vi.fn().mockResolvedValue(undefined),
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
