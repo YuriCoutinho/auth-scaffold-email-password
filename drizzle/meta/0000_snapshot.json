@@ -1,5 +1,5 @@
 {
-  "id": "a3e7858c-3dd9-4949-853f-f5efd2295dbd",
+  "id": "e5a1eabf-4bd8-41bc-a6b9-877a703a057a",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -221,8 +221,22 @@
           "primaryKey": false,
           "notNull": true
         },
-        "display_name": {
-          "name": "display_name",
+        "full_name": {
+          "name": "full_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role": {
+          "name": "role",
+          "type": "profile_role",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'nurse'"
+        },
+        "coren": {
+          "name": "coren",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -258,6 +272,13 @@
           "nullsNotDistinct": false,
           "columns": [
             "user_id"
+          ]
+        },
+        "profiles_coren_unique": {
+          "name": "profiles_coren_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "coren"
           ]
         }
       },
@@ -398,7 +419,16 @@
       "isRLSEnabled": false
     }
   },
-  "enums": {},
+  "enums": {
+    "public.profile_role": {
+      "name": "profile_role",
+      "schema": "public",
+      "values": [
+        "nurse",
+        "admin"
+      ]
+    }
+  },
   "schemas": {},
   "sequences": {},
   "roles": {},

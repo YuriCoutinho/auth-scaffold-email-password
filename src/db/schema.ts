@@ -1,11 +1,14 @@
 import {
   index,
   integer,
+  pgEnum,
   pgTable,
   text,
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
+
+export const profileRole = pgEnum("profile_role", ["nurse", "admin"]);
 
 export const pendingSignups = pgTable(
   "pending_signups",
@@ -44,7 +47,9 @@ export const profiles = pgTable("profiles", {
     .notNull()
     .unique()
     .references(() => authUsers.id, { onDelete: "cascade" }),
-  displayName: text("display_name"),
+  fullName: text("full_name"),
+  role: profileRole("role").notNull().default("nurse"),
+  coren: text("coren").unique(),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

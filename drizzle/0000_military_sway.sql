@@ -1,3 +1,4 @@
+CREATE TYPE "public"."profile_role" AS ENUM('nurse', 'admin');--> statement-breakpoint
 CREATE TABLE "auth_users" (
 	"id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "auth_users_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
 	"public_id" uuid DEFAULT gen_random_uuid() NOT NULL,
@@ -26,9 +27,12 @@ CREATE TABLE "pending_signups" (
 CREATE TABLE "profiles" (
 	"id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "profiles_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
 	"user_id" integer NOT NULL,
-	"display_name" text,
+	"full_name" text,
+	"role" "profile_role" DEFAULT 'nurse' NOT NULL,
+	"coren" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "profiles_user_id_unique" UNIQUE("user_id")
+	CONSTRAINT "profiles_user_id_unique" UNIQUE("user_id"),
+	CONSTRAINT "profiles_coren_unique" UNIQUE("coren")
 );
 --> statement-breakpoint
 CREATE TABLE "sessions" (
