@@ -31,7 +31,11 @@ export const signupRoutes: FastifyPluginAsyncZod<SignupRoutesOptions> = async (
           "The response is intentionally generic and identical whether or not " +
           "the email is already registered.",
         body: signupBodySchema,
-        response: { 202: messageSchema, 400: messageSchema },
+        response: {
+          202: messageSchema,
+          400: messageSchema,
+          503: messageSchema,
+        },
       },
     },
     async (request, reply) => {
@@ -44,6 +48,13 @@ export const signupRoutes: FastifyPluginAsyncZod<SignupRoutesOptions> = async (
         return reply.code(400).send({
           message:
             "This password has appeared in a known data breach. Please choose a different one.",
+        });
+      }
+
+      if (result.outcome === "email-unavailable") {
+        return reply.code(503).send({
+          message:
+            "We could not send the confirmation email right now. Please try again shortly.",
         });
       }
 

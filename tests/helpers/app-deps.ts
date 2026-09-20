@@ -54,7 +54,9 @@ export function createFakeDb(options: FakeDbOptions = {}) {
 export function makeAppDeps(overrides: Partial<AppDeps> = {}): AppDeps {
   return {
     db: createFakeDb().db,
-    emailSender: vi.fn().mockResolvedValue(undefined),
+    emailSender: {
+      send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
+    },
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
     ...overrides,
   };

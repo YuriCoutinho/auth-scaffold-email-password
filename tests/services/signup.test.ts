@@ -17,7 +17,9 @@ function makeDeps() {
       upsertPendingSignup: vi.fn().mockResolvedValue({ id: 1 }),
       resetPendingSignupSendState: vi.fn().mockResolvedValue(undefined),
     },
-    emailSender: vi.fn().mockResolvedValue(undefined),
+    emailSender: {
+      send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
+    },
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
     now: () => NOW,
   };
@@ -34,7 +36,7 @@ describe("signup service", () => {
     expect(result).toEqual({ outcome: "pwned-password" });
     expect(deps.repo.findAuthUserByEmail).not.toHaveBeenCalled();
     expect(deps.repo.upsertPendingSignup).not.toHaveBeenCalled();
-    expect(deps.emailSender).not.toHaveBeenCalled();
+    expect(deps.emailSender.send).not.toHaveBeenCalled();
   });
 
   it("normalizes the email before any lookup or write", async () => {
@@ -58,7 +60,7 @@ describe("signup service", () => {
       expect(result.sessionToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
     }
     expect(deps.repo.upsertPendingSignup).not.toHaveBeenCalled();
-    expect(deps.emailSender).not.toHaveBeenCalled();
+    expect(deps.emailSender.send).not.toHaveBeenCalled();
   });
 
   it("is idempotent while a non-expired pending signup exists", async () => {
@@ -76,24 +78,27 @@ describe("signup service", () => {
       sessionToken: "stored-token",
     });
     expect(deps.repo.upsertPendingSignup).not.toHaveBeenCalled();
-    expect(deps.emailSender).not.toHaveBeenCalled();
+    expect(deps.emailSender.send).not.toHaveBeenCalled();
   });
 
   it("creates a pending signup with hashed password and code, then delivers the code", async () => {
     const deps = makeDeps();
     const result = await createSignupService(deps).signup(
-      "user@example.com",
+      "foo@gmail.com",
       PASSWORD,
     );
 
     expect(deps.repo.upsertPendingSignup).toHaveBeenCalledOnce();
     const row = deps.repo.upsertPendingSignup.mock.calls[0]?.[0];
-    expect(deps.emailSender).toHaveBeenCalledOnce();
-    const message = deps.emailSender.mock.calls[0]?.[0];
+    expect(deps.emailSender.send).toHaveBeenCalledOnce();
+    const message = deps.emailSender.send.mock.calls[0]?.[0];
 
-    expect(message.to).toBe("user@example.com");
-    expect(message.code).toMatch(/^\d{6}$/);
-    expect(row.codeHash).toBe(hashOtpCode(message.code));
+    expect(message.to).toBe("foo@gmail.com");
+    const code = message.subject.match(/\d{6}/)?.[0] ?? "";
+    expect(code).toMatch(/^\d{6}$/);
+    expect(row.codeHash).toBe(hashOtpCode(code));
+    expect(message.html).toContain(code);
+    expect(message.text).toContain(code);
     expect(row.passwordHash).not.toContain(PASSWORD);
     expect(await verifyPassword(row.passwordHash, PASSWORD)).toBe(true);
     expect(row.expiresAt).toEqual(
@@ -117,7 +122,7 @@ describe("signup service", () => {
       PASSWORD,
     );
     expect(deps.repo.upsertPendingSignup).toHaveBeenCalledOnce();
-    expect(deps.emailSender).toHaveBeenCalledOnce();
+    expect(deps.emailSender.send).toHaveBeenCalledOnce();
     if (result.outcome === "accepted") {
       expect(result.sessionToken).not.toBe("old-token");
     }
@@ -129,7 +134,31 @@ describe("signup service", () => {
     const upsertOrder =
       deps.repo.upsertPendingSignup.mock.invocationCallOrder[0];
     const emailOrder =
-      deps.emailSender.mock.invocationCallOrder[0] ?? Number.NaN;
+      deps.emailSender.send.mock.invocationCallOrder[0] ?? Number.NaN;
     expect(upsertOrder).toBeLessThan(emailOrder);
+  });
+
+  it("returns email-unavailable and resets send state when delivery fails", async () => {
+    const deps = makeDeps();
+    deps.emailSender.send.mockRejectedValueOnce(new Error("smtp down"));
+    const result = await createSignupService(deps).signup(
+      "foo@gmail.com",
+      PASSWORD,
+    );
+    expect(result).toEqual({ outcome: "email-unavailable" });
+    expect(deps.repo.resetPendingSignupSendState).toHaveBeenCalledWith(
+      "foo@gmail.com",
+    );
+  });
+
+  it("still returns email-unavailable when the reset itself fails", async () => {
+    const deps = makeDeps();
+    deps.emailSender.send.mockRejectedValueOnce(new Error("smtp down"));
+    deps.repo.resetPendingSignupSendState.mockRejectedValueOnce(
+      new Error("db down"),
+    );
+    await expect(
+      createSignupService(deps).signup("foo@gmail.com", PASSWORD),
+    ).resolves.toEqual({ outcome: "email-unavailable" });
   });
 });
