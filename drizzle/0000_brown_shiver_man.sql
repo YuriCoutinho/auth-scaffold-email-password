@@ -5,6 +5,7 @@ CREATE TABLE "auth_users" (
 	"email" text NOT NULL,
 	"password_hash" text NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "auth_users_public_id_unique" UNIQUE("public_id"),
 	CONSTRAINT "auth_users_email_unique" UNIQUE("email")
 );
