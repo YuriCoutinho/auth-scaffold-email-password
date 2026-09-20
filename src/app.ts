@@ -1,6 +1,9 @@
 import cookie from "@fastify/cookie";
+import swagger from "@fastify/swagger";
+import swaggerUi from "@fastify/swagger-ui";
 import Fastify, { type FastifyInstance } from "fastify";
 import {
+  jsonSchemaTransform,
   serializerCompiler,
   validatorCompiler,
   type ZodTypeProvider,
@@ -26,6 +29,15 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   app.setSerializerCompiler(serializerCompiler);
 
   app.register(cookie);
+  app.register(swagger, {
+    openapi: {
+      info: { title: "Auth Scaffold API", version: "0.1.0" },
+    },
+    transform: jsonSchemaTransform,
+  });
+  if (deps.enableDocsUi) {
+    app.register(swaggerUi, { routePrefix: "/docs" });
+  }
   app.register(healthRoutes);
 
   const signupService = createSignupService({
