@@ -1,5 +1,5 @@
 {
-  "id": "500ef3d6-8bb4-4762-91f9-cbf81b3d6ca9",
+  "id": "9df37610-833f-4d2f-a02a-86a37bf1e64d",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -120,6 +120,20 @@
           "primaryKey": false,
           "notNull": true,
           "default": 0
+        },
+        "last_sent_at": {
+          "name": "last_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "send_count": {
+          "name": "send_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
         },
         "signup_session_token": {
           "name": "signup_session_token",

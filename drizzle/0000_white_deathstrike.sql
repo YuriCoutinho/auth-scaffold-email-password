@@ -14,6 +14,8 @@ CREATE TABLE "pending_signups" (
 	"password_hash" text NOT NULL,
 	"code_hash" text NOT NULL,
 	"attempts" integer DEFAULT 0 NOT NULL,
+	"last_sent_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"send_count" integer DEFAULT 1 NOT NULL,
 	"signup_session_token" text NOT NULL,
 	"expires_at" timestamp with time zone NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
