@@ -2,7 +2,7 @@ import { buildApp } from "./app.js";
 import { type Env, loadEnv } from "./config/env.js";
 import { db } from "./db/client.js";
 import { createPwnedPasswordChecker } from "./lib/pwned-password.js";
-import { FakeEmailSender } from "./services/email/fake-email-sender.js";
+import { createEmailSender } from "./services/email/create-email-sender.js";
 
 let env: Env;
 try {
@@ -18,8 +18,7 @@ const checkPwnedPassword = createPwnedPasswordChecker({
 });
 const app = buildApp({
   db,
-  // TODO(ENG-55 Task 6): replaced by createEmailSender(env)
-  emailSender: new FakeEmailSender(),
+  emailSender: createEmailSender(env),
   checkPwnedPassword,
   enableDocsUi: env.NODE_ENV !== "production",
 });
