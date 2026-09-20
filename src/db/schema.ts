@@ -14,11 +14,11 @@ export const pendingSignups = pgTable(
     email: text("email").notNull().unique(),
     passwordHash: text("password_hash").notNull(),
     codeHash: text("code_hash").notNull(),
-    attempts: integer("attempts").notNull().default(0),
+    codeAttempts: integer("code_attempts").notNull().default(0),
     lastSentAt: timestamp("last_sent_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
-    sendCount: integer("send_count").notNull().default(1),
+    codeSendCount: integer("code_send_count").notNull().default(1),
     signupSessionToken: text("signup_session_token").notNull().unique(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })

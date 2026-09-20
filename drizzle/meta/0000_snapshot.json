@@ -1,5 +1,5 @@
 {
-  "id": "9df37610-833f-4d2f-a02a-86a37bf1e64d",
+  "id": "b8226fe3-306c-42b9-ad4f-f8868e783eff",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -114,8 +114,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "attempts": {
-          "name": "attempts",
+        "code_attempts": {
+          "name": "code_attempts",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -128,8 +128,8 @@
           "notNull": true,
           "default": "now()"
         },
-        "send_count": {
-          "name": "send_count",
+        "code_send_count": {
+          "name": "code_send_count",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
