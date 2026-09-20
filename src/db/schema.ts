@@ -45,7 +45,6 @@ export const profiles = pgTable("profiles", {
     .unique()
     .references(() => authUsers.id, { onDelete: "cascade" }),
   displayName: text("display_name"),
-  avatarUrl: text("avatar_url"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
