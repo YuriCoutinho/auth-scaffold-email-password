@@ -31,6 +31,7 @@ CREATE TABLE "profiles" (
 	"role" "profile_role" DEFAULT 'nurse' NOT NULL,
 	"coren" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "profiles_user_id_unique" UNIQUE("user_id"),
 	CONSTRAINT "profiles_coren_unique" UNIQUE("coren")
 );
