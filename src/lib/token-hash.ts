@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 
+const HASH_ALGORITHM = "sha256";
+const DIGEST_ENCODING = "hex";
+
 function sha256Hex(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
+  return createHash(HASH_ALGORITHM).update(value).digest(DIGEST_ENCODING);
 }
 
 // SHA-256 is enough for OTP codes and session tokens: brute-force protection
