@@ -9,3 +9,6 @@ docs/superpowers/plans/
 
 # Build
 dist/
+
+# Local-only Claude instructions
+CLAUDE.md

@@ -1,6 +1,6 @@
 ## Resumo
 
-<!-- O que esta PR entrega e por quê. Linkar a issue do Linear: [ENG-XX](https://linear.app/yuri-coutinho/issue/ENG-XX) -->
+<!-- O que esta PR entrega e por quê. Referenciar a task: ENG-XX (`docs/tasks/ENG-XX.md`) -->
 
 -
 
