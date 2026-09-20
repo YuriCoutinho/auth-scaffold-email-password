@@ -7,3 +7,5 @@ const { DATABASE_URL } = loadEnv();
 
 export const sql = postgres(DATABASE_URL);
 export const db = drizzle(sql, { schema });
+
+export type Database = typeof db;
