@@ -11,9 +11,11 @@ import {
 import type { Database } from "./db/client.js";
 import { createSignupRepo } from "./db/signup-repo.js";
 import type { CheckPwnedPassword } from "./lib/pwned-password.js";
+import { resendCodeRoutes } from "./routes/auth/resend-code.js";
 import { signupRoutes } from "./routes/auth/signup.js";
 import { healthRoutes } from "./routes/health.js";
 import type { EmailSender } from "./services/email-sender.js";
+import { createResendCodeService } from "./services/resend-code.js";
 import { createSignupService } from "./services/signup.js";
 
 export interface AppDeps {
@@ -40,13 +42,20 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   }
   app.register(healthRoutes);
 
+  const repo = createSignupRepo(deps.db);
   const signupService = createSignupService({
-    repo: createSignupRepo(deps.db),
+    repo,
     emailSender: deps.emailSender,
     checkPwnedPassword: deps.checkPwnedPassword,
     log: app.log,
   });
+  const resendCodeService = createResendCodeService({
+    repo,
+    emailSender: deps.emailSender,
+    log: app.log,
+  });
   app.register(signupRoutes, { signupService });
+  app.register(resendCodeRoutes, { resendCodeService });
 
   return app;
 }

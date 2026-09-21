@@ -5,7 +5,16 @@ import { authUsers, pendingSignups } from "../../src/db/schema.js";
 
 export interface FakeDbOptions {
   authUserRows?: Array<{ id: number }>;
-  pendingRows?: Array<{ signupSessionToken: string; expiresAt: Date }>;
+  pendingRows?: Array<{
+    signupSessionToken?: string;
+    expiresAt: Date;
+    id?: number;
+    email?: string;
+    codeHash?: string;
+    codeAttempts?: number;
+    lastSentAt?: Date;
+    codeSendCount?: number;
+  }>;
 }
 
 interface Upsert {
@@ -15,7 +24,7 @@ interface Upsert {
 
 export function createFakeDb(options: FakeDbOptions = {}) {
   const upserts: Upsert[] = [];
-  const sendStateResets: Array<Record<string, unknown>> = [];
+  const updates: Array<Record<string, unknown>> = [];
   const rowsFor = (table: unknown) =>
     table === authUsers
       ? (options.authUserRows ?? [])
@@ -42,13 +51,13 @@ export function createFakeDb(options: FakeDbOptions = {}) {
     update: () => ({
       set: (set: Record<string, unknown>) => ({
         where: async () => {
-          sendStateResets.push(set);
+          updates.push(set);
         },
       }),
     }),
   };
 
-  return { db: db as unknown as Database, upserts, sendStateResets };
+  return { db: db as unknown as Database, upserts, updates };
 }
 
 export function makeAppDeps(overrides: Partial<AppDeps> = {}): AppDeps {

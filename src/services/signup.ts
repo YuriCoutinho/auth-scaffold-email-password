@@ -15,7 +15,13 @@ export type SignupResult =
   | { outcome: "email-unavailable" };
 
 interface SignupServiceDeps {
-  repo: SignupRepo;
+  repo: Pick<
+    SignupRepo,
+    | "findAuthUserByEmail"
+    | "findPendingSignupByEmail"
+    | "upsertPendingSignup"
+    | "resetPendingSignupSendState"
+  >;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
