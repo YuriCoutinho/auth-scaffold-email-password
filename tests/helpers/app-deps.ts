@@ -4,7 +4,11 @@ import type { Database } from "../../src/db/client.js";
 import { authUsers, pendingSignups } from "../../src/db/schema.js";
 
 export interface FakeDbOptions {
-  authUserRows?: Array<{ id: number }>;
+  authUserRows?: Array<{
+    id: number;
+    publicId?: string;
+    passwordHash?: string;
+  }>;
   pendingRows?: Array<{
     signupSessionToken?: string;
     expiresAt: Date;
