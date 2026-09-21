@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
-import { authUsers, pendingSignups } from "./schema.js";
+import { authUsers, pendingSignups, sessions } from "./schema.js";
 
 export interface UpsertPendingSignupInput {
   email: string;
@@ -77,6 +77,7 @@ export function createSignupRepo(db: Database) {
         .select({
           id: pendingSignups.id,
           email: pendingSignups.email,
+          passwordHash: pendingSignups.passwordHash,
           codeHash: pendingSignups.codeHash,
           codeAttempts: pendingSignups.codeAttempts,
           lastSentAt: pendingSignups.lastSentAt,
@@ -104,6 +105,44 @@ export function createSignupRepo(db: Database) {
         .update(pendingSignups)
         .set(state)
         .where(eq(pendingSignups.signupSessionToken, token));
+    },
+
+    async incrementCodeAttempts(signupSessionToken: string) {
+      await db
+        .update(pendingSignups)
+        .set({ codeAttempts: sql`${pendingSignups.codeAttempts} + 1` })
+        .where(eq(pendingSignups.signupSessionToken, signupSessionToken));
+    },
+
+    // All-or-nothing promotion: if anything fails, the pending signup (and its
+    // still-valid code) survives for a retry.
+    async promotePendingSignup(input: {
+      email: string;
+      passwordHash: string;
+      signupSessionToken: string;
+      sessionTokenHash: string;
+      deviceLabel: string | null;
+      sessionExpiresAt: Date;
+    }) {
+      return await db.transaction(async (tx) => {
+        const users = await tx
+          .insert(authUsers)
+          .values({ email: input.email, passwordHash: input.passwordHash })
+          .returning({ id: authUsers.id, publicId: authUsers.publicId });
+        const user = users[0] as { id: number; publicId: string };
+        await tx
+          .delete(pendingSignups)
+          .where(
+            eq(pendingSignups.signupSessionToken, input.signupSessionToken),
+          );
+        await tx.insert(sessions).values({
+          userId: user.id,
+          tokenHash: input.sessionTokenHash,
+          deviceLabel: input.deviceLabel,
+          expiresAt: input.sessionExpiresAt,
+        });
+        return user;
+      });
     },
   };
 }

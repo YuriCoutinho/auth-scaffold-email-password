@@ -10,6 +10,7 @@ export interface FakeDbOptions {
     expiresAt: Date;
     id?: number;
     email?: string;
+    passwordHash?: string;
     codeHash?: string;
     codeAttempts?: number;
     lastSentAt?: Date;
@@ -25,6 +26,9 @@ interface Upsert {
 export function createFakeDb(options: FakeDbOptions = {}) {
   const upserts: Upsert[] = [];
   const updates: Array<Record<string, unknown>> = [];
+  const inserts: Array<{ table: unknown; values: Record<string, unknown> }> =
+    [];
+  const deletes: unknown[] = [];
   const rowsFor = (table: unknown) =>
     table === authUsers
       ? (options.authUserRows ?? [])
@@ -38,7 +42,7 @@ export function createFakeDb(options: FakeDbOptions = {}) {
         where: () => ({ limit: async () => rowsFor(table) }),
       }),
     }),
-    insert: () => ({
+    insert: (table: unknown) => ({
       values: (values: Record<string, unknown>) => ({
         onConflictDoUpdate: (config: { set: Record<string, unknown> }) => ({
           returning: async () => {
@@ -46,6 +50,20 @@ export function createFakeDb(options: FakeDbOptions = {}) {
             return [{ id: 1 }];
           },
         }),
+        returning: async () => {
+          inserts.push({ table, values });
+          return [{ id: 1, publicId: "00000000-0000-0000-0000-000000000001" }];
+        },
+        // biome-ignore lint/suspicious/noThenProperty: intentionally thenable so plain `await db.insert(...).values(...)` works
+        then: (
+          resolve: (value: unknown) => unknown,
+          reject?: (reason: unknown) => unknown,
+        ) =>
+          Promise.resolve()
+            .then(() => {
+              inserts.push({ table, values });
+            })
+            .then(resolve, reject),
       }),
     }),
     update: () => ({
@@ -55,9 +73,15 @@ export function createFakeDb(options: FakeDbOptions = {}) {
         },
       }),
     }),
+    delete: (table: unknown) => ({
+      where: async () => {
+        deletes.push(table);
+      },
+    }),
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(db),
   };
 
-  return { db: db as unknown as Database, upserts, updates };
+  return { db: db as unknown as Database, upserts, updates, inserts, deletes };
 }
 
 export function makeAppDeps(overrides: Partial<AppDeps> = {}): AppDeps {

@@ -13,10 +13,12 @@ import { createSignupRepo } from "./db/signup-repo.js";
 import type { CheckPwnedPassword } from "./lib/pwned-password.js";
 import { resendCodeRoutes } from "./routes/auth/resend-code.js";
 import { signupRoutes } from "./routes/auth/signup.js";
+import { verifyCodeRoutes } from "./routes/auth/verify-code.js";
 import { healthRoutes } from "./routes/health.js";
 import type { EmailSender } from "./services/email-sender.js";
 import { createResendCodeService } from "./services/resend-code.js";
 import { createSignupService } from "./services/signup.js";
+import { createVerifyCodeService } from "./services/verify-code.js";
 
 export interface AppDeps {
   db: Database;
@@ -54,8 +56,10 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     emailSender: deps.emailSender,
     log: app.log,
   });
+  const verifyCodeService = createVerifyCodeService({ repo, log: app.log });
   app.register(signupRoutes, { signupService });
   app.register(resendCodeRoutes, { resendCodeService });
+  app.register(verifyCodeRoutes, { verifyCodeService });
 
   return app;
 }
