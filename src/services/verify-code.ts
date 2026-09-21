@@ -1,0 +1,83 @@
+import type { FastifyBaseLogger } from "fastify";
+import type { SignupRepo } from "../db/signup-repo.js";
+import { generateSessionToken } from "../lib/otp.js";
+import { hashOtpCode, hashSessionToken } from "../lib/token-hash.js";
+
+export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+export const MAX_CODE_ATTEMPTS = 5;
+
+export type VerifyCodeResult =
+  | { outcome: "verified"; sessionToken: string }
+  | { outcome: "invalid" };
+
+interface VerifyCodeServiceDeps {
+  repo: Pick<
+    SignupRepo,
+    | "findPendingSignupBySessionToken"
+    | "incrementCodeAttempts"
+    | "promotePendingSignup"
+  >;
+  log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
+  now?: () => Date;
+}
+
+export function createVerifyCodeService(deps: VerifyCodeServiceDeps) {
+  const now = deps.now ?? (() => new Date());
+
+  return {
+    async verifyCode(
+      sessionToken: string | undefined,
+      code: string,
+      deviceLabel: string | null,
+    ): Promise<VerifyCodeResult> {
+      if (!sessionToken) {
+        return { outcome: "invalid" };
+      }
+
+      const currentTime = now();
+      const pending =
+        await deps.repo.findPendingSignupBySessionToken(sessionToken);
+      if (!pending || pending.expiresAt <= currentTime) {
+        return { outcome: "invalid" };
+      }
+
+      // Exhausted codes stay unusable even if the right code shows up later;
+      // /resend-code (attempts reset) or expiry are the only ways out.
+      if (pending.codeAttempts >= MAX_CODE_ATTEMPTS) {
+        return { outcome: "invalid" };
+      }
+
+      if (hashOtpCode(code) !== pending.codeHash) {
+        await deps.repo.incrementCodeAttempts(sessionToken);
+        const attempts = pending.codeAttempts + 1;
+        deps.log?.warn(
+          { pendingSignupId: pending.id, codeAttempts: attempts },
+          attempts >= MAX_CODE_ATTEMPTS
+            ? "signup code invalidated after too many failed attempts"
+            : "signup code verification failed",
+        );
+        return { outcome: "invalid" };
+      }
+
+      const newSessionToken = generateSessionToken();
+      const user = await deps.repo.promotePendingSignup({
+        email: pending.email,
+        passwordHash: pending.passwordHash,
+        signupSessionToken: sessionToken,
+        sessionTokenHash: hashSessionToken(newSessionToken),
+        deviceLabel,
+        sessionExpiresAt: new Date(
+          currentTime.getTime() + SESSION_TTL_SECONDS * 1000,
+        ),
+      });
+      deps.log?.info(
+        { pendingSignupId: pending.id, userId: user.id },
+        "pending signup promoted to auth user",
+      );
+
+      return { outcome: "verified", sessionToken: newSessionToken };
+    },
+  };
+}
+
+export type VerifyCodeService = ReturnType<typeof createVerifyCodeService>;

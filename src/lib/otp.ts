@@ -7,3 +7,7 @@ export function generateOtpCode(): string {
 export function generateSignupSessionToken(): string {
   return randomBytes(32).toString("base64url");
 }
+
+export function generateSessionToken(): string {
+  return randomBytes(32).toString("base64url");
+}
