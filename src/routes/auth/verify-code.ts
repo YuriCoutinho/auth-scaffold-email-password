@@ -1,9 +1,7 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { z } from "zod";
-import {
-  SESSION_TTL_SECONDS,
-  type VerifyCodeService,
-} from "../../services/verify-code.js";
+import { SESSION_TTL_SECONDS } from "../../lib/session.js";
+import type { VerifyCodeService } from "../../services/verify-code.js";
 
 const verifyCodeBodySchema = z.object({
   code: z.string().regex(/^\d{6}$/),
