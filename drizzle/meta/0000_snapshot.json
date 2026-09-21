@@ -1,5 +1,5 @@
 {
-  "id": "e4e89418-171b-4cbb-94a9-8861d122b57f",
+  "id": "8555f881-1ec8-4365-8496-dec32a42b3aa",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -240,13 +240,7 @@
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
-          "default": "'nurse'"
-        },
-        "coren": {
-          "name": "coren",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
+          "default": "'user'"
         },
         "created_at": {
           "name": "created_at",
@@ -286,13 +280,6 @@
           "nullsNotDistinct": false,
           "columns": [
             "user_id"
-          ]
-        },
-        "profiles_coren_unique": {
-          "name": "profiles_coren_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "coren"
           ]
         }
       },
@@ -438,7 +425,7 @@
       "name": "profile_role",
       "schema": "public",
       "values": [
-        "nurse",
+        "user",
         "admin"
       ]
     }
