@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
-import { authUsers, pendingSignups, sessions } from "./schema.js";
+import { authUsers, pendingSignups, profiles, sessions } from "./schema.js";
 
 export interface UpsertPendingSignupInput {
   email: string;
@@ -141,6 +141,7 @@ export function createSignupRepo(db: Database) {
           deviceLabel: input.deviceLabel,
           expiresAt: input.sessionExpiresAt,
         });
+        await tx.insert(profiles).values({ userId: user.id });
         return user;
       });
     },
