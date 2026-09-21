@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { hashPassword, verifyPassword } from "../../src/lib/password.js";
+import {
+  DUMMY_PASSWORD_HASH,
+  hashPassword,
+  verifyPassword,
+} from "../../src/lib/password.js";
 
 describe("hashPassword", () => {
   it("produces an argon2id hash", async () => {
@@ -23,5 +27,13 @@ describe("verifyPassword", () => {
   it("rejects a wrong password", async () => {
     const hash = await hashPassword("s3cret!");
     await expect(verifyPassword(hash, "s3cret?")).resolves.toBe(false);
+  });
+});
+
+describe("DUMMY_PASSWORD_HASH", () => {
+  it("is a valid argon2 hash that matches no real password", async () => {
+    await expect(
+      verifyPassword(DUMMY_PASSWORD_HASH, "any-password"),
+    ).resolves.toBe(false);
   });
 });
