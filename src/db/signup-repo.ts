@@ -71,6 +71,40 @@ export function createSignupRepo(db: Database) {
         .set({ codeSendCount: 0 })
         .where(eq(pendingSignups.email, email));
     },
+
+    async findPendingSignupBySessionToken(token: string) {
+      const rows = await db
+        .select({
+          id: pendingSignups.id,
+          email: pendingSignups.email,
+          codeHash: pendingSignups.codeHash,
+          codeAttempts: pendingSignups.codeAttempts,
+          lastSentAt: pendingSignups.lastSentAt,
+          codeSendCount: pendingSignups.codeSendCount,
+          expiresAt: pendingSignups.expiresAt,
+        })
+        .from(pendingSignups)
+        .where(eq(pendingSignups.signupSessionToken, token))
+        .limit(1);
+      return rows[0];
+    },
+
+    // Also used to restore the previous state when delivery fails.
+    async updatePendingSignupResendState(
+      token: string,
+      state: {
+        codeHash: string;
+        expiresAt: Date;
+        codeAttempts: number;
+        lastSentAt: Date;
+        codeSendCount: number;
+      },
+    ) {
+      await db
+        .update(pendingSignups)
+        .set(state)
+        .where(eq(pendingSignups.signupSessionToken, token));
+    },
   };
 }
 
