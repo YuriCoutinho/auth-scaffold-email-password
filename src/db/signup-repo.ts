@@ -15,7 +15,11 @@ export function createSignupRepo(db: Database) {
   return {
     async findAuthUserByEmail(email: string) {
       const rows = await db
-        .select({ id: authUsers.id })
+        .select({
+          id: authUsers.id,
+          publicId: authUsers.publicId,
+          passwordHash: authUsers.passwordHash,
+        })
         .from(authUsers)
         .where(eq(authUsers.email, email))
         .limit(1);
@@ -144,6 +148,15 @@ export function createSignupRepo(db: Database) {
         await tx.insert(profiles).values({ userId: user.id });
         return user;
       });
+    },
+
+    async createSession(input: {
+      userId: number;
+      tokenHash: string;
+      deviceLabel: string | null;
+      expiresAt: Date;
+    }) {
+      await db.insert(sessions).values(input);
     },
   };
 }
