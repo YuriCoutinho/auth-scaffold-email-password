@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../../../src/app.js";
-import { authUsers, sessions } from "../../../src/db/schema.js";
+import { authUsers, profiles, sessions } from "../../../src/db/schema.js";
 import { hashOtpCode } from "../../../src/lib/token-hash.js";
 import { createFakeDb, makeAppDeps } from "../../helpers/app-deps.js";
 
@@ -66,7 +66,7 @@ describe("POST /auth/verify-code", () => {
     );
     expect(signupCookie).toMatchObject({ value: "", path: "/auth" });
 
-    expect(fakeDb.inserts).toHaveLength(2);
+    expect(fakeDb.inserts).toHaveLength(3);
     const userInsert = fakeDb.inserts.find((i) => i.table === authUsers);
     expect(userInsert?.values).toMatchObject({
       email: "u@e.com",
@@ -78,6 +78,8 @@ describe("POST /auth/verify-code", () => {
     });
     expect(sessionInsert?.values.tokenHash).toMatch(/^[0-9a-f]{64}$/);
     expect(sessionInsert?.values.tokenHash).not.toBe(sessionCookie?.value);
+    const profileInsert = fakeDb.inserts.find((i) => i.table === profiles);
+    expect(profileInsert?.values).toEqual({ userId: 1 });
 
     expect(fakeDb.deletes).toHaveLength(1);
   });
