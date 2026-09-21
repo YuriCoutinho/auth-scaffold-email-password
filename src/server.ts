@@ -1,5 +1,8 @@
 import { buildApp } from "./app.js";
 import { type Env, loadEnv } from "./config/env.js";
+import { db } from "./db/client.js";
+import { createPwnedPasswordChecker } from "./lib/pwned-password.js";
+import { noopEmailSender } from "./services/email-sender.js";
 
 let env: Env;
 try {
@@ -9,7 +12,16 @@ try {
   process.exit(1);
 }
 
-const app = buildApp();
+const checkPwnedPassword = createPwnedPasswordChecker({
+  onError: (error) =>
+    app.log.warn({ err: error }, "pwned password check failed open"),
+});
+const app = buildApp({
+  db,
+  emailSender: noopEmailSender,
+  checkPwnedPassword,
+  enableDocsUi: env.NODE_ENV !== "production",
+});
 
 function shutdown(signal: NodeJS.Signals): void {
   app.log.info(`${signal} received, shutting down`);

@@ -1,0 +1,92 @@
+import { describe, expect, it, vi } from "vitest";
+import { buildApp } from "../../../src/app.js";
+import { makeAppDeps } from "../../helpers/app-deps.js";
+
+const VALID_BODY = {
+  email: "user@example.com",
+  password: "a perfectly fine passphrase",
+};
+const GENERIC_MESSAGE = "If the email is valid, we sent a confirmation code.";
+
+async function post(body: Record<string, unknown>, deps = makeAppDeps()) {
+  const app = buildApp(deps);
+  const response = await app.inject({
+    method: "POST",
+    url: "/auth/signup",
+    payload: body,
+  });
+  await app.close();
+  return response;
+}
+
+describe("POST /auth/signup", () => {
+  it("rejects an invalid email with 400", async () => {
+    expect(
+      (await post({ ...VALID_BODY, email: "not-an-email" })).statusCode,
+    ).toBe(400);
+  });
+
+  it("rejects an email longer than 254 chars", async () => {
+    const email = `${"a".repeat(250)}@example.com`;
+    expect((await post({ ...VALID_BODY, email })).statusCode).toBe(400);
+  });
+
+  it("rejects a password shorter than 15 chars", async () => {
+    expect(
+      (await post({ ...VALID_BODY, password: "short-password" })).statusCode,
+    ).toBe(400);
+  });
+
+  it("rejects a password longer than 128 chars", async () => {
+    expect(
+      (await post({ ...VALID_BODY, password: "p".repeat(129) })).statusCode,
+    ).toBe(400);
+  });
+
+  it("accepts unicode and spaces in the password", async () => {
+    const response = await post({
+      ...VALID_BODY,
+      password: "corrét hôrse báttery stáple",
+    });
+    expect(response.statusCode).toBe(202);
+  });
+
+  it("returns 202 with the generic message and the signup session cookie", async () => {
+    const response = await post(VALID_BODY);
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ message: GENERIC_MESSAGE });
+
+    const cookie = response.cookies.find((c) => c.name === "signup_session");
+    expect(cookie).toMatchObject({
+      httpOnly: true,
+      secure: true,
+      sameSite: "Strict",
+      path: "/auth",
+      maxAge: 900,
+    });
+    expect(cookie?.value).toMatch(/^[A-Za-z0-9_-]{43}$/);
+  });
+
+  it("returns the same generic 202 when the email already has a confirmed account", async () => {
+    const { createFakeDb } = await import("../../helpers/app-deps.js");
+    const { db } = createFakeDb({ authUserRows: [{ id: 1 }] });
+    const emailSender = vi.fn().mockResolvedValue(undefined);
+    const response = await post(VALID_BODY, makeAppDeps({ db, emailSender }));
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ message: GENERIC_MESSAGE });
+    expect(response.cookies.some((c) => c.name === "signup_session")).toBe(
+      true,
+    );
+    expect(emailSender).not.toHaveBeenCalled();
+  });
+
+  it("rejects a pwned password with 400 and no cookie", async () => {
+    const deps = makeAppDeps({
+      checkPwnedPassword: vi.fn().mockResolvedValue(true),
+    });
+    const response = await post(VALID_BODY, deps);
+    expect(response.statusCode).toBe(400);
+    expect(response.json().message).toMatch(/data breach/i);
+    expect(response.cookies).toHaveLength(0);
+  });
+});
