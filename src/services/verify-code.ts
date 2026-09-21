@@ -1,9 +1,9 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { SignupRepo } from "../db/signup-repo.js";
 import { generateSessionToken } from "../lib/otp.js";
+import { SESSION_TTL_SECONDS } from "../lib/session.js";
 import { hashOtpCode, hashSessionToken } from "../lib/token-hash.js";
 
-export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const MAX_CODE_ATTEMPTS = 5;
 
 export type VerifyCodeResult =
