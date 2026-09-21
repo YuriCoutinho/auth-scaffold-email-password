@@ -1,20 +1,24 @@
+import type { FastifyBaseLogger } from "fastify";
 import type { SignupRepo } from "../db/signup-repo.js";
 import { generateOtpCode, generateSignupSessionToken } from "../lib/otp.js";
 import { hashPassword } from "../lib/password.js";
 import type { CheckPwnedPassword } from "../lib/pwned-password.js";
 import { hashOtpCode } from "../lib/token-hash.js";
-import type { EmailSender } from "./email-sender.js";
+import { EmailProviderError, type EmailSender } from "./email-sender.js";
+import { renderSignupCodeEmail } from "./signup-email.js";
 
 export const SIGNUP_TTL_SECONDS = 15 * 60;
 
 export type SignupResult =
   | { outcome: "accepted"; sessionToken: string }
-  | { outcome: "pwned-password" };
+  | { outcome: "pwned-password" }
+  | { outcome: "email-unavailable" };
 
 interface SignupServiceDeps {
   repo: SignupRepo;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
+  log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }
 
@@ -50,7 +54,7 @@ export function createSignupService(deps: SignupServiceDeps) {
 
       const code = generateOtpCode();
       const sessionToken = generateSignupSessionToken();
-      await deps.repo.upsertPendingSignup({
+      const { id: pendingSignupId } = await deps.repo.upsertPendingSignup({
         email,
         passwordHash: await hashPassword(password),
         codeHash: hashOtpCode(code),
@@ -58,7 +62,41 @@ export function createSignupService(deps: SignupServiceDeps) {
         expiresAt: new Date(currentTime.getTime() + SIGNUP_TTL_SECONDS * 1000),
         now: currentTime,
       });
-      await deps.emailSender({ to: email, code });
+
+      try {
+        const { providerMessageId } = await deps.emailSender.send({
+          to: email,
+          ...renderSignupCodeEmail({
+            code,
+            ttlMinutes: SIGNUP_TTL_SECONDS / 60,
+          }),
+        });
+        deps.log?.info(
+          { pendingSignupId, providerMessageId },
+          "signup code email sent",
+        );
+      } catch (error) {
+        deps.log?.error(
+          error instanceof EmailProviderError
+            ? {
+                err: error,
+                providerStatus: error.status,
+                providerBody: error.body,
+              }
+            : { err: error },
+          "signup code email delivery failed",
+        );
+        // Failed delivery must not consume resend quota; reset is best-effort.
+        try {
+          await deps.repo.resetPendingSignupSendState(email);
+        } catch (resetError) {
+          deps.log?.warn(
+            { err: resetError },
+            "failed to reset pending signup send state",
+          );
+        }
+        return { outcome: "email-unavailable" };
+      }
 
       return { outcome: "accepted", sessionToken };
     },

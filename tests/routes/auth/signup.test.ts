@@ -70,14 +70,31 @@ describe("POST /auth/signup", () => {
   it("returns the same generic 202 when the email already has a confirmed account", async () => {
     const { createFakeDb } = await import("../../helpers/app-deps.js");
     const { db } = createFakeDb({ authUserRows: [{ id: 1 }] });
-    const emailSender = vi.fn().mockResolvedValue(undefined);
+    const emailSender = {
+      send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
+    };
     const response = await post(VALID_BODY, makeAppDeps({ db, emailSender }));
     expect(response.statusCode).toBe(202);
     expect(response.json()).toEqual({ message: GENERIC_MESSAGE });
     expect(response.cookies.some((c) => c.name === "signup_session")).toBe(
       true,
     );
-    expect(emailSender).not.toHaveBeenCalled();
+    expect(emailSender.send).not.toHaveBeenCalled();
+  });
+
+  it("responds 503 with a generic message when email delivery fails", async () => {
+    const deps = makeAppDeps({
+      emailSender: {
+        send: vi.fn().mockRejectedValue(new Error("provider down")),
+      },
+    });
+    const response = await post(VALID_BODY, deps);
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({
+      message:
+        "We could not send the confirmation email right now. Please try again shortly.",
+    });
+    expect(response.headers["set-cookie"]).toBeUndefined();
   });
 
   it("rejects a pwned password with 400 and no cookie", async () => {

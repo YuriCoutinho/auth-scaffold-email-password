@@ -37,7 +37,7 @@ export function createSignupRepo(db: Database) {
     // Atomic replace: defaults only fire on real inserts, so the update
     // clause must renew createdAt/lastSentAt/codeSendCount explicitly.
     async upsertPendingSignup(input: UpsertPendingSignupInput) {
-      await db
+      const rows = await db
         .insert(pendingSignups)
         .values({
           email: input.email,
@@ -58,7 +58,18 @@ export function createSignupRepo(db: Database) {
             lastSentAt: input.now,
             codeSendCount: 1,
           },
-        });
+        })
+        .returning({ id: pendingSignups.id });
+      return rows[0] as { id: number };
+    },
+
+    // codeSendCount = 0 means no email was delivered for the current code,
+    // so a future resend must treat it as free of cooldown/quota.
+    async resetPendingSignupSendState(email: string) {
+      await db
+        .update(pendingSignups)
+        .set({ codeSendCount: 0 })
+        .where(eq(pendingSignups.email, email));
     },
   };
 }

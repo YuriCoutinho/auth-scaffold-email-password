@@ -44,6 +44,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     repo: createSignupRepo(deps.db),
     emailSender: deps.emailSender,
     checkPwnedPassword: deps.checkPwnedPassword,
+    log: app.log,
   });
   app.register(signupRoutes, { signupService });
 

@@ -15,6 +15,7 @@ interface Upsert {
 
 export function createFakeDb(options: FakeDbOptions = {}) {
   const upserts: Upsert[] = [];
+  const sendStateResets: Array<Record<string, unknown>> = [];
   const rowsFor = (table: unknown) =>
     table === authUsers
       ? (options.authUserRows ?? [])
@@ -30,22 +31,32 @@ export function createFakeDb(options: FakeDbOptions = {}) {
     }),
     insert: () => ({
       values: (values: Record<string, unknown>) => ({
-        onConflictDoUpdate: async (config: {
-          set: Record<string, unknown>;
-        }) => {
-          upserts.push({ values, set: config.set });
+        onConflictDoUpdate: (config: { set: Record<string, unknown> }) => ({
+          returning: async () => {
+            upserts.push({ values, set: config.set });
+            return [{ id: 1 }];
+          },
+        }),
+      }),
+    }),
+    update: () => ({
+      set: (set: Record<string, unknown>) => ({
+        where: async () => {
+          sendStateResets.push(set);
         },
       }),
     }),
   };
 
-  return { db: db as unknown as Database, upserts };
+  return { db: db as unknown as Database, upserts, sendStateResets };
 }
 
 export function makeAppDeps(overrides: Partial<AppDeps> = {}): AppDeps {
   return {
     db: createFakeDb().db,
-    emailSender: vi.fn().mockResolvedValue(undefined),
+    emailSender: {
+      send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
+    },
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
     ...overrides,
   };

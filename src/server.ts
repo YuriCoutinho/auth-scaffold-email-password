@@ -2,7 +2,7 @@ import { buildApp } from "./app.js";
 import { type Env, loadEnv } from "./config/env.js";
 import { db } from "./db/client.js";
 import { createPwnedPasswordChecker } from "./lib/pwned-password.js";
-import { noopEmailSender } from "./services/email-sender.js";
+import { createEmailSender } from "./services/email/create-email-sender.js";
 
 let env: Env;
 try {
@@ -18,7 +18,7 @@ const checkPwnedPassword = createPwnedPasswordChecker({
 });
 const app = buildApp({
   db,
-  emailSender: noopEmailSender,
+  emailSender: createEmailSender(env),
   checkPwnedPassword,
   enableDocsUi: env.NODE_ENV !== "production",
 });
