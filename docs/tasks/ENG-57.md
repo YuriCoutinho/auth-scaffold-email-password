@@ -30,7 +30,7 @@ Se o código bate, executa em **uma única transaction** (decisão da task: a se
 * Token de sessão: 32 bytes `randomBytes` em base64url (256 bits), gerado por `generateSessionToken()`
 * **TTL da sessão: 30 dias** (`SESSION_TTL_SECONDS`), mesmo valor no `expires_at` e no `Max-Age`
 * Resposta 200 descarta o cookie `signup_session` (`clearCookie`, `Path=/auth`) e seta o cookie da sessão real: **`session`**, `HttpOnly`, `Secure`, `SameSite=Strict`, **`Path=/`** (vale para a API toda), `Max-Age=2592000` — mesmo formato de sessão que o `/login` (ENG-60) usará
-* **Sem linha em `profiles`** nesta task (decisão YAGNI: quem precisar — ex. `/me`, ENG-61 — cria)
+* Cria a linha de `profiles` (`{ user_id }`, resto default/null) na mesma transação da promoção — invariante introduzido pela ENG-73, que revogou a decisão lazy original desta task
 
 **Limitações conhecidas e aceitas**
 
