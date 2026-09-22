@@ -1,8 +1,8 @@
-import type { Env } from "../config/env.js";
-import type { EmailSender } from "./email-sender.js";
-import { FakeEmailSender } from "./fake-email-sender.js";
-import { MailpitEmailSender } from "./mailpit-email-sender.js";
-import { ResendEmailSender } from "./resend-email-sender.js";
+import type { Env } from "../../../config/env.js";
+import { FakeEmailSender } from "./drivers/fake.js";
+import { MailpitEmailSender } from "./drivers/mailpit.js";
+import { ResendEmailSender } from "./drivers/resend.js";
+import type { EmailSender } from "./sender.js";
 
 // parseEnv already guarantees these are set for the drivers that need them;
 // this guard only turns an impossible state into a clear boot error.

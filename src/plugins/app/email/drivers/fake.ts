@@ -1,4 +1,4 @@
-import type { EmailMessage, EmailSender } from "./email-sender.js";
+import type { EmailMessage, EmailSender } from "../sender.js";
 
 export class FakeEmailSender implements EmailSender {
   readonly sent: EmailMessage[] = [];

@@ -1,8 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
-import type { AppOptions } from "../../app-options.js";
-import { createEmailSender } from "../../email/create-email-sender.js";
-import type { EmailSender } from "../../email/email-sender.js";
+import type { AppOptions } from "../../../app-options.js";
+import { createEmailSender } from "./create-sender.js";
+import type { EmailSender } from "./sender.js";
 
 declare module "fastify" {
   interface FastifyInstance {

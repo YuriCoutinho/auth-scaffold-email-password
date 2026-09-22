@@ -1,10 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
-import {
-  EmailProviderError,
-  type EmailSender,
-} from "../../../email/email-sender.js";
 import { generateOtpCode } from "../../../lib/otp.js";
 import { hashOtpCode } from "../../../lib/token-hash.js";
+import { EmailProviderError, type EmailSender } from "../email/sender.js";
 import type { AuthRepository } from "./auth-repository.js";
 import { SIGNUP_TTL_SECONDS } from "./signup.js";
 import { renderSignupCodeEmail } from "./signup-email.js";

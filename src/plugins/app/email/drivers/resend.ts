@@ -3,7 +3,7 @@ import {
   type EmailMessage,
   EmailProviderError,
   type EmailSender,
-} from "./email-sender.js";
+} from "../sender.js";
 
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const MAX_ATTEMPTS = 2;

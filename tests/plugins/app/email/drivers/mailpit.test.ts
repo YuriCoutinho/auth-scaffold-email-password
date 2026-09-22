@@ -6,7 +6,7 @@ vi.mock("nodemailer", () => ({
 }));
 
 import nodemailer from "nodemailer";
-import { MailpitEmailSender } from "../../src/email/mailpit-email-sender.js";
+import { MailpitEmailSender } from "../../../../../src/plugins/app/email/drivers/mailpit.js";
 
 beforeEach(() => {
   sendMail.mockReset().mockResolvedValue({ messageId: "<mailpit-1@local>" });
