@@ -31,14 +31,19 @@ Postgres e Mailpit sobem com `docker compose up -d`. O Mailpit tem interface web
 
 ## Onde as coisas ficam
 
-* `src/routes/` guarda plugins Fastify, e a camada é fina: valida, chama o service, monta a resposta
-* `src/services/` guarda a regra de negócio, testável sem subir o Fastify
-* `src/db/` guarda schema Drizzle, client e repositórios
-* `src/lib/` guarda utilitários puros como hash, tokens e geração de código
-* `src/config/` guarda a validação de ambiente com Zod
-* `tests/` espelha a árvore de `src/`
+O projeto segue a arquitetura de plugins do Fastify, no formato do repositório oficial `fastify/demo`: `app.ts` é um plugin que carrega três pastas com `@fastify/autoload`, nesta ordem, e cada plugin declara sua posição com `fastify-plugin` (`name` e `dependencies`).
 
-Dependências entram por `buildApp(deps)`, então teste nenhum precisa de banco ou rede reais.
+* `src/plugins/external/` registra plugins do ecossistema: cookie, swagger e swagger-ui
+* `src/plugins/app/` guarda os plugins da aplicação, que decoram a instância. `pwned-password.ts` decora `fastify.checkPwnedPassword`; `auth/` é um plugin único (`index.ts`) que decora `fastify.auth` com os quatro fluxos, e os arquivos irmãos são a implementação interna dele, incluindo a interface `AuthRepository`
+* `src/routes/` guarda plugins de rota, autoloaded. O nome da pasta vira prefixo: `routes/auth/signup.ts` expõe `/auth/signup`. A camada é fina: valida com o schema, chama `fastify.auth`, monta a resposta
+* `src/schemas/` guarda os schemas Zod compartilhados pelas rotas
+* `src/db/` guarda o schema Drizzle, a fábrica de conexão e o adaptador Drizzle de `AuthRepository`
+* `src/email/` guarda a interface `EmailSender` e seus adaptadores
+* `src/lib/` guarda só funções puras: hash, tokens, código
+* `src/config/` guarda a validação de ambiente com Zod
+* `tests/` espelha a árvore de `src/`, mais `tests/helpers/` com o adaptador em memória de `AuthRepository`
+
+`server.ts` cria o pool, o repositório e o remetente de email e passa tudo por `AppOptions` para `buildApp(opts)`. O autoload repassa essas opções a todo plugin, então um teste substitui um colaborador passando outro valor em `buildApp`, sem banco nem rede.
 
 ## Código
 
@@ -50,6 +55,7 @@ Dependências entram por `buildApp(deps)`, então teste nenhum precisa de banco 
 ## Testes
 
 * Vitest com mocks, sem banco real. Testes de integração ainda não foram adotados no projeto
+* Teste de rota usa o adaptador em memória de `AuthRepository`. O adaptador Drizzle só é coberto por teste de integração, que ainda não foi adotado
 * Todo endpoint novo precisa de teste de service e de rota
 * Em fluxo de autenticação, cubra explicitamente os caminhos de erro, porque é neles que mora a proteção contra enumeração de contas
 
