@@ -124,7 +124,7 @@ src/
     app/
       database.ts      decora fastify.db
       error-handler.ts setErrorHandler
-      pwned-password.ts
+      pwned-password/  index.ts decora fastify.checkPwnedPassword; checker.ts
       email/           index.ts decora fastify.emailSender; sender.ts, create-sender.ts, drivers/
       auth/            index.ts decora fastify.auth; repository.ts, drizzle-repository.ts, services, emails/
   routes/              plugins de rota, prefixo pelo nome da pasta

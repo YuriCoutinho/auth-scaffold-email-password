@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { EmailSender } from "../email/sender.js";
-import type { CheckPwnedPassword } from "../pwned-password.js";
+import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import { createLoginService } from "./login.js";
 import type { AuthRepository } from "./repository.js";
 import { createResendCodeService } from "./resend-code.js";

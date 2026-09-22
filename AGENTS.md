@@ -44,13 +44,13 @@ O critério para decidir onde um arquivo novo entra:
 O que existe hoje:
 
 * `src/plugins/external/`: cookie, swagger e swagger-ui
-* `src/plugins/app/database.ts` decora `fastify.db` e fecha o pool no `onClose`; `pwned-password.ts` decora `fastify.checkPwnedPassword`; `error-handler.ts` registra o `setErrorHandler` que responde 5xx com mensagem genérica e loga o erro
+* `src/plugins/app/database.ts` decora `fastify.db` e fecha o pool no `onClose`; `pwned-password/` decora `fastify.checkPwnedPassword` no `index.ts`, e `checker.ts` tem a chamada à API do Have I Been Pwned; `error-handler.ts` registra o `setErrorHandler` que responde 5xx com mensagem genérica e loga o erro
 * `src/plugins/app/email/` decora `fastify.emailSender` no `index.ts`. `sender.ts` tem a interface `EmailSender` e o `EmailProviderError`, `create-sender.ts` escolhe o driver pelo `config`, e `drivers/` tem fake, mailpit e resend
 * `src/plugins/app/auth/` decora `fastify.auth` no `index.ts` com os quatro fluxos. `repository.ts` é a interface `AuthRepository`, `drizzle-repository.ts` é o adaptador Drizzle dela, `create-auth.ts` monta os fluxos, `signup.ts`, `resend-code.ts`, `verify-code.ts` e `login.ts` são os services, `send-signup-code.ts` é o envio de código que `signup` e `resend-code` compartilham, e `emails/` guarda os templates
 * `src/routes/` guarda plugins de rota, autoloaded. O nome da pasta vira prefixo: `routes/auth/signup.ts` expõe `/auth/signup`. A camada é fina: valida com o schema, chama `fastify.auth`, monta a resposta
 * `src/schemas/` guarda os schemas Zod compartilhados pelas rotas
 * `src/db/` guarda o schema Drizzle e `createDatabase`
-* `src/lib/` guarda só funções puras e constantes: hash, tokens, código, TTLs e a política dos cookies
+* `src/lib/` guarda só funções puras e constantes: hash, tokens, código, TTLs, rótulo de dispositivo e a política dos cookies
 * `src/config/` guarda a validação de ambiente com Zod
 * `tests/` espelha a árvore de `src/`, mais `tests/helpers/` com `app-options.ts` e `auth/in-memory-repository.ts`, o adaptador em memória de `AuthRepository`
 
