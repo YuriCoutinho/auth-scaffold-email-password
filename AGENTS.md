@@ -43,7 +43,7 @@ Dependências entram por `buildApp(deps)`, então teste nenhum precisa de banco 
 ## Código
 
 * Todo o código é em **inglês**, incluindo nomes de teste, mensagens de erro e strings voltadas ao usuário. A documentação em `docs/` é em português
-* Comentário só quando explica um porquê que o código não consegue expressar. Comentário que descreve o que a linha faz não entra
+* Comentário sempre em **inglês**, em qualquer arquivo de código, e só quando explica um porquê que o código não consegue expressar. Comentário que descreve o que a linha faz não entra
 * Use os defaults da biblioteca em vez de configurar parâmetros por intuição, especialmente em criptografia
 * Resolva o requisito concreto que existe, não o problema hipotético que pode aparecer
 
@@ -81,6 +81,21 @@ Por isso **nada do board entra no repositório**: nem identificador, nem URL, ne
 * Estrutura fixa: `## Introdução`, `## Requisitos técnicos`, `## Definition of done`. Sem seção de limitação conhecida, débito técnico ou "fica para a próxima task"
 * Redação sem travessões, usando conectivos
 * A PR que implementa uma task inclui o documento dela e atualiza o índice `docs/tasks/README.md`
+
+## Skills
+
+As skills do fluxo de trabalho vivem em `.claude/skills/` e são versionadas junto do código, para que o processo seja reproduzível e não dependa da máquina de uma pessoa:
+
+| Skill | Para que serve |
+| --- | --- |
+| `implement-task` | Leva uma task do backlog até a PR, de ponta a ponta |
+| `linear` | Orquestra as operações no board de planejamento |
+| `linear-triage` | Escolhe a próxima task |
+| `linear-plan` | Registra o plano já decidido na task |
+| `linear-implement` | Executa o plano e abre a PR |
+| `semantic-commit` | Gera o commit no padrão Conventional Commit |
+
+O board de planejamento é ferramenta interna e exige `LINEAR_API_KEY`, `LINEAR_TEAM_KEY` e `LINEAR_PROJECT` no `.env`. Sem essas variáveis, as skills de board não funcionam, mas o restante do repositório é independente delas.
 
 ## Segurança
 
