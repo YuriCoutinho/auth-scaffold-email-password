@@ -82,6 +82,21 @@ Por isso **nada do board entra no repositório**: nem identificador, nem URL, ne
 * Redação sem travessões, usando conectivos
 * A PR que implementa uma task inclui o documento dela e atualiza o índice `docs/tasks/README.md`
 
+## Skills
+
+As skills do fluxo de trabalho vivem em `.claude/skills/` e são versionadas junto do código, para que o processo seja reproduzível e não dependa da máquina de uma pessoa:
+
+| Skill | Para que serve |
+| --- | --- |
+| `implement-task` | Leva uma task do backlog até a PR, de ponta a ponta |
+| `linear` | Orquestra as operações no board de planejamento |
+| `linear-triage` | Escolhe a próxima task |
+| `linear-plan` | Registra o plano já decidido na task |
+| `linear-implement` | Executa o plano e abre a PR |
+| `semantic-commit` | Gera o commit no padrão Conventional Commit |
+
+O board de planejamento é ferramenta interna e exige `LINEAR_API_KEY`, `LINEAR_TEAM_KEY` e `LINEAR_PROJECT` no `.env`. Sem essas variáveis, as skills de board não funcionam, mas o restante do repositório é independente delas.
+
 ## Segurança
 
 * Nunca leia, edite ou commite `.env`, `.env.*`, `*.pem`, `*.key` ou arquivos de credencial. O `.env.sample` versionado tem apenas valores vazios
