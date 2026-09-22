@@ -1,9 +1,9 @@
 import type { FastifyBaseLogger } from "fastify";
-import type { SignupRepo } from "../db/signup-repo.js";
 import { generateOtpCode, generateSignupSessionToken } from "../lib/otp.js";
 import { hashPassword } from "../lib/password.js";
 import type { CheckPwnedPassword } from "../lib/pwned-password.js";
 import { hashOtpCode } from "../lib/token-hash.js";
+import type { AuthRepository } from "../plugins/app/auth/auth-repository.js";
 import { EmailProviderError, type EmailSender } from "./email-sender.js";
 import { renderSignupCodeEmail } from "./signup-email.js";
 
@@ -16,7 +16,7 @@ export type SignupResult =
 
 interface SignupServiceDeps {
   repo: Pick<
-    SignupRepo,
+    AuthRepository,
     | "findAuthUserByEmail"
     | "findPendingSignupByEmail"
     | "upsertPendingSignup"

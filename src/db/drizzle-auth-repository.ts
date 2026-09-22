@@ -1,19 +1,29 @@
 import { eq, sql } from "drizzle-orm";
+import type {
+  AuthRepository,
+  CreateSessionInput,
+  PendingSignupResendState,
+  PromotePendingSignupInput,
+  UpsertPendingSignupInput,
+} from "../plugins/app/auth/auth-repository.js";
 import type { Database } from "./client.js";
 import { authUsers, pendingSignups, profiles, sessions } from "./schema.js";
 
-export interface UpsertPendingSignupInput {
-  email: string;
-  passwordHash: string;
-  codeHash: string;
-  signupSessionToken: string;
-  expiresAt: Date;
-  now: Date;
-}
+const pendingSignupColumns = {
+  id: pendingSignups.id,
+  email: pendingSignups.email,
+  passwordHash: pendingSignups.passwordHash,
+  codeHash: pendingSignups.codeHash,
+  signupSessionToken: pendingSignups.signupSessionToken,
+  codeAttempts: pendingSignups.codeAttempts,
+  lastSentAt: pendingSignups.lastSentAt,
+  codeSendCount: pendingSignups.codeSendCount,
+  expiresAt: pendingSignups.expiresAt,
+};
 
-export function createSignupRepo(db: Database) {
+export function createDrizzleAuthRepository(db: Database): AuthRepository {
   return {
-    async findAuthUserByEmail(email: string) {
+    async findAuthUserByEmail(email) {
       const rows = await db
         .select({
           id: authUsers.id,
@@ -26,12 +36,9 @@ export function createSignupRepo(db: Database) {
       return rows[0];
     },
 
-    async findPendingSignupByEmail(email: string) {
+    async findPendingSignupByEmail(email) {
       const rows = await db
-        .select({
-          signupSessionToken: pendingSignups.signupSessionToken,
-          expiresAt: pendingSignups.expiresAt,
-        })
+        .select(pendingSignupColumns)
         .from(pendingSignups)
         .where(eq(pendingSignups.email, email))
         .limit(1);
@@ -69,25 +76,16 @@ export function createSignupRepo(db: Database) {
 
     // codeSendCount = 0 means no email was delivered for the current code,
     // so a future resend must treat it as free of cooldown/quota.
-    async resetPendingSignupSendState(email: string) {
+    async resetPendingSignupSendState(email) {
       await db
         .update(pendingSignups)
         .set({ codeSendCount: 0 })
         .where(eq(pendingSignups.email, email));
     },
 
-    async findPendingSignupBySessionToken(token: string) {
+    async findPendingSignupBySessionToken(token) {
       const rows = await db
-        .select({
-          id: pendingSignups.id,
-          email: pendingSignups.email,
-          passwordHash: pendingSignups.passwordHash,
-          codeHash: pendingSignups.codeHash,
-          codeAttempts: pendingSignups.codeAttempts,
-          lastSentAt: pendingSignups.lastSentAt,
-          codeSendCount: pendingSignups.codeSendCount,
-          expiresAt: pendingSignups.expiresAt,
-        })
+        .select(pendingSignupColumns)
         .from(pendingSignups)
         .where(eq(pendingSignups.signupSessionToken, token))
         .limit(1);
@@ -96,14 +94,8 @@ export function createSignupRepo(db: Database) {
 
     // Also used to restore the previous state when delivery fails.
     async updatePendingSignupResendState(
-      token: string,
-      state: {
-        codeHash: string;
-        expiresAt: Date;
-        codeAttempts: number;
-        lastSentAt: Date;
-        codeSendCount: number;
-      },
+      token,
+      state: PendingSignupResendState,
     ) {
       await db
         .update(pendingSignups)
@@ -111,7 +103,7 @@ export function createSignupRepo(db: Database) {
         .where(eq(pendingSignups.signupSessionToken, token));
     },
 
-    async incrementCodeAttempts(signupSessionToken: string) {
+    async incrementCodeAttempts(signupSessionToken) {
       await db
         .update(pendingSignups)
         .set({ codeAttempts: sql`${pendingSignups.codeAttempts} + 1` })
@@ -120,14 +112,7 @@ export function createSignupRepo(db: Database) {
 
     // All-or-nothing promotion: if anything fails, the pending signup (and its
     // still-valid code) survives for a retry.
-    async promotePendingSignup(input: {
-      email: string;
-      passwordHash: string;
-      signupSessionToken: string;
-      sessionTokenHash: string;
-      deviceLabel: string | null;
-      sessionExpiresAt: Date;
-    }) {
+    async promotePendingSignup(input: PromotePendingSignupInput) {
       return await db.transaction(async (tx) => {
         const users = await tx
           .insert(authUsers)
@@ -150,15 +135,8 @@ export function createSignupRepo(db: Database) {
       });
     },
 
-    async createSession(input: {
-      userId: number;
-      tokenHash: string;
-      deviceLabel: string | null;
-      expiresAt: Date;
-    }) {
+    async createSession(input: CreateSessionInput) {
       await db.insert(sessions).values(input);
     },
   };
 }
-
-export type SignupRepo = ReturnType<typeof createSignupRepo>;

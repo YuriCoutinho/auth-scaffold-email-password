@@ -1,9 +1,9 @@
 import type { FastifyBaseLogger } from "fastify";
-import type { SignupRepo } from "../db/signup-repo.js";
 import { generateSessionToken } from "../lib/otp.js";
 import { DUMMY_PASSWORD_HASH, verifyPassword } from "../lib/password.js";
 import { SESSION_TTL_SECONDS } from "../lib/session.js";
 import { hashSessionToken } from "../lib/token-hash.js";
+import type { AuthRepository } from "../plugins/app/auth/auth-repository.js";
 
 export type LoginResult =
   | {
@@ -14,7 +14,7 @@ export type LoginResult =
   | { outcome: "invalid" };
 
 interface LoginServiceDeps {
-  repo: Pick<SignupRepo, "findAuthUserByEmail" | "createSession">;
+  repo: Pick<AuthRepository, "findAuthUserByEmail" | "createSession">;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }

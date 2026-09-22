@@ -9,7 +9,7 @@ import {
   type ZodTypeProvider,
 } from "fastify-type-provider-zod";
 import type { Database } from "./db/client.js";
-import { createSignupRepo } from "./db/signup-repo.js";
+import { createDrizzleAuthRepository } from "./db/drizzle-auth-repository.js";
 import type { CheckPwnedPassword } from "./lib/pwned-password.js";
 import { loginRoutes } from "./routes/auth/login.js";
 import { resendCodeRoutes } from "./routes/auth/resend-code.js";
@@ -46,7 +46,7 @@ export function buildApp(deps: AppDeps): FastifyInstance {
   }
   app.register(healthRoutes);
 
-  const repo = createSignupRepo(deps.db);
+  const repo = createDrizzleAuthRepository(deps.db);
   const signupService = createSignupService({
     repo,
     emailSender: deps.emailSender,

@@ -1,8 +1,8 @@
 import type { FastifyBaseLogger } from "fastify";
-import type { SignupRepo } from "../db/signup-repo.js";
 import { generateSessionToken } from "../lib/otp.js";
 import { SESSION_TTL_SECONDS } from "../lib/session.js";
 import { hashOtpCode, hashSessionToken } from "../lib/token-hash.js";
+import type { AuthRepository } from "../plugins/app/auth/auth-repository.js";
 
 export const MAX_CODE_ATTEMPTS = 5;
 
@@ -12,7 +12,7 @@ export type VerifyCodeResult =
 
 interface VerifyCodeServiceDeps {
   repo: Pick<
-    SignupRepo,
+    AuthRepository,
     | "findPendingSignupBySessionToken"
     | "incrementCodeAttempts"
     | "promotePendingSignup"
