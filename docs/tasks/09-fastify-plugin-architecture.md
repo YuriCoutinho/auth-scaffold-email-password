@@ -75,14 +75,14 @@ export interface AppOptions {
 
 ```
 src/
-  app.ts                      plugin `app` com três autoloads, e `buildApp(opts)`
-  app-options.ts              interface AppOptions
-  server.ts                   loadEnv, pool, repositório, emailSender, listen, shutdown
+  app.ts                       plugin `app` com três autoloads, e `buildApp(opts)`
+  app-options.ts               interface AppOptions
+  server.ts                    loadEnv, pool, repositório, emailSender, listen, shutdown
   config/env.ts                sem mudança
   db/
     schema.ts                  sem mudança
     client.ts                  createDatabase(url) devolve { db, close }
-    drizzle-auth-repository.ts  createDrizzleAuthRepository(db): AuthRepository
+    drizzle-auth-repository.ts createDrizzleAuthRepository(db): AuthRepository
   email/
     email-sender.ts            interface EmailSender e EmailProviderError
     create-email-sender.ts     seleção de driver por env
@@ -95,14 +95,14 @@ src/
   plugins/
     external/
       cookie.ts                export default cookie
-      swagger.ts                export default swagger, com autoConfig
-      swagger-ui.ts             fp, registra swagger-ui só com enableDocsUi
+      swagger.ts               export default swagger, com autoConfig
+      swagger-ui.ts            fp, registra swagger-ui só com enableDocsUi
     app/
       pwned-password.ts        fp, decora fastify.checkPwnedPassword
       auth/
-        index.ts                fp, decora fastify.auth
-        auth-repository.ts      interface AuthRepository e tipos de registro
-        create-auth.ts          createAuth(deps) monta os quatro fluxos
+        index.ts               fp, decora fastify.auth
+        auth-repository.ts     interface AuthRepository e tipos de registro
+        create-auth.ts         createAuth(deps) monta os quatro fluxos
         signup.ts, resend-code.ts, verify-code.ts, login.ts
         signup-email.ts
   routes/
@@ -110,9 +110,9 @@ src/
     auth/signup.ts, resend-code.ts, verify-code.ts, login.ts
   schemas/
     auth.ts
-tests/                          espelha src/, mais helpers/
+tests/                         espelha src/, mais helpers/
   helpers/
-    app-options.ts              makeAppOptions(overrides)
+    app-options.ts             makeAppOptions(overrides)
     in-memory-auth-repository.ts
 ```
 
