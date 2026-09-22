@@ -43,7 +43,7 @@ Dependências entram por `buildApp(deps)`, então teste nenhum precisa de banco 
 ## Código
 
 * Todo o código é em **inglês**, incluindo nomes de teste, mensagens de erro e strings voltadas ao usuário. A documentação em `docs/` é em português
-* Comentário só quando explica um porquê que o código não consegue expressar. Comentário que descreve o que a linha faz não entra
+* Comentário sempre em **inglês**, em qualquer arquivo de código, e só quando explica um porquê que o código não consegue expressar. Comentário que descreve o que a linha faz não entra
 * Use os defaults da biblioteca em vez de configurar parâmetros por intuição, especialmente em criptografia
 * Resolva o requisito concreto que existe, não o problema hipotético que pode aparecer
 
