@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createAuth } from "../../../../src/plugins/app/auth/create-auth.js";
-import { createInMemoryAuthRepository } from "../../../helpers/in-memory-auth-repository.js";
+import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 
 describe("createAuth", () => {
   it("exposes the four auth flows over one repository", async () => {

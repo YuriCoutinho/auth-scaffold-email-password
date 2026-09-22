@@ -3,7 +3,7 @@ import { buildApp } from "../../../src/app.js";
 import { hashOtpCode, hashSessionToken } from "../../../src/lib/token-hash.js";
 import type { PendingSignupRecord } from "../../../src/plugins/app/auth/repository.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../helpers/in-memory-auth-repository.js";
+import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
 
 const TOKEN = "token-x";
 const CODE = "123456";

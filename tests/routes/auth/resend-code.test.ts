@@ -3,7 +3,7 @@ import { buildApp } from "../../../src/app.js";
 import type { PendingSignupRecord } from "../../../src/plugins/app/auth/repository.js";
 import type { EmailSender } from "../../../src/plugins/app/email/sender.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../helpers/in-memory-auth-repository.js";
+import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
 
 type FakeEmailSender = { send: Mock<EmailSender["send"]> };
 

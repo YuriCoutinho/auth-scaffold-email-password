@@ -3,7 +3,7 @@ import { buildApp } from "../../../src/app.js";
 import { hashPassword } from "../../../src/lib/password.js";
 import { hashSessionToken } from "../../../src/lib/token-hash.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../helpers/in-memory-auth-repository.js";
+import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
 
 const EMAIL = "foo@gmail.com";
 const PASSWORD = "correct-horse-battery-staple";

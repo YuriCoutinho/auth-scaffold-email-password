@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createInMemoryAuthRepository } from "./in-memory-auth-repository.js";
+import { createInMemoryAuthRepository } from "./in-memory-repository.js";
 
 const NOW = new Date("2026-09-20T12:00:00Z");
 
