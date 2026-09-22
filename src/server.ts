@@ -2,8 +2,8 @@ import { buildApp } from "./app.js";
 import { type Env, loadEnv } from "./config/env.js";
 import { createDatabase } from "./db/client.js";
 import { createDrizzleAuthRepository } from "./db/drizzle-auth-repository.js";
+import { createEmailSender } from "./email/create-email-sender.js";
 import { createPwnedPasswordChecker } from "./lib/pwned-password.js";
-import { createEmailSender } from "./services/email/create-email-sender.js";
 
 let env: Env;
 try {

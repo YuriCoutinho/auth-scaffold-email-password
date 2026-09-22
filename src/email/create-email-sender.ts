@@ -1,5 +1,5 @@
-import type { Env } from "../../config/env.js";
-import type { EmailSender } from "../email-sender.js";
+import type { Env } from "../config/env.js";
+import type { EmailSender } from "./email-sender.js";
 import { FakeEmailSender } from "./fake-email-sender.js";
 import { MailpitEmailSender } from "./mailpit-email-sender.js";
 import { ResendEmailSender } from "./resend-email-sender.js";

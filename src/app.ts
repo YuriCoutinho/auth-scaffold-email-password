@@ -8,18 +8,15 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from "fastify-type-provider-zod";
+import type { EmailSender } from "./email/email-sender.js";
 import type { CheckPwnedPassword } from "./lib/pwned-password.js";
 import type { AuthRepository } from "./plugins/app/auth/auth-repository.js";
+import { createAuth } from "./plugins/app/auth/create-auth.js";
 import { loginRoutes } from "./routes/auth/login.js";
 import { resendCodeRoutes } from "./routes/auth/resend-code.js";
 import { signupRoutes } from "./routes/auth/signup.js";
 import { verifyCodeRoutes } from "./routes/auth/verify-code.js";
 import { healthRoutes } from "./routes/health.js";
-import type { EmailSender } from "./services/email-sender.js";
-import { createLoginService } from "./services/login.js";
-import { createResendCodeService } from "./services/resend-code.js";
-import { createSignupService } from "./services/signup.js";
-import { createVerifyCodeService } from "./services/verify-code.js";
 
 export interface AppOptions {
   authRepository: AuthRepository;
@@ -45,24 +42,16 @@ export function buildApp(opts: AppOptions): FastifyInstance {
   }
   app.register(healthRoutes);
 
-  const repo = opts.authRepository;
-  const signupService = createSignupService({
-    repo,
+  const auth = createAuth({
+    repository: opts.authRepository,
     emailSender: opts.emailSender,
     checkPwnedPassword: opts.checkPwnedPassword,
     log: app.log,
   });
-  const resendCodeService = createResendCodeService({
-    repo,
-    emailSender: opts.emailSender,
-    log: app.log,
-  });
-  const verifyCodeService = createVerifyCodeService({ repo, log: app.log });
-  const loginService = createLoginService({ repo, log: app.log });
-  app.register(signupRoutes, { signupService });
-  app.register(resendCodeRoutes, { resendCodeService });
-  app.register(verifyCodeRoutes, { verifyCodeService });
-  app.register(loginRoutes, { loginService });
+  app.register(signupRoutes, { auth });
+  app.register(resendCodeRoutes, { auth });
+  app.register(verifyCodeRoutes, { auth });
+  app.register(loginRoutes, { auth });
 
   return app;
 }

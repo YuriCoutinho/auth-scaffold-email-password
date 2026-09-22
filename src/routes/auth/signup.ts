@@ -1,9 +1,7 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { z } from "zod";
-import {
-  SIGNUP_TTL_SECONDS,
-  type SignupService,
-} from "../../services/signup.js";
+import type { Auth } from "../../plugins/app/auth/create-auth.js";
+import { SIGNUP_TTL_SECONDS } from "../../plugins/app/auth/signup.js";
 
 const signupBodySchema = z.object({
   email: z.email().max(254),
@@ -12,11 +10,11 @@ const signupBodySchema = z.object({
 
 const messageSchema = z.object({ message: z.string() });
 
-export interface SignupRoutesOptions {
-  signupService: SignupService;
+export interface AuthRoutesOptions {
+  auth: Auth;
 }
 
-export const signupRoutes: FastifyPluginAsyncZod<SignupRoutesOptions> = async (
+export const signupRoutes: FastifyPluginAsyncZod<AuthRoutesOptions> = async (
   app,
   opts,
 ) => {
@@ -39,7 +37,7 @@ export const signupRoutes: FastifyPluginAsyncZod<SignupRoutesOptions> = async (
       },
     },
     async (request, reply) => {
-      const result = await opts.signupService.signup(
+      const result = await opts.auth.signup(
         request.body.email,
         request.body.password,
       );

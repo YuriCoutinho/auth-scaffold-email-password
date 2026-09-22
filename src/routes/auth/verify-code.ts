@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { SESSION_TTL_SECONDS } from "../../lib/session.js";
-import type { VerifyCodeService } from "../../services/verify-code.js";
+import type { Auth } from "../../plugins/app/auth/create-auth.js";
 
 const verifyCodeBodySchema = z.object({
   code: z.string().regex(/^\d{6}$/),
@@ -9,12 +9,12 @@ const verifyCodeBodySchema = z.object({
 
 const messageSchema = z.object({ message: z.string() });
 
-export interface VerifyCodeRoutesOptions {
-  verifyCodeService: VerifyCodeService;
+export interface AuthRoutesOptions {
+  auth: Auth;
 }
 
 export const verifyCodeRoutes: FastifyPluginAsyncZod<
-  VerifyCodeRoutesOptions
+  AuthRoutesOptions
 > = async (app, opts) => {
   app.post(
     "/auth/verify-code",
@@ -36,7 +36,7 @@ export const verifyCodeRoutes: FastifyPluginAsyncZod<
     },
     async (request, reply) => {
       const deviceLabel = request.headers["user-agent"]?.slice(0, 256) ?? null;
-      const result = await opts.verifyCodeService.verifyCode(
+      const result = await opts.auth.verifyCode(
         request.cookies.signup_session,
         request.body.code,
         deviceLabel,

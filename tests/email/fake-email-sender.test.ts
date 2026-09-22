@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FakeEmailSender } from "../../../src/services/email/fake-email-sender.js";
+import { FakeEmailSender } from "../../src/email/fake-email-sender.js";
 
 describe("FakeEmailSender", () => {
   it("stores sent messages and returns sequential ids", async () => {

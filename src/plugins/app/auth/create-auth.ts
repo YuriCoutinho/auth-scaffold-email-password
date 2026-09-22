@@ -1,0 +1,39 @@
+import type { FastifyBaseLogger } from "fastify";
+import type { EmailSender } from "../../../email/email-sender.js";
+import type { CheckPwnedPassword } from "../../../lib/pwned-password.js";
+import type { AuthRepository } from "./auth-repository.js";
+import { createLoginService } from "./login.js";
+import { createResendCodeService } from "./resend-code.js";
+import { createSignupService } from "./signup.js";
+import { createVerifyCodeService } from "./verify-code.js";
+
+export interface AuthDeps {
+  repository: AuthRepository;
+  emailSender: EmailSender;
+  checkPwnedPassword: CheckPwnedPassword;
+  log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
+  now?: () => Date;
+}
+
+export function createAuth(deps: AuthDeps) {
+  const shared = {
+    repo: deps.repository,
+    ...(deps.log ? { log: deps.log } : {}),
+    ...(deps.now ? { now: deps.now } : {}),
+  };
+  const { signup } = createSignupService({
+    ...shared,
+    emailSender: deps.emailSender,
+    checkPwnedPassword: deps.checkPwnedPassword,
+  });
+  const { resendCode } = createResendCodeService({
+    ...shared,
+    emailSender: deps.emailSender,
+  });
+  const { verifyCode } = createVerifyCodeService(shared);
+  const { login } = createLoginService(shared);
+
+  return { signup, resendCode, verifyCode, login };
+}
+
+export type Auth = ReturnType<typeof createAuth>;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderSignupCodeEmail } from "../../src/services/signup-email.js";
+import { renderSignupCodeEmail } from "../../../../src/plugins/app/auth/signup-email.js";
 
 describe("renderSignupCodeEmail", () => {
   const content = renderSignupCodeEmail({ code: "123456", ttlMinutes: 15 });

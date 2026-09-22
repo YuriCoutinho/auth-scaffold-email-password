@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DUMMY_PASSWORD_HASH } from "../../src/lib/password.js";
-import { SESSION_TTL_SECONDS } from "../../src/lib/session.js";
-import { hashSessionToken } from "../../src/lib/token-hash.js";
-import { createLoginService } from "../../src/services/login.js";
+import { DUMMY_PASSWORD_HASH } from "../../../../src/lib/password.js";
+import { SESSION_TTL_SECONDS } from "../../../../src/lib/session.js";
+import { hashSessionToken } from "../../../../src/lib/token-hash.js";
+import { createLoginService } from "../../../../src/plugins/app/auth/login.js";
 
-vi.mock("../../src/lib/password.js", async (importOriginal) => {
+vi.mock("../../../../src/lib/password.js", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("../../src/lib/password.js")>();
+    await importOriginal<typeof import("../../../../src/lib/password.js")>();
   return { ...actual, verifyPassword: vi.fn() };
 });
-const { verifyPassword } = await import("../../src/lib/password.js");
+const { verifyPassword } = await import("../../../../src/lib/password.js");
 const verifyPasswordMock = vi.mocked(verifyPassword);
 
 const NOW = new Date("2026-09-21T12:00:00Z");

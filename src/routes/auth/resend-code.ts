@@ -1,16 +1,16 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { z } from "zod";
-import type { ResendCodeService } from "../../services/resend-code.js";
-import { SIGNUP_TTL_SECONDS } from "../../services/signup.js";
+import type { Auth } from "../../plugins/app/auth/create-auth.js";
+import { SIGNUP_TTL_SECONDS } from "../../plugins/app/auth/signup.js";
 
 const messageSchema = z.object({ message: z.string() });
 
-export interface ResendCodeRoutesOptions {
-  resendCodeService: ResendCodeService;
+export interface AuthRoutesOptions {
+  auth: Auth;
 }
 
 export const resendCodeRoutes: FastifyPluginAsyncZod<
-  ResendCodeRoutesOptions
+  AuthRoutesOptions
 > = async (app, opts) => {
   app.post(
     "/auth/resend-code",
@@ -32,7 +32,7 @@ export const resendCodeRoutes: FastifyPluginAsyncZod<
     },
     async (request, reply) => {
       const sessionToken = request.cookies.signup_session;
-      const result = await opts.resendCodeService.resendCode(sessionToken);
+      const result = await opts.auth.resendCode(sessionToken);
 
       switch (result.outcome) {
         case "invalid-session":

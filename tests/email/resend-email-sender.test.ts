@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ResendEmailSender } from "../../../src/services/email/resend-email-sender.js";
-import { EmailProviderError } from "../../../src/services/email-sender.js";
+import { EmailProviderError } from "../../src/email/email-sender.js";
+import { ResendEmailSender } from "../../src/email/resend-email-sender.js";
 
 const message = {
   to: "user@example.com",

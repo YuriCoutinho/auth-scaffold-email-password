@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { verifyPassword } from "../../src/lib/password.js";
-import { hashOtpCode } from "../../src/lib/token-hash.js";
+import { verifyPassword } from "../../../../src/lib/password.js";
+import { hashOtpCode } from "../../../../src/lib/token-hash.js";
 import {
   createSignupService,
   SIGNUP_TTL_SECONDS,
-} from "../../src/services/signup.js";
+} from "../../../../src/plugins/app/auth/signup.js";
 
 const NOW = new Date("2026-09-20T12:00:00Z");
 const PASSWORD = "a perfectly fine passphrase";

@@ -1,7 +1,7 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { SESSION_TTL_SECONDS } from "../../lib/session.js";
-import type { LoginService } from "../../services/login.js";
+import type { Auth } from "../../plugins/app/auth/create-auth.js";
 
 const loginBodySchema = z.object({
   email: z.email().max(254),
@@ -14,11 +14,11 @@ const loginResponseSchema = z.object({
 
 const messageSchema = z.object({ message: z.string() });
 
-export interface LoginRoutesOptions {
-  loginService: LoginService;
+export interface AuthRoutesOptions {
+  auth: Auth;
 }
 
-export const loginRoutes: FastifyPluginAsyncZod<LoginRoutesOptions> = async (
+export const loginRoutes: FastifyPluginAsyncZod<AuthRoutesOptions> = async (
   app,
   opts,
 ) => {
@@ -43,7 +43,7 @@ export const loginRoutes: FastifyPluginAsyncZod<LoginRoutesOptions> = async (
     },
     async (request, reply) => {
       const deviceLabel = request.headers["user-agent"]?.slice(0, 256) ?? null;
-      const result = await opts.loginService.login(
+      const result = await opts.auth.login(
         request.body.email,
         request.body.password,
         deviceLabel,

@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { SESSION_TTL_SECONDS } from "../../src/lib/session.js";
-import { hashOtpCode, hashSessionToken } from "../../src/lib/token-hash.js";
+import { SESSION_TTL_SECONDS } from "../../../../src/lib/session.js";
+import {
+  hashOtpCode,
+  hashSessionToken,
+} from "../../../../src/lib/token-hash.js";
 import {
   createVerifyCodeService,
   MAX_CODE_ATTEMPTS,
-} from "../../src/services/verify-code.js";
+} from "../../../../src/plugins/app/auth/verify-code.js";
 
 const NOW = new Date("2026-09-21T12:00:00Z");
 const TOKEN = "signup-token";

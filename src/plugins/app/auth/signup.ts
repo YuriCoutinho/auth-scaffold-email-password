@@ -1,11 +1,14 @@
 import type { FastifyBaseLogger } from "fastify";
-import { generateOtpCode } from "../lib/otp.js";
-import { hashPassword } from "../lib/password.js";
-import type { CheckPwnedPassword } from "../lib/pwned-password.js";
-import { generateSignupSessionToken } from "../lib/session.js";
-import { hashOtpCode } from "../lib/token-hash.js";
-import type { AuthRepository } from "../plugins/app/auth/auth-repository.js";
-import { EmailProviderError, type EmailSender } from "./email-sender.js";
+import {
+  EmailProviderError,
+  type EmailSender,
+} from "../../../email/email-sender.js";
+import { generateOtpCode } from "../../../lib/otp.js";
+import { hashPassword } from "../../../lib/password.js";
+import type { CheckPwnedPassword } from "../../../lib/pwned-password.js";
+import { generateSignupSessionToken } from "../../../lib/session.js";
+import { hashOtpCode } from "../../../lib/token-hash.js";
+import type { AuthRepository } from "./auth-repository.js";
 import { renderSignupCodeEmail } from "./signup-email.js";
 
 export const SIGNUP_TTL_SECONDS = 15 * 60;

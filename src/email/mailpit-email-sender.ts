@@ -1,5 +1,5 @@
 import nodemailer, { type Transporter } from "nodemailer";
-import type { EmailMessage, EmailSender } from "../email-sender.js";
+import type { EmailMessage, EmailSender } from "./email-sender.js";
 
 export class MailpitEmailSender implements EmailSender {
   private readonly transporter: Transporter;
