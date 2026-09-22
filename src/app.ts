@@ -8,9 +8,8 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from "fastify-type-provider-zod";
-import type { Database } from "./db/client.js";
-import { createDrizzleAuthRepository } from "./db/drizzle-auth-repository.js";
 import type { CheckPwnedPassword } from "./lib/pwned-password.js";
+import type { AuthRepository } from "./plugins/app/auth/auth-repository.js";
 import { loginRoutes } from "./routes/auth/login.js";
 import { resendCodeRoutes } from "./routes/auth/resend-code.js";
 import { signupRoutes } from "./routes/auth/signup.js";
@@ -22,14 +21,14 @@ import { createResendCodeService } from "./services/resend-code.js";
 import { createSignupService } from "./services/signup.js";
 import { createVerifyCodeService } from "./services/verify-code.js";
 
-export interface AppDeps {
-  db: Database;
+export interface AppOptions {
+  authRepository: AuthRepository;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
   enableDocsUi?: boolean;
 }
 
-export function buildApp(deps: AppDeps): FastifyInstance {
+export function buildApp(opts: AppOptions): FastifyInstance {
   const app = Fastify({ logger: true }).withTypeProvider<ZodTypeProvider>();
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
@@ -41,21 +40,21 @@ export function buildApp(deps: AppDeps): FastifyInstance {
     },
     transform: jsonSchemaTransform,
   });
-  if (deps.enableDocsUi) {
+  if (opts.enableDocsUi) {
     app.register(swaggerUi, { routePrefix: "/docs" });
   }
   app.register(healthRoutes);
 
-  const repo = createDrizzleAuthRepository(deps.db);
+  const repo = opts.authRepository;
   const signupService = createSignupService({
     repo,
-    emailSender: deps.emailSender,
-    checkPwnedPassword: deps.checkPwnedPassword,
+    emailSender: opts.emailSender,
+    checkPwnedPassword: opts.checkPwnedPassword,
     log: app.log,
   });
   const resendCodeService = createResendCodeService({
     repo,
-    emailSender: deps.emailSender,
+    emailSender: opts.emailSender,
     log: app.log,
   });
   const verifyCodeService = createVerifyCodeService({ repo, log: app.log });

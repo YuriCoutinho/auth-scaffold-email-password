@@ -1,13 +1,15 @@
 import { describe, expect, it, type Mock, vi } from "vitest";
 import { buildApp } from "../../../src/app.js";
+import type { PendingSignupRecord } from "../../../src/plugins/app/auth/auth-repository.js";
 import type { EmailSender } from "../../../src/services/email-sender.js";
-import { createFakeDb, makeAppDeps } from "../../helpers/app-deps.js";
+import { makeAppOptions } from "../../helpers/app-options.js";
+import { createInMemoryAuthRepository } from "../../helpers/in-memory-auth-repository.js";
 
 type FakeEmailSender = { send: Mock<EmailSender["send"]> };
 
 const TOKEN = "token-x";
 
-function makePendingRow(overrides: Record<string, unknown> = {}) {
+function makePendingRow(overrides: Partial<PendingSignupRecord> = {}) {
   return {
     id: 1,
     email: "user@example.com",
@@ -22,29 +24,29 @@ function makePendingRow(overrides: Record<string, unknown> = {}) {
 }
 
 async function post(options: {
-  pendingRow?: Record<string, unknown>;
+  pendingRow?: ReturnType<typeof makePendingRow>;
   cookie?: boolean;
   emailSender?: FakeEmailSender;
 }) {
-  const { db } = createFakeDb({
-    pendingRows: options.pendingRow ? [options.pendingRow as never] : [],
+  const authRepository = createInMemoryAuthRepository({
+    pendingSignups: options.pendingRow ? [options.pendingRow] : [],
   });
   const emailSender: FakeEmailSender = options.emailSender ?? {
     send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
   };
-  const app = buildApp(makeAppDeps({ db, emailSender }));
+  const app = buildApp(makeAppOptions({ authRepository, emailSender }));
   const response = await app.inject({
     method: "POST",
     url: "/auth/resend-code",
     ...(options.cookie === false ? {} : { cookies: { signup_session: TOKEN } }),
   });
   await app.close();
-  return { response, emailSender };
+  return { response, emailSender, authRepository };
 }
 
 describe("POST /auth/resend-code", () => {
   it("responds 202, re-sets the signup_session cookie and sends a new code", async () => {
-    const { response, emailSender } = await post({
+    const { response, emailSender, authRepository } = await post({
       pendingRow: makePendingRow(),
     });
 
@@ -66,6 +68,12 @@ describe("POST /auth/resend-code", () => {
 
     expect(emailSender.send).toHaveBeenCalledTimes(1);
     expect(emailSender.send.mock.calls[0]?.[0].to).toBe("user@example.com");
+    expect(authRepository.pendingSignups.get("user@example.com")).toMatchObject(
+      {
+        codeAttempts: 0,
+        codeSendCount: 2,
+      },
+    );
   });
 
   it("responds 401 when the cookie is missing", async () => {
@@ -93,9 +101,7 @@ describe("POST /auth/resend-code", () => {
 
   it("responds 429 within the cooldown window", async () => {
     const { response, emailSender } = await post({
-      pendingRow: makePendingRow({
-        lastSentAt: new Date(Date.now() - 10_000),
-      }),
+      pendingRow: makePendingRow({ lastSentAt: new Date(Date.now() - 10_000) }),
     });
     expect(response.statusCode).toBe(429);
     expect(response.json()).toEqual({
@@ -117,7 +123,7 @@ describe("POST /auth/resend-code", () => {
   });
 
   it("responds 503 without re-setting the cookie when delivery fails", async () => {
-    const { response } = await post({
+    const { response, authRepository } = await post({
       pendingRow: makePendingRow(),
       emailSender: {
         send: vi.fn().mockRejectedValue(new Error("provider down")),
@@ -129,5 +135,11 @@ describe("POST /auth/resend-code", () => {
         "We could not send the confirmation email right now. Please try again shortly.",
     });
     expect(response.headers["set-cookie"]).toBeUndefined();
+    expect(authRepository.pendingSignups.get("user@example.com")).toMatchObject(
+      {
+        codeHash: "old-hash",
+        codeSendCount: 1,
+      },
+    );
   });
 });

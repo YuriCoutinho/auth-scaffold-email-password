@@ -1,6 +1,7 @@
 import { buildApp } from "./app.js";
 import { type Env, loadEnv } from "./config/env.js";
-import { db } from "./db/client.js";
+import { createDatabase } from "./db/client.js";
+import { createDrizzleAuthRepository } from "./db/drizzle-auth-repository.js";
 import { createPwnedPasswordChecker } from "./lib/pwned-password.js";
 import { createEmailSender } from "./services/email/create-email-sender.js";
 
@@ -12,15 +13,19 @@ try {
   process.exit(1);
 }
 
+const database = createDatabase(env.DATABASE_URL);
 const checkPwnedPassword = createPwnedPasswordChecker({
   onError: (error) =>
     app.log.warn({ err: error }, "pwned password check failed open"),
 });
 const app = buildApp({
-  db,
+  authRepository: createDrizzleAuthRepository(database.db),
   emailSender: createEmailSender(env),
   checkPwnedPassword,
   enableDocsUi: env.NODE_ENV !== "production",
+});
+app.addHook("onClose", async () => {
+  await database.close();
 });
 
 function shutdown(signal: NodeJS.Signals): void {

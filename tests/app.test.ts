@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
-import { makeAppDeps } from "./helpers/app-deps.js";
+import { makeAppOptions } from "./helpers/app-options.js";
 
 describe("openapi", () => {
   it("documents POST /auth/signup request and responses", async () => {
-    const app = buildApp(makeAppDeps());
+    const app = buildApp(makeAppOptions());
     await app.ready();
     const spec = app.swagger();
     const operation = spec.paths?.["/auth/signup"]?.post;
@@ -15,8 +15,8 @@ describe("openapi", () => {
   });
 
   it("serves the docs UI only when enabled", async () => {
-    const enabled = buildApp(makeAppDeps({ enableDocsUi: true }));
-    const disabled = buildApp(makeAppDeps({ enableDocsUi: false }));
+    const enabled = buildApp(makeAppOptions({ enableDocsUi: true }));
+    const disabled = buildApp(makeAppOptions({ enableDocsUi: false }));
     expect(
       (await enabled.inject({ method: "GET", url: "/docs" })).statusCode,
     ).not.toBe(404);
