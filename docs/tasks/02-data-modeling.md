@@ -22,7 +22,7 @@ A separação em quatro tabelas responde a quatro perguntas diferentes: quem est
 
 * O schema Drizzle das quatro tabelas vive em `src/db/schema.ts`, e as migrations geradas ficam em `drizzle/`
 * Os utilitários de hash vivem em `src/lib/`, que guarda apenas funções puras: `password.ts` para Argon2 e `token-hash.ts` para SHA-256. Nenhum dos dois varia entre ambientes, então não há colaborador para injetar e eles não viram plugin
-* Nenhum outro módulo de `src/` fala com o banco diretamente. O acesso passa pela interface `AuthRepository`, definida em `src/plugins/app/auth/auth-repository.ts`, que ganha um adaptador Drizzle em `src/db/drizzle-auth-repository.ts` e um adaptador em memória em `tests/helpers/`. A interface cresce um endpoint por vez, cada um adicionando só os métodos de que precisa
+* Nenhum outro módulo de `src/` fala com o banco diretamente. O acesso passa pela interface `AuthRepository`, definida em `src/plugins/app/auth/repository.ts`, que ganha um adaptador Drizzle ao lado, em `src/plugins/app/auth/drizzle-repository.ts`, e um adaptador em memória em `tests/helpers/auth/in-memory-repository.ts`. Interface e adaptador ficam na pasta do domínio, e não em `db/`, porque o repositório é detalhe de quem o usa; `db/` só conhece schema e conexão. A interface cresce um endpoint por vez, cada um adicionando só os métodos de que precisa
 
 ### Tabela `pending_signups`
 

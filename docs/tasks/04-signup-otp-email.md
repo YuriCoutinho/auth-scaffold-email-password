@@ -28,12 +28,12 @@ interface EmailSender {
 * Sempre HTML e texto puro juntos, porque parte dos clientes de email não renderiza HTML e uma mensagem só com HTML também pontua pior em filtros de spam
 * O retorno traz o identificador da mensagem no provedor, que é o que permite rastrear uma entrega específica nos logs depois
 * Falhas de provedor sobem como um erro tipado próprio, `EmailProviderError`, carregando status e corpo da resposta, de modo que quem chama consiga logar o diagnóstico sem inspecionar detalhes de HTTP
-* A interface, o erro e os drivers vivem em `src/email/`, fora de `plugins/`, porque nada ali depende do Fastify. O que depende do Fastify é só o plugin `src/plugins/app/email-sender.ts`, que chama `createEmailSender(config)` e decora a instância, ou usa o remetente que veio por `AppOptions` quando um teste passa um
+* Tudo isso vive em `src/plugins/app/email/`, seguindo o `fastify/demo`, onde utilitário transversal escrito pelo projeto é um plugin em `plugins/app`. O `index.ts` é o plugin: chama `createEmailSender(config)` e decora `fastify.emailSender`, ou usa o remetente que veio por `AppOptions` quando um teste passa um. Os irmãos são a implementação: `sender.ts` com a interface e o erro, `create-sender.ts` com a escolha do driver, e `drivers/` com `fake.ts`, `mailpit.ts` e `resend.ts`. Como a pasta tem `index.ts`, o autoload carrega só ele e os irmãos não viram plugin
 
 ### O template
 
 * Função pura que recebe o código e o prazo de validade e devolve assunto, HTML e texto. Os drivers apenas transportam a mensagem e não sabem o que é um código de confirmação
-* O template fica em `src/plugins/app/auth/signup-email.ts`, ao lado do service que o usa, e não em `src/email/`. Ele é conhecimento do fluxo de cadastro, e a pasta de email só conhece transporte
+* O template fica em `src/plugins/app/auth/emails/signup-code.ts`, dentro do domínio que o usa, e não em `plugins/app/email/`. Ele é conhecimento do fluxo de cadastro, e o plugin de email só conhece transporte. A subpasta `emails/` existe para que o próximo template do domínio tenha onde nascer
 * Assunto traz o código, porque muita gente lê e digita direto da lista de mensagens sem abrir o email
 * Corpo com o código em destaque, o prazo de validade e a frase avisando que quem não pediu pode ignorar, que é o que permite a pessoa perceber uso indevido do seu email
 * HTML de uma coluna, com CSS inline, sem imagens e sem links. Cliente de email ignora folha de estilo externa, e mensagem de autenticação sem link é imune a virar treino de phishing
