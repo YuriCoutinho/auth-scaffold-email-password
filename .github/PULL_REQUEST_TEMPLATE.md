@@ -1,6 +1,27 @@
 ## Resumo
 
-<!-- O que esta PR entrega e por quê. Apontar o documento da task em `docs/tasks/NN-slug.md`. Índice: docs/tasks/README.md -->
+**Entrega**
+<!-- O que esta PR faz, em uma frase. Se forem várias coisas, uma linha por coisa. -->
+
+-
+
+**Motivação**
+<!-- O problema que isso resolve, ou o que destrava. Por que agora. -->
+
+-
+
+**Decisões**
+<!-- Escolhas que o revisor precisa validar, com a alternativa descartada e o porquê. "Nenhuma" quando o caminho era óbvio. -->
+
+-
+
+**Fora do escopo**
+<!-- O que foi deliberadamente deixado de fora, para o review não cobrar. "Nada" quando não se aplica. -->
+
+-
+
+**Documento da task**
+<!-- docs/tasks/NN-slug.md  (índice em docs/tasks/README.md). "Não se aplica" quando a mudança não vem de uma task. -->
 
 -
 
@@ -13,9 +34,3 @@
 - [ ] `pnpm test`
 - [ ] `pnpm build`
 - [ ] Verificação manual (descrever):
-
-## Notas da revisão
-
-<!-- Achados não bloqueantes, dívidas assumidas e o que fica para próximas tasks. "Nenhuma" se vazio. -->
-
--
