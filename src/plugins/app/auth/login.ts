@@ -5,7 +5,7 @@ import {
   SESSION_TTL_SECONDS,
 } from "../../../lib/session.js";
 import { hashSessionToken } from "../../../lib/token-hash.js";
-import type { AuthRepository } from "./auth-repository.js";
+import type { AuthRepository } from "./repository.js";
 
 export type LoginResult =
   | {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../../../src/app.js";
 import { hashOtpCode, hashSessionToken } from "../../../src/lib/token-hash.js";
-import type { PendingSignupRecord } from "../../../src/plugins/app/auth/auth-repository.js";
+import type { PendingSignupRecord } from "../../../src/plugins/app/auth/repository.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../helpers/in-memory-auth-repository.js";
 

@@ -7,7 +7,7 @@ import type {
   PendingSignupResendState,
   PromotePendingSignupInput,
   UpsertPendingSignupInput,
-} from "../../src/plugins/app/auth/auth-repository.js";
+} from "../../src/plugins/app/auth/repository.js";
 
 export interface InMemorySeed {
   authUsers?: Array<{

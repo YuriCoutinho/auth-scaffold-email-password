@@ -1,6 +1,6 @@
 import { describe, expect, it, type Mock, vi } from "vitest";
 import { buildApp } from "../../../src/app.js";
-import type { PendingSignupRecord } from "../../../src/plugins/app/auth/auth-repository.js";
+import type { PendingSignupRecord } from "../../../src/plugins/app/auth/repository.js";
 import type { EmailSender } from "../../../src/plugins/app/email/sender.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../helpers/in-memory-auth-repository.js";

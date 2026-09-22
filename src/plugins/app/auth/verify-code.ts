@@ -4,7 +4,7 @@ import {
   SESSION_TTL_SECONDS,
 } from "../../../lib/session.js";
 import { hashOtpCode, hashSessionToken } from "../../../lib/token-hash.js";
-import type { AuthRepository } from "./auth-repository.js";
+import type { AuthRepository } from "./repository.js";
 
 export const MAX_CODE_ATTEMPTS = 5;
 

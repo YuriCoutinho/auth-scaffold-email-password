@@ -1,8 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import type { AppOptions } from "../../../app-options.js";
-import { createDrizzleAuthRepository } from "../../../db/drizzle-auth-repository.js";
 import { type Auth, createAuth } from "./create-auth.js";
+import { createDrizzleAuthRepository } from "./drizzle-repository.js";
 
 declare module "fastify" {
   interface FastifyInstance {

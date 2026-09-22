@@ -1,13 +1,18 @@
 import { eq, sql } from "drizzle-orm";
+import type { Database } from "../../../db/client.js";
+import {
+  authUsers,
+  pendingSignups,
+  profiles,
+  sessions,
+} from "../../../db/schema.js";
 import type {
   AuthRepository,
   CreateSessionInput,
   PendingSignupResendState,
   PromotePendingSignupInput,
   UpsertPendingSignupInput,
-} from "../plugins/app/auth/auth-repository.js";
-import type { Database } from "./client.js";
-import { authUsers, pendingSignups, profiles, sessions } from "./schema.js";
+} from "./repository.js";
 
 const pendingSignupColumns = {
   id: pendingSignups.id,

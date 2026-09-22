@@ -2,9 +2,9 @@ import type { FastifyBaseLogger } from "fastify";
 import { generateOtpCode } from "../../../lib/otp.js";
 import { hashOtpCode } from "../../../lib/token-hash.js";
 import { EmailProviderError, type EmailSender } from "../email/sender.js";
-import type { AuthRepository } from "./auth-repository.js";
+import { renderSignupCodeEmail } from "./emails/signup-code.js";
+import type { AuthRepository } from "./repository.js";
 import { SIGNUP_TTL_SECONDS } from "./signup.js";
-import { renderSignupCodeEmail } from "./signup-email.js";
 
 export const RESEND_COOLDOWN_SECONDS = 60;
 export const MAX_CODE_SEND_COUNT = 5;

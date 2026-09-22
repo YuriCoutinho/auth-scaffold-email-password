@@ -5,8 +5,8 @@ import { generateSignupSessionToken } from "../../../lib/session.js";
 import { hashOtpCode } from "../../../lib/token-hash.js";
 import { EmailProviderError, type EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password.js";
-import type { AuthRepository } from "./auth-repository.js";
-import { renderSignupCodeEmail } from "./signup-email.js";
+import { renderSignupCodeEmail } from "./emails/signup-code.js";
+import type { AuthRepository } from "./repository.js";
 
 export const SIGNUP_TTL_SECONDS = 15 * 60;
 
