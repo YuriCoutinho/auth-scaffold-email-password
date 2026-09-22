@@ -55,7 +55,8 @@ Dependências entram por `buildApp(deps)`, então teste nenhum precisa de banco 
 
 ## Commits
 
-* Conventional Commit em inglês, com escopo, e **apenas o título**. Body e footer sempre vazios
+* Conventional Commit em inglês, com escopo, e **apenas o título**. Body e footer vazios em todo commit que você escrever
+* A exceção não é sua: o commit de squash gerado na `main` ao mergear uma PR recebe, no body, a lista dos commits dela. Isso é o GitHub montando a mensagem, é intencional, e não muda a regra acima
 * **Nunca** inclua trailer `Co-authored-by` nem qualquer assinatura de agente ou ferramenta
 * Ao dar stage, prefira arquivos específicos a `git add -A`
 
