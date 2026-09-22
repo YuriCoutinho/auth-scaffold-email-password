@@ -10,5 +10,6 @@ docs/superpowers/plans/
 # Build
 dist/
 
-# Local-only Claude instructions
+# Instruções locais de agente. Um CLAUDE.local.md desliga a leitura do AGENTS.md.
+CLAUDE.local.md
 CLAUDE.md
