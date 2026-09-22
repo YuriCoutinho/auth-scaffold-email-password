@@ -1,16 +1,16 @@
 import type { FastifyBaseLogger } from "fastify";
 import { generateOtpCode } from "../../../lib/otp.js";
+import { SIGNUP_TTL_SECONDS } from "../../../lib/session.js";
 import { hashOtpCode } from "../../../lib/token-hash.js";
-import { EmailProviderError, type EmailSender } from "../email/sender.js";
-import { renderSignupCodeEmail } from "./emails/signup-code.js";
+import type { EmailSender } from "../email/sender.js";
 import type { AuthRepository } from "./repository.js";
-import { SIGNUP_TTL_SECONDS } from "./signup.js";
+import { sendSignupCode } from "./send-signup-code.js";
 
 export const RESEND_COOLDOWN_SECONDS = 60;
 export const MAX_CODE_SEND_COUNT = 5;
 
 export type ResendCodeResult =
-  | { outcome: "sent" }
+  | { outcome: "sent"; sessionToken: string }
   | { outcome: "invalid-session" }
   | { outcome: "cooldown" }
   | { outcome: "limit-reached" }
@@ -48,8 +48,8 @@ export function createResendCodeService(deps: ResendCodeServiceDeps) {
         return { outcome: "limit-reached" };
       }
 
-      // code_send_count = 0 means no email was delivered for the current
-      // code (compensated failure), so no cooldown applies.
+      // An undelivered code (see AuthRepository.markPendingSignupUndelivered)
+      // owes no cooldown.
       const withinCooldown =
         pending.codeSendCount > 0 &&
         currentTime.getTime() - pending.lastSentAt.getTime() <
@@ -75,29 +75,11 @@ export function createResendCodeService(deps: ResendCodeServiceDeps) {
         codeSendCount: pending.codeSendCount + 1,
       });
 
-      try {
-        const { providerMessageId } = await deps.emailSender.send({
-          to: pending.email,
-          ...renderSignupCodeEmail({
-            code,
-            ttlMinutes: SIGNUP_TTL_SECONDS / 60,
-          }),
-        });
-        deps.log?.info(
-          { pendingSignupId: pending.id, providerMessageId },
-          "signup code email resent",
-        );
-      } catch (error) {
-        deps.log?.error(
-          error instanceof EmailProviderError
-            ? {
-                err: error,
-                providerStatus: error.status,
-                providerBody: error.body,
-              }
-            : { err: error },
-          "signup code email resend failed",
-        );
+      const delivered = await sendSignupCode(
+        { emailSender: deps.emailSender, log: deps.log },
+        { to: pending.email, code, pendingSignupId: pending.id },
+      );
+      if (!delivered) {
         // Failed delivery must not consume quota nor start a cooldown; the
         // previous code becomes valid again. Restore is best-effort.
         try {
@@ -114,7 +96,7 @@ export function createResendCodeService(deps: ResendCodeServiceDeps) {
         return { outcome: "email-unavailable" };
       }
 
-      return { outcome: "sent" };
+      return { outcome: "sent", sessionToken };
     },
   };
 }

@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
-import { SESSION_TTL_SECONDS } from "../../lib/session.js";
+import { SESSION_COOKIE } from "../../lib/cookies.js";
 import {
   loginBodySchema,
   loginResponseSchema,
@@ -38,13 +38,11 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         return reply.code(401).send({ message: "Invalid credentials." });
       }
 
-      reply.setCookie("session", result.sessionToken, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "strict",
-        path: "/",
-        maxAge: SESSION_TTL_SECONDS,
-      });
+      reply.setCookie(
+        SESSION_COOKIE.name,
+        result.sessionToken,
+        SESSION_COOKIE.options,
+      );
       return reply.code(200).send({ user: result.user });
     },
   );

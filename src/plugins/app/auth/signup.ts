@@ -1,14 +1,15 @@
 import type { FastifyBaseLogger } from "fastify";
 import { generateOtpCode } from "../../../lib/otp.js";
 import { hashPassword } from "../../../lib/password.js";
-import { generateSignupSessionToken } from "../../../lib/session.js";
+import {
+  generateSignupSessionToken,
+  SIGNUP_TTL_SECONDS,
+} from "../../../lib/session.js";
 import { hashOtpCode } from "../../../lib/token-hash.js";
-import { EmailProviderError, type EmailSender } from "../email/sender.js";
+import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password.js";
-import { renderSignupCodeEmail } from "./emails/signup-code.js";
 import type { AuthRepository } from "./repository.js";
-
-export const SIGNUP_TTL_SECONDS = 15 * 60;
+import { sendSignupCode } from "./send-signup-code.js";
 
 export type SignupResult =
   | { outcome: "accepted"; sessionToken: string }
@@ -21,7 +22,7 @@ interface SignupServiceDeps {
     | "findAuthUserByEmail"
     | "findPendingSignupByEmail"
     | "upsertPendingSignup"
-    | "resetPendingSignupSendState"
+    | "markPendingSignupUndelivered"
   >;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
@@ -70,36 +71,18 @@ export function createSignupService(deps: SignupServiceDeps) {
         now: currentTime,
       });
 
-      try {
-        const { providerMessageId } = await deps.emailSender.send({
-          to: email,
-          ...renderSignupCodeEmail({
-            code,
-            ttlMinutes: SIGNUP_TTL_SECONDS / 60,
-          }),
-        });
-        deps.log?.info(
-          { pendingSignupId, providerMessageId },
-          "signup code email sent",
-        );
-      } catch (error) {
-        deps.log?.error(
-          error instanceof EmailProviderError
-            ? {
-                err: error,
-                providerStatus: error.status,
-                providerBody: error.body,
-              }
-            : { err: error },
-          "signup code email delivery failed",
-        );
-        // Failed delivery must not consume resend quota; reset is best-effort.
+      const delivered = await sendSignupCode(
+        { emailSender: deps.emailSender, log: deps.log },
+        { to: email, code, pendingSignupId },
+      );
+      if (!delivered) {
+        // Failed delivery must not consume resend quota; the mark is best-effort.
         try {
-          await deps.repo.resetPendingSignupSendState(email);
-        } catch (resetError) {
+          await deps.repo.markPendingSignupUndelivered(email);
+        } catch (markError) {
           deps.log?.warn(
-            { err: resetError },
-            "failed to reset pending signup send state",
+            { err: markError },
+            "failed to mark pending signup as undelivered",
           );
         }
         return { outcome: "email-unavailable" };

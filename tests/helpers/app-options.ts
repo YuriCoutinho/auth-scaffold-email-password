@@ -1,6 +1,7 @@
 import { vi } from "vitest";
 import type { AppOptions } from "../../src/app-options.js";
 import type { Env } from "../../src/config/env.js";
+import { FakeEmailSender } from "../../src/plugins/app/email/drivers/fake.js";
 import { createInMemoryAuthRepository } from "./auth/in-memory-repository.js";
 
 // Never reaches a server: postgres.js only connects on the first query.
@@ -17,9 +18,7 @@ export function makeAppOptions(
   return {
     config: TEST_ENV,
     authRepository: createInMemoryAuthRepository(),
-    emailSender: {
-      send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
-    },
+    emailSender: new FakeEmailSender(),
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
     ...overrides,
   };

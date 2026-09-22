@@ -65,6 +65,6 @@ O projeto segue a arquitetura de plugins do Fastify: `src/app.ts` carrega três 
 - `src/routes` — rotas HTTP, com prefixo pelo nome da pasta (`routes/auth/login.ts` vira `/auth/login`)
 - `src/schemas` — schemas Zod compartilhados pelas rotas
 - `src/db` — schema Drizzle e fábrica de conexão
-- `src/lib` — funções puras (hash, tokens, código)
+- `src/lib` — funções puras e constantes (hash, tokens, código, TTLs, política dos cookies)
 - `src/config` — configuração validada de ambiente (Zod, fail-fast)
 - `tests` — espelha `src/`, mais `tests/helpers` com as opções de teste e o repositório em memória

@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
-import { SIGNUP_TTL_SECONDS } from "../../plugins/app/auth/signup.js";
+import { SIGNUP_SESSION_COOKIE } from "../../lib/cookies.js";
 import { messageSchema, signupBodySchema } from "../../schemas/auth.js";
 
 const routes: FastifyPluginAsyncZod = async (app) => {
@@ -41,13 +41,11 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         });
       }
 
-      reply.setCookie("signup_session", result.sessionToken, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "strict",
-        path: "/auth",
-        maxAge: SIGNUP_TTL_SECONDS,
-      });
+      reply.setCookie(
+        SIGNUP_SESSION_COOKIE.name,
+        result.sessionToken,
+        SIGNUP_SESSION_COOKIE.options,
+      );
       return reply.code(202).send({
         message: "If the email is valid, we sent a confirmation code.",
       });

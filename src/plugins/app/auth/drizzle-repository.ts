@@ -79,9 +79,7 @@ export function createDrizzleAuthRepository(db: Database): AuthRepository {
       return rows[0] as { id: number };
     },
 
-    // codeSendCount = 0 means no email was delivered for the current code,
-    // so a future resend must treat it as free of cooldown/quota.
-    async resetPendingSignupSendState(email) {
+    async markPendingSignupUndelivered(email) {
       await db
         .update(pendingSignups)
         .set({ codeSendCount: 0 })

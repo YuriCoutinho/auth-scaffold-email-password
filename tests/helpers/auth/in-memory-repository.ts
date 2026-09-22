@@ -96,7 +96,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       return { id };
     },
 
-    async resetPendingSignupSendState(email) {
+    async markPendingSignupUndelivered(email) {
       const pending = pendingSignups.get(email);
       if (pending) {
         pending.codeSendCount = 0;

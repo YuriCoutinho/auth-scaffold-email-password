@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
-import { SESSION_TTL_SECONDS } from "../../lib/session.js";
+import { SESSION_COOKIE, SIGNUP_SESSION_COOKIE } from "../../lib/cookies.js";
 import { messageSchema, verifyCodeBodySchema } from "../../schemas/auth.js";
 
 const routes: FastifyPluginAsyncZod = async (app) => {
@@ -24,7 +24,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     async (request, reply) => {
       const deviceLabel = request.headers["user-agent"]?.slice(0, 256) ?? null;
       const result = await app.auth.verifyCode(
-        request.cookies.signup_session,
+        request.cookies[SIGNUP_SESSION_COOKIE.name],
         request.body.code,
         deviceLabel,
       );
@@ -33,14 +33,14 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         return reply.code(401).send({ message: "Invalid or expired code." });
       }
 
-      reply.clearCookie("signup_session", { path: "/auth" });
-      reply.setCookie("session", result.sessionToken, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "strict",
-        path: "/",
-        maxAge: SESSION_TTL_SECONDS,
+      reply.clearCookie(SIGNUP_SESSION_COOKIE.name, {
+        path: SIGNUP_SESSION_COOKIE.options.path,
       });
+      reply.setCookie(
+        SESSION_COOKIE.name,
+        result.sessionToken,
+        SESSION_COOKIE.options,
+      );
       return reply.code(200).send({
         message: "Email confirmed. You are now signed in.",
       });

@@ -1,5 +1,5 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
-import { SIGNUP_TTL_SECONDS } from "../../plugins/app/auth/signup.js";
+import { SIGNUP_SESSION_COOKIE } from "../../lib/cookies.js";
 import { messageSchema } from "../../schemas/auth.js";
 
 const routes: FastifyPluginAsyncZod = async (app) => {
@@ -22,8 +22,9 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request, reply) => {
-      const sessionToken = request.cookies.signup_session;
-      const result = await app.auth.resendCode(sessionToken);
+      const result = await app.auth.resendCode(
+        request.cookies[SIGNUP_SESSION_COOKIE.name],
+      );
 
       switch (result.outcome) {
         case "invalid-session":
@@ -44,26 +45,16 @@ const routes: FastifyPluginAsyncZod = async (app) => {
             message:
               "We could not send the confirmation email right now. Please try again shortly.",
           });
-        case "sent": {
-          // The service returns invalid-session for a missing token, so the
-          // token is guaranteed here; the guard keeps the type narrow.
-          if (!sessionToken) {
-            return reply
-              .code(401)
-              .send({ message: "Invalid or expired signup session." });
-          }
-          reply.setCookie("signup_session", sessionToken, {
-            httpOnly: true,
-            secure: true,
-            sameSite: "strict",
-            path: "/auth",
-            maxAge: SIGNUP_TTL_SECONDS,
-          });
+        case "sent":
+          reply.setCookie(
+            SIGNUP_SESSION_COOKIE.name,
+            result.sessionToken,
+            SIGNUP_SESSION_COOKIE.options,
+          );
           return reply.code(202).send({
             message:
               "If your signup is still pending, we sent a new confirmation code.",
           });
-        }
       }
     },
   );

@@ -1,10 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { verifyPassword } from "../../../../src/lib/password.js";
+import { SIGNUP_TTL_SECONDS } from "../../../../src/lib/session.js";
 import { hashOtpCode } from "../../../../src/lib/token-hash.js";
-import {
-  createSignupService,
-  SIGNUP_TTL_SECONDS,
-} from "../../../../src/plugins/app/auth/signup.js";
+import { createSignupService } from "../../../../src/plugins/app/auth/signup.js";
 
 const NOW = new Date("2026-09-20T12:00:00Z");
 const PASSWORD = "a perfectly fine passphrase";
@@ -15,7 +13,7 @@ function makeDeps() {
       findAuthUserByEmail: vi.fn().mockResolvedValue(undefined),
       findPendingSignupByEmail: vi.fn().mockResolvedValue(undefined),
       upsertPendingSignup: vi.fn().mockResolvedValue({ id: 1 }),
-      resetPendingSignupSendState: vi.fn().mockResolvedValue(undefined),
+      markPendingSignupUndelivered: vi.fn().mockResolvedValue(undefined),
     },
     emailSender: {
       send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
@@ -138,7 +136,7 @@ describe("signup service", () => {
     expect(upsertOrder).toBeLessThan(emailOrder);
   });
 
-  it("returns email-unavailable and resets send state when delivery fails", async () => {
+  it("returns email-unavailable and marks the signup undelivered when delivery fails", async () => {
     const deps = makeDeps();
     deps.emailSender.send.mockRejectedValueOnce(new Error("smtp down"));
     const result = await createSignupService(deps).signup(
@@ -146,15 +144,15 @@ describe("signup service", () => {
       PASSWORD,
     );
     expect(result).toEqual({ outcome: "email-unavailable" });
-    expect(deps.repo.resetPendingSignupSendState).toHaveBeenCalledWith(
+    expect(deps.repo.markPendingSignupUndelivered).toHaveBeenCalledWith(
       "foo@gmail.com",
     );
   });
 
-  it("still returns email-unavailable when the reset itself fails", async () => {
+  it("still returns email-unavailable when the mark itself fails", async () => {
     const deps = makeDeps();
     deps.emailSender.send.mockRejectedValueOnce(new Error("smtp down"));
-    deps.repo.resetPendingSignupSendState.mockRejectedValueOnce(
+    deps.repo.markPendingSignupUndelivered.mockRejectedValueOnce(
       new Error("db down"),
     );
     await expect(

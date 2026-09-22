@@ -65,10 +65,10 @@ describe("in-memory auth repository", () => {
     );
   });
 
-  it("resets send state, updates resend state and increments attempts", async () => {
+  it("marks undelivered, updates resend state and increments attempts", async () => {
     const repo = createInMemoryAuthRepository();
     await repo.upsertPendingSignup(pendingInput());
-    await repo.resetPendingSignupSendState("user@example.com");
+    await repo.markPendingSignupUndelivered("user@example.com");
     expect(
       (await repo.findPendingSignupByEmail("user@example.com"))?.codeSendCount,
     ).toBe(0);

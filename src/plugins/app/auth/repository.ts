@@ -12,6 +12,8 @@ export interface PendingSignupRecord {
   signupSessionToken: string;
   codeAttempts: number;
   lastSentAt: Date;
+  // 0 means the current code was never delivered: the next resend owes no
+  // cooldown and does not count against the send cap.
   codeSendCount: number;
   expiresAt: Date;
 }
@@ -55,7 +57,7 @@ export interface AuthRepository {
     email: string,
   ): Promise<PendingSignupRecord | undefined>;
   upsertPendingSignup(input: UpsertPendingSignupInput): Promise<{ id: number }>;
-  resetPendingSignupSendState(email: string): Promise<void>;
+  markPendingSignupUndelivered(email: string): Promise<void>;
   findPendingSignupBySessionToken(
     token: string,
   ): Promise<PendingSignupRecord | undefined>;

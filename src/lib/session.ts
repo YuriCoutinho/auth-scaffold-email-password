@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 export const SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+export const SIGNUP_TTL_SECONDS = 15 * 60;
 
 export function generateSessionToken(): string {
   return randomBytes(32).toString("base64url");
