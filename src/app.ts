@@ -26,7 +26,7 @@ const appPlugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
   await load("routes");
 };
 
-export const app = fp(appPlugin);
+export const app = fp(appPlugin, { name: "app" });
 
 export function buildApp(opts: AppOptions): FastifyInstance {
   const instance = Fastify({
