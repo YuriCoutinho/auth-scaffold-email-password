@@ -1,57 +1,39 @@
-import cookie from "@fastify/cookie";
-import swagger from "@fastify/swagger";
-import swaggerUi from "@fastify/swagger-ui";
-import Fastify, { type FastifyInstance } from "fastify";
+import { join } from "node:path";
+import autoload from "@fastify/autoload";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyPluginAsync,
+} from "fastify";
+import fp from "fastify-plugin";
 import {
-  jsonSchemaTransform,
   serializerCompiler,
   validatorCompiler,
   type ZodTypeProvider,
 } from "fastify-type-provider-zod";
-import type { EmailSender } from "./email/email-sender.js";
-import type { CheckPwnedPassword } from "./lib/pwned-password.js";
-import type { AuthRepository } from "./plugins/app/auth/auth-repository.js";
-import { createAuth } from "./plugins/app/auth/create-auth.js";
-import { loginRoutes } from "./routes/auth/login.js";
-import { resendCodeRoutes } from "./routes/auth/resend-code.js";
-import { signupRoutes } from "./routes/auth/signup.js";
-import { verifyCodeRoutes } from "./routes/auth/verify-code.js";
-import { healthRoutes } from "./routes/health.js";
+import type { AppOptions } from "./app-options.js";
 
-export interface AppOptions {
-  authRepository: AuthRepository;
-  emailSender: EmailSender;
-  checkPwnedPassword: CheckPwnedPassword;
-  enableDocsUi?: boolean;
-}
+export type { AppOptions } from "./app-options.js";
+
+const appPlugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
+  const load = (dir: string) =>
+    fastify.register(autoload, {
+      dir: join(import.meta.dirname, dir),
+      options: opts,
+      forceESM: true,
+    });
+  await load("plugins/external");
+  await load("plugins/app");
+  await load("routes");
+};
+
+export const app = fp(appPlugin);
 
 export function buildApp(opts: AppOptions): FastifyInstance {
-  const app = Fastify({ logger: true }).withTypeProvider<ZodTypeProvider>();
-  app.setValidatorCompiler(validatorCompiler);
-  app.setSerializerCompiler(serializerCompiler);
-
-  app.register(cookie);
-  app.register(swagger, {
-    openapi: {
-      info: { title: "Auth Scaffold API", version: "0.1.0" },
-    },
-    transform: jsonSchemaTransform,
-  });
-  if (opts.enableDocsUi) {
-    app.register(swaggerUi, { routePrefix: "/docs" });
-  }
-  app.register(healthRoutes);
-
-  const auth = createAuth({
-    repository: opts.authRepository,
-    emailSender: opts.emailSender,
-    checkPwnedPassword: opts.checkPwnedPassword,
-    log: app.log,
-  });
-  app.register(signupRoutes, { auth });
-  app.register(resendCodeRoutes, { auth });
-  app.register(verifyCodeRoutes, { auth });
-  app.register(loginRoutes, { auth });
-
-  return app;
+  const instance = Fastify({
+    logger: true,
+  }).withTypeProvider<ZodTypeProvider>();
+  instance.setValidatorCompiler(validatorCompiler);
+  instance.setSerializerCompiler(serializerCompiler);
+  instance.register(app, opts);
+  return instance;
 }

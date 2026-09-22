@@ -1,23 +1,10 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
-import { z } from "zod";
 import { SESSION_TTL_SECONDS } from "../../lib/session.js";
-import type { Auth } from "../../plugins/app/auth/create-auth.js";
+import { messageSchema, verifyCodeBodySchema } from "../../schemas/auth.js";
 
-const verifyCodeBodySchema = z.object({
-  code: z.string().regex(/^\d{6}$/),
-});
-
-const messageSchema = z.object({ message: z.string() });
-
-export interface AuthRoutesOptions {
-  auth: Auth;
-}
-
-export const verifyCodeRoutes: FastifyPluginAsyncZod<
-  AuthRoutesOptions
-> = async (app, opts) => {
+const routes: FastifyPluginAsyncZod = async (app) => {
   app.post(
-    "/auth/verify-code",
+    "/verify-code",
     {
       schema: {
         tags: ["auth"],
@@ -36,7 +23,7 @@ export const verifyCodeRoutes: FastifyPluginAsyncZod<
     },
     async (request, reply) => {
       const deviceLabel = request.headers["user-agent"]?.slice(0, 256) ?? null;
-      const result = await opts.auth.verifyCode(
+      const result = await app.auth.verifyCode(
         request.cookies.signup_session,
         request.body.code,
         deviceLabel,
@@ -60,3 +47,5 @@ export const verifyCodeRoutes: FastifyPluginAsyncZod<
     },
   );
 };
+
+export default routes;

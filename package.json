@@ -32,12 +32,14 @@
     "vitest": "^5.0.1"
   },
   "dependencies": {
+    "@fastify/autoload": "^6.5.0",
     "@fastify/cookie": "^11.1.2",
     "@fastify/swagger": "^9.8.1",
     "@fastify/swagger-ui": "^6.1.1",
     "argon2": "^0.45.1",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.12.5",
+    "fastify-plugin": "^6.0.0",
     "fastify-type-provider-zod": "^7.0.0",
     "nodemailer": "^10.0.10",
     "postgres": "^3.4.9",

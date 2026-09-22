@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import type { AppOptions } from "../../src/app.js";
+import type { AppOptions } from "../../src/app-options.js";
 import { createInMemoryAuthRepository } from "./in-memory-auth-repository.js";
 
 export function makeAppOptions(
