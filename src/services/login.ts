@@ -1,7 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
-import { generateSessionToken } from "../lib/otp.js";
 import { DUMMY_PASSWORD_HASH, verifyPassword } from "../lib/password.js";
-import { SESSION_TTL_SECONDS } from "../lib/session.js";
+import { generateSessionToken, SESSION_TTL_SECONDS } from "../lib/session.js";
 import { hashSessionToken } from "../lib/token-hash.js";
 import type { AuthRepository } from "../plugins/app/auth/auth-repository.js";
 

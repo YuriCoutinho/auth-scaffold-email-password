@@ -1,6 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import { generateSessionToken } from "../lib/otp.js";
-import { SESSION_TTL_SECONDS } from "../lib/session.js";
+import { generateSessionToken, SESSION_TTL_SECONDS } from "../lib/session.js";
 import { hashOtpCode, hashSessionToken } from "../lib/token-hash.js";
 import type { AuthRepository } from "../plugins/app/auth/auth-repository.js";
 
