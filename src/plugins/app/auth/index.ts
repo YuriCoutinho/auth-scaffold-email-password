@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import type { AppOptions } from "../../../app-options.js";
+import { createDrizzleAuthRepository } from "../../../db/drizzle-auth-repository.js";
 import { type Auth, createAuth } from "./create-auth.js";
 
 declare module "fastify" {
@@ -13,12 +14,16 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
   fastify.decorate(
     "auth",
     createAuth({
-      repository: opts.authRepository,
-      emailSender: opts.emailSender,
+      repository:
+        opts.authRepository ?? createDrizzleAuthRepository(fastify.db),
+      emailSender: fastify.emailSender,
       checkPwnedPassword: fastify.checkPwnedPassword,
       log: fastify.log,
     }),
   );
 };
 
-export default fp(plugin, { name: "auth", dependencies: ["pwned-password"] });
+export default fp(plugin, {
+  name: "auth",
+  dependencies: ["database", "email-sender", "pwned-password"],
+});

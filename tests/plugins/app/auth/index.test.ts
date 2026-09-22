@@ -1,6 +1,8 @@
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import authPlugin from "../../../../src/plugins/app/auth/index.js";
+import databasePlugin from "../../../../src/plugins/app/database.js";
+import emailSenderPlugin from "../../../../src/plugins/app/email-sender.js";
 import pwnedPasswordPlugin from "../../../../src/plugins/app/pwned-password.js";
 import { makeAppOptions } from "../../../helpers/app-options.js";
 
@@ -8,6 +10,8 @@ describe("auth plugin", () => {
   it("decorates fastify.auth built from the app options", async () => {
     const opts = makeAppOptions();
     const app = Fastify();
+    await app.register(databasePlugin, opts);
+    await app.register(emailSenderPlugin, opts);
     await app.register(pwnedPasswordPlugin, opts);
     await app.register(authPlugin, opts);
     await app.ready();

@@ -4,7 +4,7 @@ import fp from "fastify-plugin";
 import type { AppOptions } from "../../app-options.js";
 
 const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
-  if (!opts.enableDocsUi) {
+  if (opts.config.NODE_ENV === "production") {
     return;
   }
   await fastify.register(swaggerUi, { routePrefix: "/docs" });

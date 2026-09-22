@@ -1,8 +1,5 @@
 import { buildApp } from "./app.js";
 import { type Env, loadEnv } from "./config/env.js";
-import { createDatabase } from "./db/client.js";
-import { createDrizzleAuthRepository } from "./db/drizzle-auth-repository.js";
-import { createEmailSender } from "./email/create-email-sender.js";
 
 let env: Env;
 try {
@@ -12,15 +9,7 @@ try {
   process.exit(1);
 }
 
-const database = createDatabase(env.DATABASE_URL);
-const app = buildApp({
-  authRepository: createDrizzleAuthRepository(database.db),
-  emailSender: createEmailSender(env),
-  enableDocsUi: env.NODE_ENV !== "production",
-});
-app.addHook("onClose", async () => {
-  await database.close();
-});
+const app = buildApp({ config: env });
 
 function shutdown(signal: NodeJS.Signals): void {
   app.log.info(`${signal} received, shutting down`);

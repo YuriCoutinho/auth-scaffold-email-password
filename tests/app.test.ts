@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
-import { makeAppOptions } from "./helpers/app-options.js";
+import { makeAppOptions, TEST_ENV } from "./helpers/app-options.js";
 
 describe("openapi", () => {
   it("documents POST /auth/signup request and responses", async () => {
@@ -14,9 +14,11 @@ describe("openapi", () => {
     await app.close();
   });
 
-  it("serves the docs UI only when enabled", async () => {
-    const enabled = buildApp(makeAppOptions({ enableDocsUi: true }));
-    const disabled = buildApp(makeAppOptions({ enableDocsUi: false }));
+  it("serves the docs UI outside production only", async () => {
+    const enabled = buildApp(makeAppOptions());
+    const disabled = buildApp(
+      makeAppOptions({ config: { ...TEST_ENV, NODE_ENV: "production" } }),
+    );
     expect(
       (await enabled.inject({ method: "GET", url: "/docs" })).statusCode,
     ).not.toBe(404);
