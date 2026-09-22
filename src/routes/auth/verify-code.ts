@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { SESSION_COOKIE, SIGNUP_SESSION_COOKIE } from "../../lib/cookies.js";
+import { deviceLabelFromUserAgent } from "../../lib/device-label.js";
 import { messageSchema, verifyCodeBodySchema } from "../../schemas/auth.js";
 
 const routes: FastifyPluginAsyncZod = async (app) => {
@@ -22,7 +23,9 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request, reply) => {
-      const deviceLabel = request.headers["user-agent"]?.slice(0, 256) ?? null;
+      const deviceLabel = deviceLabelFromUserAgent(
+        request.headers["user-agent"],
+      );
       const result = await app.auth.verifyCode(
         request.cookies[SIGNUP_SESSION_COOKIE.name],
         request.body.code,

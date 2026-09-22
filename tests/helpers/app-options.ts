@@ -17,6 +17,7 @@ export function makeAppOptions(
 ): AppOptions {
   return {
     config: TEST_ENV,
+    logger: false,
     authRepository: createInMemoryAuthRepository(),
     emailSender: new FakeEmailSender(),
     checkPwnedPassword: vi.fn().mockResolvedValue(false),

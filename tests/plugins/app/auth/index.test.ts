@@ -4,7 +4,7 @@ import type { AppOptions } from "../../../../src/app-options.js";
 import authPlugin from "../../../../src/plugins/app/auth/index.js";
 import databasePlugin from "../../../../src/plugins/app/database.js";
 import emailSenderPlugin from "../../../../src/plugins/app/email/index.js";
-import pwnedPasswordPlugin from "../../../../src/plugins/app/pwned-password.js";
+import pwnedPasswordPlugin from "../../../../src/plugins/app/pwned-password/index.js";
 import { makeAppOptions, TEST_ENV } from "../../../helpers/app-options.js";
 
 describe("auth plugin", () => {

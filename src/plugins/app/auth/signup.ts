@@ -7,7 +7,7 @@ import {
 } from "../../../lib/session.js";
 import { hashOtpCode } from "../../../lib/token-hash.js";
 import type { EmailSender } from "../email/sender.js";
-import type { CheckPwnedPassword } from "../pwned-password.js";
+import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import type { AuthRepository } from "./repository.js";
 import { sendSignupCode } from "./send-signup-code.js";
 

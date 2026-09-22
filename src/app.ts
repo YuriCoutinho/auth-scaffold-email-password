@@ -30,7 +30,7 @@ export const app = fp(appPlugin, { name: "app" });
 
 export function buildApp(opts: AppOptions): FastifyInstance {
   const instance = Fastify({
-    logger: true,
+    logger: opts.logger ?? true,
   }).withTypeProvider<ZodTypeProvider>();
   instance.setValidatorCompiler(validatorCompiler);
   instance.setSerializerCompiler(serializerCompiler);
