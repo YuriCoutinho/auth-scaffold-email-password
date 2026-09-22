@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
+import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
-import { createPwnedPasswordChecker } from "../../src/lib/pwned-password.js";
+import pwnedPasswordPlugin, {
+  createPwnedPasswordChecker,
+} from "../../../src/plugins/app/pwned-password.js";
 
 const PASSWORD = "correct horse battery staple";
 const DIGEST = createHash("sha1").update(PASSWORD).digest("hex").toUpperCase();
@@ -46,5 +49,29 @@ describe("createPwnedPasswordChecker", () => {
   it("fails open on non-2xx responses", async () => {
     const check = createPwnedPasswordChecker({ fetchFn: fakeFetch("", false) });
     expect(await check(PASSWORD)).toBe(false);
+  });
+});
+
+describe("pwned-password plugin", () => {
+  it("uses the checker from the options when given", async () => {
+    const checkPwnedPassword = vi.fn().mockResolvedValue(true);
+    const app = Fastify();
+    await app.register(pwnedPasswordPlugin, { checkPwnedPassword });
+    await app.ready();
+    expect(await app.checkPwnedPassword("x")).toBe(true);
+    expect(checkPwnedPassword).toHaveBeenCalledWith("x");
+    await app.close();
+  });
+
+  it("builds a fail-open checker that logs through fastify.log otherwise", async () => {
+    const app = Fastify();
+    const warn = vi.spyOn(app.log, "warn").mockImplementation(() => undefined);
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    await app.register(pwnedPasswordPlugin, {});
+    await app.ready();
+    expect(await app.checkPwnedPassword("x")).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+    await app.close();
   });
 });

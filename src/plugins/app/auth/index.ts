@@ -15,10 +15,10 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
     createAuth({
       repository: opts.authRepository,
       emailSender: opts.emailSender,
-      checkPwnedPassword: opts.checkPwnedPassword,
+      checkPwnedPassword: fastify.checkPwnedPassword,
       log: fastify.log,
     }),
   );
 };
 
-export default fp(plugin, { name: "auth" });
+export default fp(plugin, { name: "auth", dependencies: ["pwned-password"] });

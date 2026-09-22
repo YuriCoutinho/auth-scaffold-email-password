@@ -3,7 +3,6 @@ import { type Env, loadEnv } from "./config/env.js";
 import { createDatabase } from "./db/client.js";
 import { createDrizzleAuthRepository } from "./db/drizzle-auth-repository.js";
 import { createEmailSender } from "./email/create-email-sender.js";
-import { createPwnedPasswordChecker } from "./lib/pwned-password.js";
 
 let env: Env;
 try {
@@ -14,14 +13,9 @@ try {
 }
 
 const database = createDatabase(env.DATABASE_URL);
-const checkPwnedPassword = createPwnedPasswordChecker({
-  onError: (error) =>
-    app.log.warn({ err: error }, "pwned password check failed open"),
-});
 const app = buildApp({
   authRepository: createDrizzleAuthRepository(database.db),
   emailSender: createEmailSender(env),
-  checkPwnedPassword,
   enableDocsUi: env.NODE_ENV !== "production",
 });
 app.addHook("onClose", async () => {

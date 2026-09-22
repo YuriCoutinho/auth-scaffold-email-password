@@ -1,12 +1,14 @@
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import authPlugin from "../../../../src/plugins/app/auth/index.js";
+import pwnedPasswordPlugin from "../../../../src/plugins/app/pwned-password.js";
 import { makeAppOptions } from "../../../helpers/app-options.js";
 
 describe("auth plugin", () => {
   it("decorates fastify.auth built from the app options", async () => {
     const opts = makeAppOptions();
     const app = Fastify();
+    await app.register(pwnedPasswordPlugin, opts);
     await app.register(authPlugin, opts);
     await app.ready();
 
