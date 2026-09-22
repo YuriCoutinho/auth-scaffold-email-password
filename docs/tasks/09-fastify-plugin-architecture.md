@@ -18,9 +18,15 @@ A interface `AuthRepository` passa a ser o ponto de substituição entre produç
 
 O adaptador Drizzle fica sem teste próprio até o projeto adotar testes de integração. Escrever um falso do ORM para testar o adaptador que usa esse mesmo ORM é o mesmo problema de acoplamento em outro lugar, só que descido um nível. A lacuna fica registrada aqui em vez de virar débito escondido.
 
-### `buildApp` não sabe de banco
+### O ponto de entrada só liga e desliga
 
-`server.ts` é quem cria o pool de conexões, o `Database` e o repositório Drizzle, e passa o repositório pronto por `AppOptions` para `buildApp(opts)`. Não existe um plugin `db` decorando `fastify.db`, porque o único consumidor dele seria o próprio repositório, e isso seria uma costura hipotética para um adaptador só. O hook `onClose` que fecha o pool também é registrado em `server.ts`, perto de onde o pool nasceu.
+`server.ts` faz quatro coisas, como o `server.ts` do `fastify/demo`: carrega o ambiente validado, cria a instância com `buildApp({ config })`, arma o desligamento com `close-with-grace`, e chama `ready` e `listen`. Banco, repositório e remetente de email não aparecem ali.
+
+O plugin `plugins/app/database.ts` é dono do ciclo de vida da conexão, no mesmo formato do `knex.ts` do demo: cria o `Database` a partir de `config.DATABASE_URL`, decora `fastify.db` e registra o `onClose` que fecha o pool. O plugin `email-sender.ts` decora `fastify.emailSender` a partir do driver configurado. O plugin `auth` monta o repositório Drizzle sobre `fastify.db` quando nenhum adaptador vem por opção, que é o caso de produção.
+
+O desligamento usa `close-with-grace`, que o demo e o `fastify start` também usam, porque a versão feita à mão com `process.once` não tinha timeout: um pool travado no `close` deixaria o processo pendurado para sempre. Com ESM em Node 24, o arquivo usa `await` no nível superior, então um ambiente inválido lançado por `loadEnv()` encerra o processo com código 1 e a mensagem do Zod, sem `try` nem `process.exit` explícitos.
+
+Nos testes, o plugin de banco cria um cliente postgres.js com a URL do `config` de teste e nunca conecta, porque o cliente só abre conexão na primeira query. Isso evita um condicional escondido no plugin para pular o banco quando um repositório falso é passado.
 
 ### `config/env.ts` sem mudança
 
@@ -62,14 +68,14 @@ O autoload usa o nome da pasta como prefixo de rota por padrão. Por isso `route
 
 ```ts
 export interface AppOptions {
-  authRepository: AuthRepository;
-  emailSender: EmailSender;
+  config: Env;
+  authRepository?: AuthRepository;
+  emailSender?: EmailSender;
   checkPwnedPassword?: CheckPwnedPassword;
-  enableDocsUi?: boolean;
 }
 ```
 
-`authRepository` e `emailSender` são obrigatórios porque todo ambiente, produção ou teste, precisa de um adaptador concreto para os dois. `checkPwnedPassword` é opcional porque o plugin `pwned-password` já sabe montar sua própria implementação padrão quando a opção não vem, e só os testes precisam substituí-la. `enableDocsUi` controla se o Swagger UI é registrado, e fica de fora por padrão porque expor a documentação interativa é uma escolha de ambiente, não um requisito de toda instância da aplicação.
+`config` é o ambiente validado pelo Zod e é o único campo obrigatório: o autoload repassa as opções a todo plugin, então cada um lê dali o que precisa, sem um plugin de configuração decorando a instância. Os três adaptadores são opcionais porque cada plugin sabe montar a própria implementação padrão a partir de `config`, e só os testes precisam substituí-los. O Swagger UI é registrado quando `NODE_ENV` não é `production`, decisão que fica dentro do próprio plugin `swagger-ui.ts`.
 
 ### Árvore alvo
 
@@ -77,7 +83,7 @@ export interface AppOptions {
 src/
   app.ts                       plugin `app` com três autoloads, e `buildApp(opts)`
   app-options.ts               interface AppOptions
-  server.ts                    loadEnv, pool, repositório, emailSender, listen, shutdown
+  server.ts                    loadEnv, buildApp, close-with-grace, listen
   config/env.ts                sem mudança
   db/
     schema.ts                  sem mudança
@@ -96,8 +102,10 @@ src/
     external/
       cookie.ts                export default cookie
       swagger.ts               export default swagger, com autoConfig
-      swagger-ui.ts            fp, registra swagger-ui só com enableDocsUi
+      swagger-ui.ts            fp, registra swagger-ui fora de production
     app/
+      database.ts              fp, decora fastify.db e fecha o pool no onClose
+      email-sender.ts          fp, decora fastify.emailSender
       pwned-password.ts        fp, decora fastify.checkPwnedPassword
       auth/
         index.ts               fp, decora fastify.auth
