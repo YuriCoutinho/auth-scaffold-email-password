@@ -1,6 +1,6 @@
 ## Resumo
 
-<!-- O que esta PR entrega e por quê. Referenciar a task: ENG-XX (`docs/tasks/ENG-XX.md`) -->
+<!-- O que esta PR entrega e por quê. Referenciar a task pelo identificador (ex.: ENG-54) e apontar o documento em `docs/tasks/NN-slug.md`. Índice: docs/tasks/README.md -->
 
 -
 
