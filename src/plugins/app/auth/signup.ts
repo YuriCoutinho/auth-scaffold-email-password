@@ -1,0 +1,96 @@
+import type { FastifyBaseLogger } from "fastify";
+import { generateOtpCode } from "../../../lib/otp.js";
+import { hashPassword } from "../../../lib/password.js";
+import {
+  generateSignupSessionToken,
+  SIGNUP_TTL_SECONDS,
+} from "../../../lib/session.js";
+import { hashOtpCode } from "../../../lib/token-hash.js";
+import type { EmailSender } from "../email/sender.js";
+import type { CheckPwnedPassword } from "../pwned-password.js";
+import type { AuthRepository } from "./repository.js";
+import { sendSignupCode } from "./send-signup-code.js";
+
+export type SignupResult =
+  | { outcome: "accepted"; sessionToken: string }
+  | { outcome: "pwned-password" }
+  | { outcome: "email-unavailable" };
+
+interface SignupServiceDeps {
+  repo: Pick<
+    AuthRepository,
+    | "findAuthUserByEmail"
+    | "findPendingSignupByEmail"
+    | "upsertPendingSignup"
+    | "markPendingSignupUndelivered"
+  >;
+  emailSender: EmailSender;
+  checkPwnedPassword: CheckPwnedPassword;
+  log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
+  now?: () => Date;
+}
+
+export function createSignupService(deps: SignupServiceDeps) {
+  const now = deps.now ?? (() => new Date());
+
+  return {
+    async signup(rawEmail: string, password: string): Promise<SignupResult> {
+      const email = rawEmail.trim().toLowerCase();
+
+      if (await deps.checkPwnedPassword(password)) {
+        return { outcome: "pwned-password" };
+      }
+
+      const currentTime = now();
+
+      if (await deps.repo.findAuthUserByEmail(email)) {
+        // Confirmed account: no code is generated or delivered, but the
+        // response (cookie included) must be indistinguishable.
+        return {
+          outcome: "accepted",
+          sessionToken: generateSignupSessionToken(),
+        };
+      }
+
+      const pending = await deps.repo.findPendingSignupByEmail(email);
+      if (pending && pending.expiresAt > currentTime) {
+        return {
+          outcome: "accepted",
+          sessionToken: pending.signupSessionToken,
+        };
+      }
+
+      const code = generateOtpCode();
+      const sessionToken = generateSignupSessionToken();
+      const { id: pendingSignupId } = await deps.repo.upsertPendingSignup({
+        email,
+        passwordHash: await hashPassword(password),
+        codeHash: hashOtpCode(code),
+        signupSessionToken: sessionToken,
+        expiresAt: new Date(currentTime.getTime() + SIGNUP_TTL_SECONDS * 1000),
+        now: currentTime,
+      });
+
+      const delivered = await sendSignupCode(
+        { emailSender: deps.emailSender, log: deps.log },
+        { to: email, code, pendingSignupId },
+      );
+      if (!delivered) {
+        // Failed delivery must not consume resend quota; the mark is best-effort.
+        try {
+          await deps.repo.markPendingSignupUndelivered(email);
+        } catch (markError) {
+          deps.log?.warn(
+            { err: markError },
+            "failed to mark pending signup as undelivered",
+          );
+        }
+        return { outcome: "email-unavailable" };
+      }
+
+      return { outcome: "accepted", sessionToken };
+    },
+  };
+}
+
+export type SignupService = ReturnType<typeof createSignupService>;

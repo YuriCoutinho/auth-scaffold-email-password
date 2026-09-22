@@ -32,7 +32,13 @@ O que fica de fora importa mais do que o que fica dentro.
 * Email normalizado com `trim` e lowercase antes da busca, do mesmo jeito que no cadastro
 * Exatamente uma verificação Argon2 por tentativa, sempre. Quando o email não existe, a verificação roda contra um hash pré-computado que nunca corresponde a senha nenhuma, e o resultado é descartado
 * Comparação sempre por `argon2.verify()`, que já é de tempo constante, nunca por igualdade direta
-* O hash pré-computado fica numa constante do módulo de senha, gerado uma vez com os mesmos parâmetros dos hashes reais, de modo que o custo bata
+* O hash pré-computado fica numa constante do módulo de senha, `DUMMY_PASSWORD_HASH` em `src/lib/password.ts`, gerado uma vez com os mesmos parâmetros dos hashes reais, de modo que o custo bata
+
+### Organização do código
+
+* Rota em `src/routes/auth/login.ts`, que extrai o `User-Agent`, chama `app.auth.login` e monta cookie e corpo. Service em `src/plugins/app/auth/login.ts`, dependendo apenas de `findAuthUserByEmail` e `createSession` da interface `AuthRepository`
+* Os geradores de token e a constante de tempo de vida da sessão vivem em `src/lib/session.ts`, compartilhados entre login e confirmação de cadastro. É isso que garante um único formato de sessão no sistema, em vez de dois fluxos com constantes que podem divergir
+* Os schemas de body e de resposta ficam em `src/schemas/auth.ts`, junto dos schemas dos outros endpoints de autenticação, para que a política de senha do cadastro e a do login estejam lado a lado e a diferença entre elas seja visível
 
 ### Resposta de erro única
 

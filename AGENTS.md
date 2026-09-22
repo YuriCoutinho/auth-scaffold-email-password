@@ -31,14 +31,30 @@ Postgres e Mailpit sobem com `docker compose up -d`. O Mailpit tem interface web
 
 ## Onde as coisas ficam
 
-* `src/routes/` guarda plugins Fastify, e a camada é fina: valida, chama o service, monta a resposta
-* `src/services/` guarda a regra de negócio, testável sem subir o Fastify
-* `src/db/` guarda schema Drizzle, client e repositórios
-* `src/lib/` guarda utilitários puros como hash, tokens e geração de código
-* `src/config/` guarda a validação de ambiente com Zod
-* `tests/` espelha a árvore de `src/`
+O projeto segue a arquitetura de plugins do Fastify, no formato do repositório oficial `fastify/demo`: `app.ts` é um plugin que carrega três pastas com `@fastify/autoload`, nesta ordem, e cada plugin declara sua posição com `fastify-plugin` (`name` e `dependencies`).
 
-Dependências entram por `buildApp(deps)`, então teste nenhum precisa de banco ou rede reais.
+O critério para decidir onde um arquivo novo entra:
+
+* Pacote de terceiro registrado na instância vai para `src/plugins/external/`, um arquivo por pacote
+* Código próprio que uma rota consome vai para `src/plugins/app/`. Plugin de um arquivo só fica na raiz da pasta. Plugin com implementação interna vira uma pasta com `index.ts`, e os arquivos irmãos são detalhes dele: o autoload carrega só o `index.ts` quando a pasta tem um, então os irmãos não viram plugin por acidente
+* Dentro de uma pasta de plugin, o nome do arquivo não repete o nome da pasta: `auth/repository.ts`, nunca `auth/auth-repository.ts`
+* Função pura sem colaborador para injetar vai para `src/lib/`. Se precisa de comportamento diferente em teste e em produção, é plugin
+* `src/db/` guarda só o schema Drizzle e a fábrica de conexão. Repositório é detalhe do domínio que o usa e mora na pasta do plugin dele
+
+O que existe hoje:
+
+* `src/plugins/external/`: cookie, swagger e swagger-ui
+* `src/plugins/app/database.ts` decora `fastify.db` e fecha o pool no `onClose`; `pwned-password.ts` decora `fastify.checkPwnedPassword`; `error-handler.ts` registra o `setErrorHandler` que responde 5xx com mensagem genérica e loga o erro
+* `src/plugins/app/email/` decora `fastify.emailSender` no `index.ts`. `sender.ts` tem a interface `EmailSender` e o `EmailProviderError`, `create-sender.ts` escolhe o driver pelo `config`, e `drivers/` tem fake, mailpit e resend
+* `src/plugins/app/auth/` decora `fastify.auth` no `index.ts` com os quatro fluxos. `repository.ts` é a interface `AuthRepository`, `drizzle-repository.ts` é o adaptador Drizzle dela, `create-auth.ts` monta os fluxos, `signup.ts`, `resend-code.ts`, `verify-code.ts` e `login.ts` são os services, `send-signup-code.ts` é o envio de código que `signup` e `resend-code` compartilham, e `emails/` guarda os templates
+* `src/routes/` guarda plugins de rota, autoloaded. O nome da pasta vira prefixo: `routes/auth/signup.ts` expõe `/auth/signup`. A camada é fina: valida com o schema, chama `fastify.auth`, monta a resposta
+* `src/schemas/` guarda os schemas Zod compartilhados pelas rotas
+* `src/db/` guarda o schema Drizzle e `createDatabase`
+* `src/lib/` guarda só funções puras e constantes: hash, tokens, código, TTLs e a política dos cookies
+* `src/config/` guarda a validação de ambiente com Zod
+* `tests/` espelha a árvore de `src/`, mais `tests/helpers/` com `app-options.ts` e `auth/in-memory-repository.ts`, o adaptador em memória de `AuthRepository`
+
+`server.ts` carrega o ambiente, chama `buildApp({ config })`, arma o `close-with-grace` e dá `listen`. O autoload repassa `AppOptions` a todo plugin, então um teste substitui um colaborador passando `authRepository`, `emailSender` ou `checkPwnedPassword` em `buildApp`, sem banco nem rede.
 
 ## Código
 
@@ -50,6 +66,7 @@ Dependências entram por `buildApp(deps)`, então teste nenhum precisa de banco 
 ## Testes
 
 * Vitest com mocks, sem banco real. Testes de integração ainda não foram adotados no projeto
+* Teste de rota usa o adaptador em memória de `AuthRepository`. O adaptador Drizzle só é coberto por teste de integração, que ainda não foi adotado
 * Todo endpoint novo precisa de teste de service e de rota
 * Em fluxo de autenticação, cubra explicitamente os caminhos de erro, porque é neles que mora a proteção contra enumeração de contas
 

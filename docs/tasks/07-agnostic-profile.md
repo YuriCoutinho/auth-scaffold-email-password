@@ -26,6 +26,7 @@ A fronteira é também conceitual e vale para quem for estender isto: a tabela d
 * A linha de perfil nasce dentro da mesma transação que cria o usuário, com apenas a referência preenchida e o resto nos valores padrão
 * Isso estabelece o invariante de que todo usuário tem perfil, e é o que permite todo o resto do sistema apenas ler o perfil, sem verificar existência e sem criar nada
 * Nenhum outro ponto do código cria perfil. Login lê, endpoints futuros leem, e só a promoção do cadastro escreve
+* Em código, isso é o `INSERT` em `profiles` dentro de `promotePendingSignup` no adaptador Drizzle, e o adaptador em memória dos testes espelha o mesmo passo. Nenhum service conhece a tabela de perfil
 
 A alternativa seria criar o perfil sob demanda, na primeira vez que alguém precisasse dele. Ela parece mais econômica e não é: espalha verificação de nulo por todo lugar que toca perfil, e abre a possibilidade de dois caminhos concorrentes criarem dois perfis para o mesmo usuário.
 

@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { buildApp } from "../../../src/app.js";
-import { authUsers, profiles, sessions } from "../../../src/db/schema.js";
-import { hashOtpCode } from "../../../src/lib/token-hash.js";
-import { createFakeDb, makeAppDeps } from "../../helpers/app-deps.js";
+import { hashOtpCode, hashSessionToken } from "../../../src/lib/token-hash.js";
+import type { PendingSignupRecord } from "../../../src/plugins/app/auth/repository.js";
+import { makeAppOptions } from "../../helpers/app-options.js";
+import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
 
 const TOKEN = "token-x";
 const CODE = "123456";
 
-function makePendingRow(overrides: Record<string, unknown> = {}) {
+function makePendingRow(overrides: Partial<PendingSignupRecord> = {}) {
   return {
     id: 1,
     signupSessionToken: TOKEN,
@@ -23,14 +24,14 @@ function makePendingRow(overrides: Record<string, unknown> = {}) {
 }
 
 async function post(options: {
-  pendingRow?: Record<string, unknown>;
+  pendingRow?: ReturnType<typeof makePendingRow>;
   cookie?: boolean;
   code?: string;
 }) {
-  const fakeDb = createFakeDb({
-    pendingRows: options.pendingRow ? [options.pendingRow as never] : [],
+  const authRepository = createInMemoryAuthRepository({
+    pendingSignups: options.pendingRow ? [options.pendingRow] : [],
   });
-  const app = buildApp(makeAppDeps({ db: fakeDb.db }));
+  const app = buildApp(makeAppOptions({ authRepository }));
   const response = await app.inject({
     method: "POST",
     url: "/auth/verify-code",
@@ -39,12 +40,14 @@ async function post(options: {
     ...(options.cookie === false ? {} : { cookies: { signup_session: TOKEN } }),
   });
   await app.close();
-  return { response, fakeDb };
+  return { response, authRepository };
 }
 
 describe("POST /auth/verify-code", () => {
   it("responds 200, sets the session cookie and clears the signup cookie on the right code", async () => {
-    const { response, fakeDb } = await post({ pendingRow: makePendingRow() });
+    const { response, authRepository } = await post({
+      pendingRow: makePendingRow(),
+    });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
@@ -66,54 +69,52 @@ describe("POST /auth/verify-code", () => {
     );
     expect(signupCookie).toMatchObject({ value: "", path: "/auth" });
 
-    expect(fakeDb.inserts).toHaveLength(3);
-    const userInsert = fakeDb.inserts.find((i) => i.table === authUsers);
-    expect(userInsert?.values).toMatchObject({
-      email: "u@e.com",
+    expect(authRepository.authUsers.get("u@e.com")).toMatchObject({
       passwordHash: "argon2-hash",
     });
-    const sessionInsert = fakeDb.inserts.find((i) => i.table === sessions);
-    expect(sessionInsert?.values).toMatchObject({
+    expect(authRepository.sessions).toHaveLength(1);
+    expect(authRepository.sessions[0]).toMatchObject({
+      userId: 1,
       deviceLabel: "Mozilla/5.0",
+      tokenHash: hashSessionToken(sessionCookie?.value ?? ""),
     });
-    expect(sessionInsert?.values.tokenHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(sessionInsert?.values.tokenHash).not.toBe(sessionCookie?.value);
-    const profileInsert = fakeDb.inserts.find((i) => i.table === profiles);
-    expect(profileInsert?.values).toEqual({ userId: 1 });
-
-    expect(fakeDb.deletes).toHaveLength(1);
+    expect(authRepository.sessions[0]?.tokenHash).not.toBe(
+      sessionCookie?.value,
+    );
+    expect(authRepository.profiles).toEqual([{ userId: 1 }]);
+    expect(authRepository.pendingSignups.size).toBe(0);
   });
 
   it("responds 401 when the cookie is missing", async () => {
-    const { response, fakeDb } = await post({
+    const { response, authRepository } = await post({
       pendingRow: makePendingRow(),
       cookie: false,
     });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid or expired code." });
-    expect(fakeDb.inserts).toHaveLength(0);
-    expect(fakeDb.deletes).toHaveLength(0);
+    expect(authRepository.authUsers.size).toBe(0);
+    expect(authRepository.pendingSignups.size).toBe(1);
   });
 
   it("responds 401 on a wrong code", async () => {
-    const { response, fakeDb } = await post({
+    const { response, authRepository } = await post({
       pendingRow: makePendingRow(),
       code: "654321",
     });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid or expired code." });
-    expect(fakeDb.updates).toHaveLength(1);
+    expect(authRepository.pendingSignups.get("u@e.com")?.codeAttempts).toBe(1);
     expect(response.cookies.find((c) => c.name === "session")).toBeUndefined();
   });
 
   it("responds 401 when attempts are exhausted", async () => {
-    const { response, fakeDb } = await post({
+    const { response, authRepository } = await post({
       pendingRow: makePendingRow({ codeAttempts: 5 }),
     });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid or expired code." });
-    expect(fakeDb.updates).toHaveLength(0);
-    expect(fakeDb.inserts).toHaveLength(0);
+    expect(authRepository.pendingSignups.get("u@e.com")?.codeAttempts).toBe(5);
+    expect(authRepository.authUsers.size).toBe(0);
   });
 
   it("responds 400 on a malformed code", async () => {

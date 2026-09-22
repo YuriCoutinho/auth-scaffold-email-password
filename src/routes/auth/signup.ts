@@ -1,27 +1,10 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
-import { z } from "zod";
-import {
-  SIGNUP_TTL_SECONDS,
-  type SignupService,
-} from "../../services/signup.js";
+import { SIGNUP_SESSION_COOKIE } from "../../lib/cookies.js";
+import { messageSchema, signupBodySchema } from "../../schemas/auth.js";
 
-const signupBodySchema = z.object({
-  email: z.email().max(254),
-  password: z.string().min(15).max(128),
-});
-
-const messageSchema = z.object({ message: z.string() });
-
-export interface SignupRoutesOptions {
-  signupService: SignupService;
-}
-
-export const signupRoutes: FastifyPluginAsyncZod<SignupRoutesOptions> = async (
-  app,
-  opts,
-) => {
+const routes: FastifyPluginAsyncZod = async (app) => {
   app.post(
-    "/auth/signup",
+    "/signup",
     {
       schema: {
         tags: ["auth"],
@@ -39,7 +22,7 @@ export const signupRoutes: FastifyPluginAsyncZod<SignupRoutesOptions> = async (
       },
     },
     async (request, reply) => {
-      const result = await opts.signupService.signup(
+      const result = await app.auth.signup(
         request.body.email,
         request.body.password,
       );
@@ -58,16 +41,16 @@ export const signupRoutes: FastifyPluginAsyncZod<SignupRoutesOptions> = async (
         });
       }
 
-      reply.setCookie("signup_session", result.sessionToken, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "strict",
-        path: "/auth",
-        maxAge: SIGNUP_TTL_SECONDS,
-      });
+      reply.setCookie(
+        SIGNUP_SESSION_COOKIE.name,
+        result.sessionToken,
+        SIGNUP_SESSION_COOKIE.options,
+      );
       return reply.code(202).send({
         message: "If the email is valid, we sent a confirmation code.",
       });
     },
   );
 };
+
+export default routes;

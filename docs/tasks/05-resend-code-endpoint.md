@@ -43,6 +43,12 @@ Existe uma exceção ao cooldown que vem da etapa anterior: quando o contador de
 * A resposta nesse caso é `503` genérico, sem renovar o cookie
 * A restauração é best-effort, ou seja, se ela própria falhar isso vira log de aviso e a resposta continua sendo 503, porque o que importa para quem chamou é saber que o envio não aconteceu
 
+### Organização do código
+
+* Rota em `src/routes/auth/resend-code.ts`, lendo o cookie e traduzindo o resultado do service em um dos quatro status. O resultado é discriminado (`sent`, `invalid-session`, `cooldown`, `limit-reached`, `email-unavailable`), e os dois últimos casos de 429 têm mensagens diferentes porque falam de estados do próprio cadastro de quem tem o cookie, não de outras contas
+* Service em `src/plugins/app/auth/resend-code.ts`, montado pelo plugin `auth` junto dos outros fluxos e exposto como `fastify.auth.resendCode`
+* A interface `AuthRepository` ganha `findPendingSignupBySessionToken` e `updatePendingSignupResendState`. O segundo método serve tanto para gravar o código novo quanto para restaurar o estado anterior quando o envio falha, recebendo os cinco campos de uma vez, o que mantém a compensação como uma única escrita
+
 ### Logs
 
 * Apenas identificador do cadastro pendente e identificador da mensagem no provedor

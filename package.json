@@ -9,7 +9,7 @@
   "packageManager": "pnpm@12.4.2+sha512.08adc6613180275c7c9edada39dcf08c9c61ad4e7eaf330a4f3461f102b0f907423454d117f98e72d47fef0616070644d7bffc973a6a57f5090a6d7c368b07c9",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc",
+    "build": "rm -rf dist && tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.typecheck.json",
     "lint": "biome check .",
@@ -32,12 +32,15 @@
     "vitest": "^5.0.1"
   },
   "dependencies": {
+    "@fastify/autoload": "^6.5.0",
     "@fastify/cookie": "^11.1.2",
     "@fastify/swagger": "^9.8.1",
     "@fastify/swagger-ui": "^6.1.1",
     "argon2": "^0.45.1",
+    "close-with-grace": "^2.5.0",
     "drizzle-orm": "^0.45.2",
     "fastify": "^5.12.5",
+    "fastify-plugin": "^6.0.0",
     "fastify-type-provider-zod": "^7.0.0",
     "nodemailer": "^10.0.10",
     "postgres": "^3.4.9",

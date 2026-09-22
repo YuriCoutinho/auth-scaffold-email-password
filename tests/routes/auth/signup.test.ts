@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../../src/app.js";
-import { makeAppDeps } from "../../helpers/app-deps.js";
+import { makeAppOptions } from "../../helpers/app-options.js";
+import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
 
 const VALID_BODY = {
   email: "user@example.com",
@@ -8,8 +9,8 @@ const VALID_BODY = {
 };
 const GENERIC_MESSAGE = "If the email is valid, we sent a confirmation code.";
 
-async function post(body: Record<string, unknown>, deps = makeAppDeps()) {
-  const app = buildApp(deps);
+async function post(body: Record<string, unknown>, opts = makeAppOptions()) {
+  const app = buildApp(opts);
   const response = await app.inject({
     method: "POST",
     url: "/auth/signup",
@@ -52,7 +53,8 @@ describe("POST /auth/signup", () => {
   });
 
   it("returns 202 with the generic message and the signup session cookie", async () => {
-    const response = await post(VALID_BODY);
+    const authRepository = createInMemoryAuthRepository();
+    const response = await post(VALID_BODY, makeAppOptions({ authRepository }));
     expect(response.statusCode).toBe(202);
     expect(response.json()).toEqual({ message: GENERIC_MESSAGE });
 
@@ -65,30 +67,38 @@ describe("POST /auth/signup", () => {
       maxAge: 900,
     });
     expect(cookie?.value).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(
+      authRepository.pendingSignups.get("user@example.com")?.signupSessionToken,
+    ).toBe(cookie?.value);
   });
 
   it("returns the same generic 202 when the email already has a confirmed account", async () => {
-    const { createFakeDb } = await import("../../helpers/app-deps.js");
-    const { db } = createFakeDb({ authUserRows: [{ id: 1 }] });
+    const authRepository = createInMemoryAuthRepository({
+      authUsers: [{ email: "user@example.com" }],
+    });
     const emailSender = {
       send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
     };
-    const response = await post(VALID_BODY, makeAppDeps({ db, emailSender }));
+    const response = await post(
+      VALID_BODY,
+      makeAppOptions({ authRepository, emailSender }),
+    );
     expect(response.statusCode).toBe(202);
     expect(response.json()).toEqual({ message: GENERIC_MESSAGE });
     expect(response.cookies.some((c) => c.name === "signup_session")).toBe(
       true,
     );
     expect(emailSender.send).not.toHaveBeenCalled();
+    expect(authRepository.pendingSignups.size).toBe(0);
   });
 
   it("responds 503 with a generic message when email delivery fails", async () => {
-    const deps = makeAppDeps({
+    const opts = makeAppOptions({
       emailSender: {
         send: vi.fn().mockRejectedValue(new Error("provider down")),
       },
     });
-    const response = await post(VALID_BODY, deps);
+    const response = await post(VALID_BODY, opts);
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({
       message:
@@ -98,10 +108,10 @@ describe("POST /auth/signup", () => {
   });
 
   it("rejects a pwned password with 400 and no cookie", async () => {
-    const deps = makeAppDeps({
+    const opts = makeAppOptions({
       checkPwnedPassword: vi.fn().mockResolvedValue(true),
     });
-    const response = await post(VALID_BODY, deps);
+    const response = await post(VALID_BODY, opts);
     expect(response.statusCode).toBe(400);
     expect(response.json().message).toMatch(/data breach/i);
     expect(response.cookies).toHaveLength(0);

@@ -1,29 +1,14 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
-import { z } from "zod";
-import { SESSION_TTL_SECONDS } from "../../lib/session.js";
-import type { LoginService } from "../../services/login.js";
+import { SESSION_COOKIE } from "../../lib/cookies.js";
+import {
+  loginBodySchema,
+  loginResponseSchema,
+  messageSchema,
+} from "../../schemas/auth.js";
 
-const loginBodySchema = z.object({
-  email: z.email().max(254),
-  password: z.string().min(1).max(128),
-});
-
-const loginResponseSchema = z.object({
-  user: z.object({ publicId: z.uuid() }),
-});
-
-const messageSchema = z.object({ message: z.string() });
-
-export interface LoginRoutesOptions {
-  loginService: LoginService;
-}
-
-export const loginRoutes: FastifyPluginAsyncZod<LoginRoutesOptions> = async (
-  app,
-  opts,
-) => {
+const routes: FastifyPluginAsyncZod = async (app) => {
   app.post(
-    "/auth/login",
+    "/login",
     {
       schema: {
         tags: ["auth"],
@@ -43,7 +28,7 @@ export const loginRoutes: FastifyPluginAsyncZod<LoginRoutesOptions> = async (
     },
     async (request, reply) => {
       const deviceLabel = request.headers["user-agent"]?.slice(0, 256) ?? null;
-      const result = await opts.loginService.login(
+      const result = await app.auth.login(
         request.body.email,
         request.body.password,
         deviceLabel,
@@ -53,14 +38,14 @@ export const loginRoutes: FastifyPluginAsyncZod<LoginRoutesOptions> = async (
         return reply.code(401).send({ message: "Invalid credentials." });
       }
 
-      reply.setCookie("session", result.sessionToken, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "strict",
-        path: "/",
-        maxAge: SESSION_TTL_SECONDS,
-      });
+      reply.setCookie(
+        SESSION_COOKIE.name,
+        result.sessionToken,
+        SESSION_COOKIE.options,
+      );
       return reply.code(200).send({ user: result.user });
     },
   );
 };
+
+export default routes;

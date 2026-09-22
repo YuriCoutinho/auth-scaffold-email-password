@@ -1,19 +1,10 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
-import { z } from "zod";
-import type { ResendCodeService } from "../../services/resend-code.js";
-import { SIGNUP_TTL_SECONDS } from "../../services/signup.js";
+import { SIGNUP_SESSION_COOKIE } from "../../lib/cookies.js";
+import { messageSchema } from "../../schemas/auth.js";
 
-const messageSchema = z.object({ message: z.string() });
-
-export interface ResendCodeRoutesOptions {
-  resendCodeService: ResendCodeService;
-}
-
-export const resendCodeRoutes: FastifyPluginAsyncZod<
-  ResendCodeRoutesOptions
-> = async (app, opts) => {
+const routes: FastifyPluginAsyncZod = async (app) => {
   app.post(
-    "/auth/resend-code",
+    "/resend-code",
     {
       schema: {
         tags: ["auth"],
@@ -31,8 +22,9 @@ export const resendCodeRoutes: FastifyPluginAsyncZod<
       },
     },
     async (request, reply) => {
-      const sessionToken = request.cookies.signup_session;
-      const result = await opts.resendCodeService.resendCode(sessionToken);
+      const result = await app.auth.resendCode(
+        request.cookies[SIGNUP_SESSION_COOKIE.name],
+      );
 
       switch (result.outcome) {
         case "invalid-session":
@@ -53,27 +45,19 @@ export const resendCodeRoutes: FastifyPluginAsyncZod<
             message:
               "We could not send the confirmation email right now. Please try again shortly.",
           });
-        case "sent": {
-          // The service returns invalid-session for a missing token, so the
-          // token is guaranteed here; the guard keeps the type narrow.
-          if (!sessionToken) {
-            return reply
-              .code(401)
-              .send({ message: "Invalid or expired signup session." });
-          }
-          reply.setCookie("signup_session", sessionToken, {
-            httpOnly: true,
-            secure: true,
-            sameSite: "strict",
-            path: "/auth",
-            maxAge: SIGNUP_TTL_SECONDS,
-          });
+        case "sent":
+          reply.setCookie(
+            SIGNUP_SESSION_COOKIE.name,
+            result.sessionToken,
+            SIGNUP_SESSION_COOKIE.options,
+          );
           return reply.code(202).send({
             message:
               "If your signup is still pending, we sent a new confirmation code.",
           });
-        }
       }
     },
   );
 };
+
+export default routes;

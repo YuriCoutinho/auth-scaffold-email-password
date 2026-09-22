@@ -58,7 +58,13 @@ Qualidade: a CI (GitHub Actions) roda `typecheck` + `lint` + `test` + `build` em
 
 ## Estrutura
 
-- `src/routes` — rotas HTTP (plugins Fastify)
-- `src/db` — schema Drizzle e client Postgres
-- `src/services` — regras de negócio (signup) e envio de email (drivers em `src/services/email`)
+O projeto segue a arquitetura de plugins do Fastify: `src/app.ts` carrega três pastas com `@fastify/autoload`, nesta ordem.
+
+- `src/plugins/external` — plugins do ecossistema (cookie, swagger, swagger-ui)
+- `src/plugins/app` — plugins da aplicação, que decoram a instância: `database.ts`, `error-handler.ts`, `pwned-password.ts`, `email/` (interface, fábrica e drivers fake, mailpit e resend) e `auth/` (os quatro fluxos, a interface `AuthRepository` e o adaptador Drizzle dela)
+- `src/routes` — rotas HTTP, com prefixo pelo nome da pasta (`routes/auth/login.ts` vira `/auth/login`)
+- `src/schemas` — schemas Zod compartilhados pelas rotas
+- `src/db` — schema Drizzle e fábrica de conexão
+- `src/lib` — funções puras e constantes (hash, tokens, código, TTLs, política dos cookies)
 - `src/config` — configuração validada de ambiente (Zod, fail-fast)
+- `tests` — espelha `src/`, mais `tests/helpers` com as opções de teste e o repositório em memória
