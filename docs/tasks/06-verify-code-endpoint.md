@@ -43,6 +43,8 @@ Criar o perfil aqui dentro estabelece um invariante que o resto do sistema pode 
 
 A sessão também fica dentro da transação, e não depois. Se a criação da sessão falhasse fora dela, existiria uma conta criada sem o autologin prometido, e o cadastro pendente já estaria apagado.
 
+A transação vive atrás de um único método da interface `AuthRepository`, `promotePendingSignup`, e é o adaptador Drizzle em `src/db/drizzle-auth-repository.ts` que abre `db.transaction` e executa os quatro passos. O service em `src/plugins/app/auth/verify-code.ts` só decide se a promoção deve acontecer e chama o método uma vez. Colocar a fronteira aí mantém a atomicidade como responsabilidade de quem conhece o banco, e permite ao adaptador em memória dos testes implementar a mesma operação sem simular transação.
+
 ### A sessão
 
 * Token de 32 bytes aleatórios em base64url, ou seja 256 bits
@@ -55,7 +57,8 @@ A sessão também fica dentro da transação, e não depois. Se a criação da s
 
 * Contrato publicado no OpenAPI, com os três status descritos
 * Request e response tipados e validados por schema Zod
-* Teste do caminho feliz assertando os três inserts e o delete dentro da mesma transação, e que o hash gravado é diferente do token entregue no cookie
+* Teste do caminho feliz assertando que a promoção acontece por uma única chamada a `promotePendingSignup`, com usuário criado e cadastro pendente removido no repositório em memória, e que o hash gravado é diferente do token entregue no cookie
+* Os quatro passos da transação conferidos no SQL que o adaptador Drizzle gera, já que ele só é coberto por teste de integração
 * Teste de código errado verificando incremento do contador e ausência de cookie de sessão
 * Teste de cadastro expirado, de excesso de tentativas sem sequer comparar o código, e de cookie ausente
 * Teste de formato inválido caindo em 400

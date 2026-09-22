@@ -16,7 +16,7 @@ A ordem numérica é a ordem em que as etapas foram implementadas, e é a ordem 
 
 | # | Documento | O que entrega |
 | --- | --- | --- |
-| 01 | [Project setup](01-project-setup.md) | Fastify, TypeScript strict, Drizzle, Postgres, validação de ambiente, pre-commit e CI |
+| 01 | [Project setup](01-project-setup.md) | Fastify com arquitetura de plugins e autoload, TypeScript strict, Drizzle, Postgres, validação de ambiente, error handler global, pre-commit e CI |
 | 02 | [Data modeling](02-data-modeling.md) | As quatro tabelas do fluxo e os utilitários de hash, com o porquê de cada escolha |
 | 03 | [Signup endpoint](03-signup-endpoint.md) | Cadastro pendente, código de 6 dígitos, idempotência e resposta que não revela contas |
 | 04 | [Signup OTP email](04-signup-otp-email.md) | Envio de email atrás de uma interface, com driver de teste, de desenvolvimento e de produção |

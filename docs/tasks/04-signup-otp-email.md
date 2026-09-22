@@ -4,7 +4,7 @@
 
 O cadastro já gera um código de 6 dígitos, mas ele não chega a lugar nenhum. Esta etapa liga essa ponta a um mecanismo real de envio.
 
-O ponto mais importante do desenho é que a aplicação não fala com nenhum provedor de email. Ela fala com uma interface de uma função só, e a escolha do provedor acontece uma única vez, na montagem das dependências. Trocar de provedor depois vira escrever uma classe nova, sem tocar em regra de negócio.
+O ponto mais importante do desenho é que a aplicação não fala com nenhum provedor de email. Ela fala com uma interface de uma função só, e a escolha do provedor acontece uma única vez, dentro do plugin que decora `fastify.emailSender`. Trocar de provedor depois vira escrever uma classe nova, sem tocar em regra de negócio.
 
 Essa mesma interface resolve o desenvolvimento local e os testes. Nos testes as mensagens ficam em memória para as asserções, em desenvolvimento elas caem num servidor SMTP local com interface web, e em produção vão pela API do provedor.
 
@@ -27,11 +27,13 @@ interface EmailSender {
 
 * Sempre HTML e texto puro juntos, porque parte dos clientes de email não renderiza HTML e uma mensagem só com HTML também pontua pior em filtros de spam
 * O retorno traz o identificador da mensagem no provedor, que é o que permite rastrear uma entrega específica nos logs depois
-* Falhas de provedor sobem como um erro tipado próprio, carregando status e corpo da resposta, de modo que quem chama consiga logar o diagnóstico sem inspecionar detalhes de HTTP
+* Falhas de provedor sobem como um erro tipado próprio, `EmailProviderError`, carregando status e corpo da resposta, de modo que quem chama consiga logar o diagnóstico sem inspecionar detalhes de HTTP
+* A interface, o erro e os drivers vivem em `src/email/`, fora de `plugins/`, porque nada ali depende do Fastify. O que depende do Fastify é só o plugin `src/plugins/app/email-sender.ts`, que chama `createEmailSender(config)` e decora a instância, ou usa o remetente que veio por `AppOptions` quando um teste passa um
 
 ### O template
 
 * Função pura que recebe o código e o prazo de validade e devolve assunto, HTML e texto. Os drivers apenas transportam a mensagem e não sabem o que é um código de confirmação
+* O template fica em `src/plugins/app/auth/signup-email.ts`, ao lado do service que o usa, e não em `src/email/`. Ele é conhecimento do fluxo de cadastro, e a pasta de email só conhece transporte
 * Assunto traz o código, porque muita gente lê e digita direto da lista de mensagens sem abrir o email
 * Corpo com o código em destaque, o prazo de validade e a frase avisando que quem não pediu pode ignorar, que é o que permite a pessoa perceber uso indevido do seu email
 * HTML de uma coluna, com CSS inline, sem imagens e sem links. Cliente de email ignora folha de estilo externa, e mensagem de autenticação sem link é imune a virar treino de phishing
@@ -41,7 +43,7 @@ interface EmailSender {
 
 | Driver | Uso | Como funciona |
 | --- | --- | --- |
-| `fake` | testes | Guarda as mensagens numa lista em memória e devolve identificadores sequenciais, permitindo assertar destinatário e conteúdo |
+| `fake` | ambiente de teste | Guarda as mensagens numa lista em memória e devolve identificadores sequenciais, permitindo assertar destinatário e conteúdo. É o driver que `EMAIL_DRIVER=fake` seleciona; os testes de rota costumam ir além e passar um remetente falso direto por `AppOptions` |
 | `mailpit` | desenvolvimento | Envia por SMTP para o Mailpit em `localhost:1025`, com as mensagens visíveis em `http://localhost:8025` |
 | `resend` | produção | `POST` na API do provedor usando o `fetch` nativo, sem SDK |
 

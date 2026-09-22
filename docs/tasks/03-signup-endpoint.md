@@ -12,7 +12,7 @@ Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que 
 
 ### Contrato
 
-* `POST /auth/signup`, com prefixo `/auth` agrupando todo o fluxo, o que depois facilita aplicar rate limit e hooks por prefixo
+* `POST /auth/signup`, com prefixo `/auth` agrupando todo o fluxo, o que depois facilita aplicar rate limit e hooks por prefixo. O prefixo vem do nome da pasta `src/routes/auth/`, que o autoload aplica sozinho, então o arquivo de rota registra apenas `/signup`
 * Body validado por Zod: `{ email, password }`
 * Resposta de sucesso `202 Accepted` com `{ "message": "If the email is valid, we sent a confirmation code." }`
 * O status 202 é o mais honesto aqui, porque o envio de email é assíncrono e nada garante entrega no momento da resposta. Ele também evita o 201, que anunciaria criação de recurso e com isso entregaria a informação que se quer esconder
@@ -54,8 +54,12 @@ Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que 
 
 ### Organização do código
 
-* `buildApp(deps)` recebe banco, remetente de email e verificador de senha vazada, enquanto `server.ts` monta as implementações reais. Isso permite testar o app inteiro sem tocar banco nem rede
-* Rota fina em `src/routes/auth/signup.ts`, cuidando de HTTP e cookie, e regra de negócio em `src/services/signup.ts`, testável sem subir Fastify
+* A rota fica em `src/routes/auth/signup.ts` e cuida apenas de HTTP: valida o body com o schema de `src/schemas/auth.ts`, chama `app.auth.signup` e traduz o resultado em status, mensagem e cookie
+* A regra de negócio fica em `src/plugins/app/auth/signup.ts`, numa função `createSignupService(deps)` que recebe repositório, remetente de email e verificador de senha vazada como parâmetro. Ela devolve um resultado discriminado (`accepted`, `pwned-password`, `email-unavailable`) em vez de lançar erro ou conhecer status HTTP, e por isso é testável sem subir Fastify
+* O plugin `src/plugins/app/auth/index.ts` monta esse service junto dos demais fluxos e decora a instância como `fastify.auth`. Ele declara `dependencies` para `database`, `email-sender` e `pwned-password`, porque lê `fastify.db`, `fastify.emailSender` e `fastify.checkPwnedPassword` ao montar o módulo
+* A verificação de senha vazada é o plugin `src/plugins/app/pwned-password.ts`, que decora `fastify.checkPwnedPassword`. Ela sai de `lib/` porque faz HTTP e precisa de comportamento diferente em teste e em produção, e `lib/` é só para função pura
+* O acesso ao banco passa pela interface `AuthRepository`. O service depende de um `Pick` dos quatro métodos que usa, o adaptador Drizzle implementa a interface inteira, e o adaptador em memória de `tests/helpers/` substitui o banco nos testes de rota. Testar com um falso do ORM seria testar a implementação do repositório pelo lado errado
+* Tudo isso chega aos testes por `AppOptions`: `buildApp` recebe `authRepository`, `emailSender` e `checkPwnedPassword` opcionais, e cada plugin usa o que veio ou monta a implementação real a partir de `config`
 * O service grava primeiro e envia depois, ordem coberta por teste, para nunca existir código enviado que não esteja registrado
 
 ## Definition of done
@@ -64,4 +68,4 @@ Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que 
 * Request e response tipados e validados pelo mesmo schema Zod
 * Testes unitários cobrindo validação de email e senha, normalização, idempotência do pendente válido, substituição do pendente expirado, resposta genérica nos três caminhos, ordem de gravar antes de enviar e rejeição de senha vazada
 * Teste do verificador de senha vazada cobrindo ocorrência encontrada, ausência e indisponibilidade do serviço com fail open
-* Nenhum teste toca banco ou rede reais, usando a injeção de dependências do `buildApp`
+* Teste de service com o repositório em memória e teste de rota com `app.inject`, e nenhum dos dois toca banco ou rede reais, porque os colaboradores chegam por `AppOptions`

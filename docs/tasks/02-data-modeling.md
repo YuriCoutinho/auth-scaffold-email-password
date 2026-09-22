@@ -16,6 +16,13 @@ A separação em quatro tabelas responde a quatro perguntas diferentes: quem est
 * Chaves estrangeiras com `ON DELETE CASCADE`. Apagar a conta apaga sessões e perfil de verdade, o que também é o comportamento esperado por leis de proteção de dados
 * `UNIQUE` já cria índice no Postgres, então índice explícito só onde não existe unicidade
 * `id` interno é `integer GENERATED ALWAYS AS IDENTITY`, e tudo que a aplicação precisa gerar é gerado pelo próprio Postgres no `INSERT`. Isso dá atomicidade sob concorrência sem round-trip extra
+* `updated_at` é renovado pelo `$onUpdate` do Drizzle, que injeta o valor em todo `UPDATE` feito pelo ORM, em vez de um trigger no banco. O projeto só escreve nessas tabelas pelo Drizzle, então a solução mais simples basta
+
+### Onde fica
+
+* O schema Drizzle das quatro tabelas vive em `src/db/schema.ts`, e as migrations geradas ficam em `drizzle/`
+* Os utilitários de hash vivem em `src/lib/`, que guarda apenas funções puras: `password.ts` para Argon2 e `token-hash.ts` para SHA-256. Nenhum dos dois varia entre ambientes, então não há colaborador para injetar e eles não viram plugin
+* Nenhum outro módulo de `src/` fala com o banco diretamente. O acesso passa pela interface `AuthRepository`, definida em `src/plugins/app/auth/auth-repository.ts`, que ganha um adaptador Drizzle em `src/db/drizzle-auth-repository.ts` e um adaptador em memória em `tests/helpers/`. A interface cresce um endpoint por vez, cada um adicionando só os métodos de que precisa
 
 ### Tabela `pending_signups`
 

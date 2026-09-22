@@ -34,7 +34,7 @@ Postgres e Mailpit sobem com `docker compose up -d`. O Mailpit tem interface web
 O projeto segue a arquitetura de plugins do Fastify, no formato do repositório oficial `fastify/demo`: `app.ts` é um plugin que carrega três pastas com `@fastify/autoload`, nesta ordem, e cada plugin declara sua posição com `fastify-plugin` (`name` e `dependencies`).
 
 * `src/plugins/external/` registra plugins do ecossistema: cookie, swagger e swagger-ui
-* `src/plugins/app/` guarda os plugins da aplicação, que decoram a instância. `pwned-password.ts` decora `fastify.checkPwnedPassword`; `database.ts` decora `fastify.db` e fecha o pool no `onClose`; `email-sender.ts` decora `fastify.emailSender`; `auth/` é um plugin único (`index.ts`) que decora `fastify.auth` com os quatro fluxos, e os arquivos irmãos são a implementação interna dele, incluindo a interface `AuthRepository`
+* `src/plugins/app/` guarda os plugins da aplicação, que decoram a instância. `pwned-password.ts` decora `fastify.checkPwnedPassword`; `database.ts` decora `fastify.db` e fecha o pool no `onClose`; `email-sender.ts` decora `fastify.emailSender`; `error-handler.ts` registra o `setErrorHandler` que responde 5xx com mensagem genérica e loga o erro; `auth/` é um plugin único (`index.ts`) que decora `fastify.auth` com os quatro fluxos, e os arquivos irmãos são a implementação interna dele, incluindo a interface `AuthRepository`
 * `src/routes/` guarda plugins de rota, autoloaded. O nome da pasta vira prefixo: `routes/auth/signup.ts` expõe `/auth/signup`. A camada é fina: valida com o schema, chama `fastify.auth`, monta a resposta
 * `src/schemas/` guarda os schemas Zod compartilhados pelas rotas
 * `src/db/` guarda o schema Drizzle, a fábrica de conexão e o adaptador Drizzle de `AuthRepository`
