@@ -3,6 +3,7 @@ import type { RevokedReason } from "../../../src/lib/session.js";
 import type {
   AuthRepository,
   AuthUserRecord,
+  ChangeUserPasswordInput,
   PendingSignupRecord,
   PendingSignupResendState,
   PromotePendingSignupInput,
@@ -216,6 +217,31 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
     async findAuthUserById(id) {
       const user = [...authUsers.values()].find((u) => u.id === id);
       return user ? { publicId: user.publicId, email: user.email } : undefined;
+    },
+
+    async findAuthUserCredentialsById(id) {
+      const user = [...authUsers.values()].find((u) => u.id === id);
+      return user
+        ? { id: user.id, email: user.email, passwordHash: user.passwordHash }
+        : undefined;
+    },
+
+    async changeUserPassword(input: ChangeUserPasswordInput) {
+      for (const session of sessions) {
+        if (
+          session.userId === input.userId &&
+          session.id !== input.exceptSessionId &&
+          session.revokedAt === null
+        ) {
+          session.revokedAt = input.revokedAt;
+          session.revokedReason = input.revokedReason;
+        }
+      }
+
+      const user = [...authUsers.values()].find((u) => u.id === input.userId);
+      if (user) {
+        user.passwordHash = input.passwordHash;
+      }
     },
 
     async revokeSessionByTokenHash(tokenHash, revokedAt, revokedReason) {

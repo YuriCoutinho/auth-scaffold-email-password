@@ -1,9 +1,12 @@
 import { eq, sql } from "drizzle-orm";
-import type { Database } from "../../../db/client.js";
 import { authUsers, pendingSignups, profiles } from "../../../db/schema.js";
-import { createDrizzleSessionRepository } from "../sessions/drizzle-repository.js";
+import {
+  createDrizzleSessionRepository,
+  type DatabaseOrTransaction,
+} from "../sessions/drizzle-repository.js";
 import type {
   AuthRepository,
+  ChangeUserPasswordInput,
   PendingSignupResendState,
   PromotePendingSignupInput,
   UpsertPendingSignupInput,
@@ -21,7 +24,9 @@ const pendingSignupColumns = {
   expiresAt: pendingSignups.expiresAt,
 };
 
-export function createDrizzleAuthRepository(db: Database): AuthRepository {
+export function createDrizzleAuthRepository(
+  db: DatabaseOrTransaction,
+): AuthRepository {
   return {
     async findAuthUserByEmail(email) {
       const rows = await db
@@ -140,6 +145,36 @@ export function createDrizzleAuthRepository(db: Database): AuthRepository {
         .where(eq(authUsers.id, id))
         .limit(1);
       return rows[0];
+    },
+
+    async findAuthUserCredentialsById(id) {
+      const rows = await db
+        .select({
+          id: authUsers.id,
+          email: authUsers.email,
+          passwordHash: authUsers.passwordHash,
+        })
+        .from(authUsers)
+        .where(eq(authUsers.id, id))
+        .limit(1);
+      return rows[0];
+    },
+
+    // One transaction so the two writes cannot come apart: a new password with
+    // the old sessions still alive is the exact state this flow prevents.
+    async changeUserPassword(input: ChangeUserPasswordInput) {
+      await db.transaction(async (tx) => {
+        await createDrizzleSessionRepository(tx).revokeAllUserSessions({
+          userId: input.userId,
+          revokedAt: input.revokedAt,
+          revokedReason: input.revokedReason,
+          exceptSessionId: input.exceptSessionId,
+        });
+        await tx
+          .update(authUsers)
+          .set({ passwordHash: input.passwordHash })
+          .where(eq(authUsers.id, input.userId));
+      });
     },
   };
 }
