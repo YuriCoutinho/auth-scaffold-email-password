@@ -32,7 +32,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         throw new Error("Route reached without the authenticate hook");
       }
 
-      const sessions = await app.auth.listSessions({
+      const sessions = await app.sessions.listSessions({
         userId: request.user.id,
         currentSessionId: request.session.id,
       });

@@ -3,10 +3,7 @@ import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import type { SessionRepository } from "../sessions/repository.js";
 import { createAuthenticateService } from "./authenticate.js";
-import { createListSessionsService } from "./list-sessions.js";
 import { createLoginService } from "./login.js";
-import { createLogoutService } from "./logout.js";
-import { createLogoutAllService } from "./logout-all.js";
 import type { AuthRepository } from "./repository.js";
 import { createResendCodeService } from "./resend-code.js";
 import { createSignupService } from "./signup.js";
@@ -44,20 +41,16 @@ export function createAuth(deps: AuthDeps) {
       createSession: deps.sessionRepository.createSession,
     },
   });
-  const sessionShared = { ...shared, repo: deps.sessionRepository };
-  const { authenticate } = createAuthenticateService(sessionShared);
-  const { logout } = createLogoutService(sessionShared);
-  const { logoutAll } = createLogoutAllService(sessionShared);
-  const { listSessions } = createListSessionsService(sessionShared);
+  const { authenticate } = createAuthenticateService({
+    ...shared,
+    repo: deps.sessionRepository,
+  });
 
   return {
     signup,
     resendCode,
     verifyCode,
     login,
-    logout,
-    logoutAll,
-    listSessions,
     authenticate,
     currentUser: (id: number) => deps.repository.findAuthUserById(id),
   };

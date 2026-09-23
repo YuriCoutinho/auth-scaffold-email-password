@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import type { SessionRepository } from "../sessions/repository.js";
+import type { SessionRepository } from "./repository.js";
 
 export interface LogoutAllInput {
   userId: number;

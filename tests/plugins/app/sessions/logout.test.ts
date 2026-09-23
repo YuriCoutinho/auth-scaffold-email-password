@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { hashSessionToken } from "../../../../src/lib/token-hash.js";
-import { createLogoutService } from "../../../../src/plugins/app/auth/logout.js";
+import { createLogoutService } from "../../../../src/plugins/app/sessions/logout.js";
 
 const NOW = new Date("2026-09-23T12:00:00Z");
 const TOKEN = "a-session-token";

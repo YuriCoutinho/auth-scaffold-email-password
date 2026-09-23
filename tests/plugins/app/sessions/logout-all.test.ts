@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createLogoutAllService } from "../../../../src/plugins/app/auth/logout-all.js";
+import { createLogoutAllService } from "../../../../src/plugins/app/sessions/logout-all.js";
 
 const NOW = new Date("2026-09-23T12:00:00Z");
 

@@ -1,4 +1,4 @@
-import type { SessionRepository } from "../sessions/repository.js";
+import type { SessionRepository } from "./repository.js";
 
 export interface ListSessionsInput {
   userId: number;
