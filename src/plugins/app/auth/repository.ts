@@ -1,3 +1,5 @@
+import type { RevokedReason } from "../../../lib/session.js";
+
 export interface AuthUserRecord {
   id: number;
   publicId: string;
@@ -84,4 +86,9 @@ export interface AuthRepository {
   createSession(input: CreateSessionInput): Promise<void>;
   findSessionByTokenHash(tokenHash: string): Promise<SessionRecord | undefined>;
   findAuthUserById(id: number): Promise<AuthUserIdentity | undefined>;
+  revokeSessionByTokenHash(
+    tokenHash: string,
+    revokedAt: Date,
+    revokedReason: RevokedReason,
+  ): Promise<void>;
 }

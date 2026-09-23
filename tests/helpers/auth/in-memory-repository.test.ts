@@ -115,6 +115,7 @@ describe("in-memory auth repository", () => {
         deviceLabel: "Mozilla/5.0",
         expiresAt: new Date(NOW.getTime() + 1_000),
         revokedAt: null,
+        revokedReason: null,
       },
     ]);
     expect(repo.profiles).toEqual([{ userId: 1 }]);
@@ -138,6 +139,7 @@ describe("in-memory auth repository", () => {
         deviceLabel: null,
         expiresAt: NOW,
         revokedAt: null,
+        revokedReason: null,
       },
     ]);
   });
@@ -198,5 +200,65 @@ describe("in-memory auth repository", () => {
       email: "a@b.com",
     });
     expect(await repo.findAuthUserById(999)).toBeUndefined();
+  });
+});
+
+describe("revokeSessionByTokenHash", () => {
+  function repoWithTwoSessions() {
+    return createInMemoryAuthRepository({
+      sessions: [
+        {
+          id: 1,
+          userId: 7,
+          tokenHash: "hash-a",
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+        {
+          id: 2,
+          userId: 7,
+          tokenHash: "hash-b",
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      ],
+    });
+  }
+
+  it("revokes only the session behind the given hash", async () => {
+    const repo = repoWithTwoSessions();
+    const revokedAt = new Date("2026-09-23T12:00:00Z");
+
+    await repo.revokeSessionByTokenHash("hash-a", revokedAt, "user_logout");
+
+    expect(repo.sessions[0]).toMatchObject({
+      revokedAt,
+      revokedReason: "user_logout",
+    });
+    expect(repo.sessions[1]).toMatchObject({
+      revokedAt: null,
+      revokedReason: null,
+    });
+  });
+
+  it("keeps the first revocation when the same session is revoked twice", async () => {
+    const repo = repoWithTwoSessions();
+    const first = new Date("2026-09-23T12:00:00Z");
+    const second = new Date("2026-09-23T13:00:00Z");
+
+    await repo.revokeSessionByTokenHash("hash-a", first, "user_logout");
+    await repo.revokeSessionByTokenHash("hash-a", second, "user_logout");
+
+    expect(repo.sessions[0]).toMatchObject({ revokedAt: first });
+  });
+
+  it("does nothing when no session matches the hash", async () => {
+    const repo = repoWithTwoSessions();
+
+    await repo.revokeSessionByTokenHash(
+      "hash-unknown",
+      new Date(),
+      "user_logout",
+    );
+
+    expect(repo.sessions.every((s) => s.revokedAt === null)).toBe(true);
   });
 });

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { RevokedReason } from "../../../src/lib/session.js";
 import type {
   AuthRepository,
   AuthUserRecord,
@@ -36,6 +37,7 @@ interface StoredAuthUser extends AuthUserRecord {
 interface StoredSession extends SessionRecord {
   tokenHash: string;
   deviceLabel: string | null;
+  revokedReason: RevokedReason | null;
 }
 
 export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
@@ -84,6 +86,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       deviceLabel: session.deviceLabel ?? null,
       expiresAt: session.expiresAt,
       revokedAt: session.revokedAt ?? null,
+      revokedReason: null,
     });
   }
 
@@ -170,13 +173,19 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
         deviceLabel: input.deviceLabel,
         expiresAt: input.sessionExpiresAt,
         revokedAt: null,
+        revokedReason: null,
       });
       profiles.push({ userId: user.id });
       return { id: user.id, publicId: user.publicId };
     },
 
     async createSession(input) {
-      sessions.push({ ...input, id: nextSessionId++, revokedAt: null });
+      sessions.push({
+        ...input,
+        id: nextSessionId++,
+        revokedAt: null,
+        revokedReason: null,
+      });
     },
 
     async findSessionByTokenHash(tokenHash) {
@@ -194,6 +203,16 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
     async findAuthUserById(id) {
       const user = [...authUsers.values()].find((u) => u.id === id);
       return user ? { publicId: user.publicId, email: user.email } : undefined;
+    },
+
+    async revokeSessionByTokenHash(tokenHash, revokedAt, revokedReason) {
+      const session = sessions.find(
+        (s) => s.tokenHash === tokenHash && s.revokedAt === null,
+      );
+      if (session) {
+        session.revokedAt = revokedAt;
+        session.revokedReason = revokedReason;
+      }
     },
   };
 
