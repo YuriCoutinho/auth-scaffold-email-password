@@ -164,6 +164,90 @@ describe("processBatch", () => {
     expect(repo.messages.map((row) => row.status)).toEqual(["pending", "sent"]);
   });
 
+  it("does not treat a failed mark as a failed delivery", async () => {
+    const repo = createInMemoryEmailOutboxRepository({
+      messages: [{ ...message, id: 1, nextAttemptAt: NOW }],
+    });
+    const spied = {
+      ...repo,
+      markSent: vi.fn().mockRejectedValue(new Error("connection closed")),
+      reschedule: vi.fn(),
+      giveUp: vi.fn(),
+    };
+    const onGiveUp = vi.fn();
+    const worker = createEmailOutboxWorker({
+      repo: spied,
+      emailSender: new FakeEmailSender(),
+      policyFor: defaultPolicyFor,
+      onGiveUp,
+      now: () => NOW,
+    });
+
+    const result = await worker.processBatch();
+
+    expect(result).toEqual({ sent: 1, rescheduled: 0, gaveUp: 0 });
+    expect(spied.reschedule).not.toHaveBeenCalled();
+    expect(spied.giveUp).not.toHaveBeenCalled();
+    expect(onGiveUp).not.toHaveBeenCalled();
+  });
+
+  it("keeps processing the batch when the reschedule write fails", async () => {
+    const repo = createInMemoryEmailOutboxRepository({
+      messages: [
+        { ...message, id: 1, nextAttemptAt: NOW },
+        { ...message, id: 2, nextAttemptAt: NOW },
+      ],
+    });
+    const spied = {
+      ...repo,
+      reschedule: vi.fn().mockRejectedValue(new Error("connection closed")),
+    };
+    const emailSender = {
+      send: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("provider unavailable"))
+        .mockResolvedValue({ providerMessageId: "id-2" }),
+    };
+    const worker = createEmailOutboxWorker({
+      repo: spied,
+      emailSender,
+      policyFor: defaultPolicyFor,
+      now: () => NOW,
+    });
+
+    const result = await worker.processBatch();
+
+    expect(result).toEqual({ sent: 1, rescheduled: 0, gaveUp: 0 });
+    expect(emailSender.send).toHaveBeenCalledTimes(2);
+    expect(repo.messages[1]?.status).toBe("sent");
+  });
+
+  it("does not compensate when the give-up write fails", async () => {
+    const repo = createInMemoryEmailOutboxRepository({
+      messages: [{ ...message, id: 1, attempts: 2, nextAttemptAt: NOW }],
+    });
+    const spied = {
+      ...repo,
+      giveUp: vi.fn().mockRejectedValue(new Error("connection closed")),
+    };
+    const onGiveUp = vi.fn();
+    const worker = createEmailOutboxWorker({
+      repo: spied,
+      emailSender: {
+        send: vi.fn().mockRejectedValue(new Error("provider unavailable")),
+      },
+      policyFor: defaultPolicyFor,
+      onGiveUp,
+      now: () => NOW,
+    });
+
+    const result = await worker.processBatch();
+
+    expect(result).toEqual({ sent: 0, rescheduled: 0, gaveUp: 0 });
+    expect(onGiveUp).not.toHaveBeenCalled();
+    expect(repo.messages[0]?.status).toBe("pending");
+  });
+
   it("never logs the recipient address or the provider body", async () => {
     const error = new EmailProviderError("resend responded 500", {
       status: 500,

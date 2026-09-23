@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { EmailProviderError, type EmailSender } from "../email/sender.js";
-import type { EmailOutboxRepository } from "./repository.js";
+import type { EmailOutboxRepository, OutboxRecord } from "./repository.js";
 
 export interface RetryPolicy {
   maxAttempts: number;
@@ -71,6 +71,61 @@ export function createEmailOutboxWorker(deps: EmailOutboxWorkerDeps) {
     }
   };
 
+  // Both writes are guarded: one row whose bookkeeping fails must not abort
+  // the batch, which would leave every remaining row leased and untouched
+  // until its lease expires.
+  const handleFailure = async (
+    row: OutboxRecord,
+    error: unknown,
+  ): Promise<"rescheduled" | "gave-up" | "unhandled"> => {
+    const attempts = row.attempts + 1;
+    const policy = deps.policyFor(row.type);
+    const lastError = error instanceof Error ? error.message : "unknown error";
+    const context = { outboxId: row.id, type: row.type, attempts };
+
+    if (attempts >= policy.maxAttempts) {
+      try {
+        await deps.repo.giveUp({ id: row.id, attempts, lastError, at: now() });
+      } catch (writeError) {
+        // The row was not marked failed, so it will be retried. Compensating
+        // now would act on a message the queue has not given up on.
+        deps.log?.error(
+          { ...context, ...describe(writeError) },
+          "outbox give-up write failed",
+        );
+        return "unhandled";
+      }
+      deps.log?.error(
+        { ...context, ...describe(error) },
+        "outbox email given up on",
+      );
+      await runGiveUpHandler(row.type, row.recipient);
+      return "gave-up";
+    }
+
+    try {
+      await deps.repo.reschedule({
+        id: row.id,
+        attempts,
+        nextAttemptAt: new Date(
+          now().getTime() + policy.backoffSeconds(attempts) * 1000,
+        ),
+        lastError,
+      });
+    } catch (writeError) {
+      deps.log?.error(
+        { ...context, ...describe(writeError) },
+        "outbox reschedule write failed",
+      );
+      return "unhandled";
+    }
+    deps.log?.warn(
+      { ...context, ...describe(error) },
+      "outbox email delivery failed, retrying",
+    );
+    return "rescheduled";
+  };
+
   return {
     async processBatch(): Promise<{
       sent: number;
@@ -95,53 +150,35 @@ export function createEmailOutboxWorker(deps: EmailOutboxWorkerDeps) {
             html: row.html,
             text: row.text,
           });
-          await deps.repo.markSent(row.id, now());
-          sent += 1;
-          deps.log?.info(
-            { outboxId: row.id, type: row.type },
-            "outbox email sent",
-          );
         } catch (error) {
-          const attempts = row.attempts + 1;
-          const policy = deps.policyFor(row.type);
-          const lastError =
-            error instanceof Error ? error.message : "unknown error";
-
-          if (attempts >= policy.maxAttempts) {
-            await deps.repo.giveUp({
-              id: row.id,
-              attempts,
-              lastError,
-              at: now(),
-            });
-            gaveUp += 1;
-            deps.log?.error(
-              {
-                outboxId: row.id,
-                type: row.type,
-                attempts,
-                ...describe(error),
-              },
-              "outbox email given up on",
-            );
-            await runGiveUpHandler(row.type, row.recipient);
-            continue;
+          const outcome = await handleFailure(row, error);
+          if (outcome === "rescheduled") {
+            rescheduled += 1;
           }
+          if (outcome === "gave-up") {
+            gaveUp += 1;
+          }
+          continue;
+        }
 
-          await deps.repo.reschedule({
-            id: row.id,
-            attempts,
-            nextAttemptAt: new Date(
-              now().getTime() + policy.backoffSeconds(attempts) * 1000,
-            ),
-            lastError,
-          });
-          rescheduled += 1;
-          deps.log?.warn(
-            { outboxId: row.id, type: row.type, attempts, ...describe(error) },
-            "outbox email delivery failed, retrying",
+        // The mark gets its own handling: the provider already accepted the
+        // message, so a failure here is not a delivery failure and must not
+        // reschedule anything, let alone give up on a message that was sent.
+        // The row keeps its lease and the next pass marks it, at the cost of
+        // one duplicate send, which is the at-least-once trade this queue makes.
+        try {
+          await deps.repo.markSent(row.id, now());
+        } catch (error) {
+          deps.log?.error(
+            { outboxId: row.id, type: row.type, ...describe(error) },
+            "outbox email sent but not marked",
           );
         }
+        sent += 1;
+        deps.log?.info(
+          { outboxId: row.id, type: row.type },
+          "outbox email sent",
+        );
       }
 
       return { sent, rescheduled, gaveUp };
