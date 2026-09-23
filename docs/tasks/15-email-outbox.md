@@ -38,13 +38,15 @@ O `status` é um `text` simples com os valores permitidos vivendo no TypeScript,
 
 ### A linha não sobrevive ao próprio propósito
 
-Guardar a mensagem renderizada só é aceitável se ela deixar de existir quando deixar de servir, e é o que a retenção faz. Ela roda no fim de cada ciclo do worker, reusando o agendamento que já existe, e é um `DELETE` por status e tempo, apoiado no índice que a reivindicação já usa. Uma falha nele é tratada como o resto do bookkeeping, ou seja, vira log e não derruba nem o lote nem o ciclo.
+Guardar a mensagem renderizada só é aceitável se ela deixar de existir quando deixar de servir, e é o que a retenção faz. Ela roda no fim do ciclo do worker, reusando o agendamento que já existe, mas no seu próprio ritmo: um sinalizador de quando foi a última passada faz o expurgo acontecer a cada cinco minutos, e não a cada segundo, porque a janela mais curta que ele cobre é de uma hora e varrer mil vezes dentro dela não guarda nada a mais. Uma falha é tratada como o resto do bookkeeping, vira log e não derruba nem o lote nem o ciclo, e quando alguma linha some a contagem é registrada, só o número.
+
+O comando é um `DELETE` por status e tempo. Vale ser exato sobre o índice: `email_outbox_due_idx` é `(status, next_attempt_at)`, então ele recorta os dois ramos pelo status e ainda recorta pelo tempo no ramo abandonado, que mede em `next_attempt_at`; o ramo entregue mede em `sent_at`, que o índice não cobre e que vira filtro linha a linha dentro do que o status já reduziu. Nesta escala, e com o expurgo passando de hora em hora e não de segundo em segundo, isso não paga um índice novo.
 
 Uma linha entregue é apagada inteira depois de uma hora. Apagar, e não apenas limpar as colunas de conteúdo, porque limpar deixaria o endereço de destino acumulando para sempre sem nenhuma finalidade, e a exposição do destinatário é tão indesejada quanto a do código; de quebra, resolve o crescimento sem teto da tabela. A janela é curta de propósito: o código expira em quinze minutos, então uma hora já é folga generosa para abrir o banco e conferir um envio recente em desenvolvimento, e nada além disso tem valor.
 
 Uma linha abandonada segue o caminho inverso, porque as duas partes dela têm prazos diferentes. O conteúdo é limpo na hora da desistência, dentro do próprio `giveUp`, já que uma mensagem que o worker decidiu não enviar mais é só exposição. O resto da linha, ou seja, o tipo, o destinatário, o número de tentativas e a mensagem do último erro, sobrevive por trinta dias, porque é disso que se precisa para investigar uma falha de entrega. O destinatário fica junto por um motivo simples: investigar uma falha sem saber quem foi afetado não serve para nada.
 
-Uma linha pendente nunca é tocada, porque o conteúdo dela é exatamente o que ainda será enviado. Os dois prazos vivem em constantes nomeadas ao lado da política de repetição, com o comentário que explica de onde cada número sai.
+Uma linha pendente nunca é tocada, porque o conteúdo dela é exatamente o que ainda será enviado. Os dois prazos e o intervalo entre as passadas vivem em constantes nomeadas ao lado da política de repetição, cada uma com o comentário que explica de onde o número sai, e um teste fixa os três valores, porque mudá-los é decisão e não refatoração.
 
 ### `next_attempt_at` é também o lease
 

@@ -102,8 +102,11 @@ export function createDrizzleEmailOutboxRepository(
         .where(eq(emailOutbox.id, input.id));
     },
 
-    // One indexed DELETE, no read and no lock that delivery cares about. The
-    // status leads both branches, which is the first column of the due index.
+    // One DELETE, no read and no lock that delivery cares about. The due index
+    // starts at status, so it narrows both branches, but its second column is
+    // next_attempt_at: only the abandoned branch has its time cut by the index,
+    // while sent_at is filtered row by row. That is fine at this size, and the
+    // sweep is rare, so it does not justify an index of its own.
     async purge(input) {
       const deleted = await db
         .delete(emailOutbox)
