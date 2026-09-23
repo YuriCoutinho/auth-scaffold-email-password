@@ -39,7 +39,7 @@ describe("authenticate hook", () => {
     const app = buildApp(makeAppOptions({ authRepository }));
     const seen = vi.fn();
     protectedRoute(app, "GET", async (request) => {
-      seen(request.user);
+      seen({ user: request.user, session: request.session });
       return { ok: true };
     });
 
@@ -50,7 +50,26 @@ describe("authenticate hook", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(seen).toHaveBeenCalledWith({ id: 7 });
+    expect(seen).toHaveBeenCalledWith({
+      user: { id: 7 },
+      session: { id: 1 },
+    });
+    await app.close();
+  });
+
+  it("leaves both user and session null on a route that skips the hook", async () => {
+    const app = buildApp(makeAppOptions());
+    const seen = vi.fn();
+    app.register(async (instance) => {
+      instance.get("/unprotected", async (request) => {
+        seen({ user: request.user, session: request.session });
+        return { ok: true };
+      });
+    });
+
+    await app.inject({ method: "GET", url: "/unprotected" });
+
+    expect(seen).toHaveBeenCalledWith({ user: null, session: null });
     await app.close();
   });
 

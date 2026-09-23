@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import type { Database } from "../../../db/client.js";
 import {
   authUsers,
@@ -174,6 +174,27 @@ export function createDrizzleAuthRepository(db: Database): AuthRepository {
         .where(
           and(eq(sessions.tokenHash, tokenHash), isNull(sessions.revokedAt)),
         );
+    },
+
+    async revokeAllUserSessions(input) {
+      // The revoked_at IS NULL guard keeps this idempotent and keeps the count
+      // honest: a session revoked by an earlier call matches no row, so it is
+      // neither overwritten nor counted again.
+      const revoked = await db
+        .update(sessions)
+        .set({ revokedAt: input.revokedAt, revokedReason: input.revokedReason })
+        .where(
+          and(
+            eq(sessions.userId, input.userId),
+            isNull(sessions.revokedAt),
+            input.exceptSessionId === undefined
+              ? undefined
+              : ne(sessions.id, input.exceptSessionId),
+          ),
+        )
+        .returning({ id: sessions.id });
+
+      return { revokedCount: revoked.length };
     },
   };
 }

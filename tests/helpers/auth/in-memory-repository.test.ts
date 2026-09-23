@@ -262,3 +262,130 @@ describe("revokeSessionByTokenHash", () => {
     expect(repo.sessions.every((s) => s.revokedAt === null)).toBe(true);
   });
 });
+
+describe("revokeAllUserSessions", () => {
+  const REVOKED_AT = new Date("2026-09-23T12:00:00Z");
+
+  function repoWithSessions() {
+    const expiresAt = new Date("2026-10-23T12:00:00Z");
+    return createInMemoryAuthRepository({
+      authUsers: [
+        { id: 7, email: "a@b.com" },
+        { id: 8, email: "c@d.com" },
+      ],
+      sessions: [
+        { id: 1, userId: 7, tokenHash: "hash-1", expiresAt },
+        { id: 2, userId: 7, tokenHash: "hash-2", expiresAt },
+        { id: 3, userId: 7, tokenHash: "hash-3", expiresAt },
+        { id: 4, userId: 8, tokenHash: "hash-4", expiresAt },
+      ],
+    });
+  }
+
+  it("revokes every session of the user when no session is excluded", async () => {
+    const repo = repoWithSessions();
+
+    const result = await repo.revokeAllUserSessions({
+      userId: 7,
+      revokedAt: REVOKED_AT,
+      revokedReason: "logout_all",
+    });
+
+    expect(result).toEqual({ revokedCount: 3 });
+    expect(repo.sessions.filter((s) => s.userId === 7)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          revokedAt: REVOKED_AT,
+          revokedReason: "logout_all",
+        }),
+      ]),
+    );
+  });
+
+  it("keeps the excluded session untouched", async () => {
+    const repo = repoWithSessions();
+
+    const result = await repo.revokeAllUserSessions({
+      userId: 7,
+      revokedAt: REVOKED_AT,
+      revokedReason: "logout_all",
+      exceptSessionId: 2,
+    });
+
+    expect(result).toEqual({ revokedCount: 2 });
+    expect(repo.sessions.find((s) => s.id === 2)).toMatchObject({
+      revokedAt: null,
+      revokedReason: null,
+    });
+  });
+
+  it("never touches a session of another user", async () => {
+    const repo = repoWithSessions();
+
+    await repo.revokeAllUserSessions({
+      userId: 7,
+      revokedAt: REVOKED_AT,
+      revokedReason: "logout_all",
+    });
+
+    expect(repo.sessions.find((s) => s.id === 4)).toMatchObject({
+      revokedAt: null,
+      revokedReason: null,
+    });
+  });
+
+  it("does not count or overwrite a session that was already revoked", async () => {
+    const alreadyRevokedAt = new Date("2026-09-01T00:00:00Z");
+    const repo = createInMemoryAuthRepository({
+      authUsers: [{ id: 7, email: "a@b.com" }],
+      sessions: [
+        {
+          id: 1,
+          userId: 7,
+          tokenHash: "hash-1",
+          expiresAt: new Date("2026-10-23T12:00:00Z"),
+          revokedAt: alreadyRevokedAt,
+        },
+        {
+          id: 2,
+          userId: 7,
+          tokenHash: "hash-2",
+          expiresAt: new Date("2026-10-23T12:00:00Z"),
+        },
+      ],
+    });
+
+    const result = await repo.revokeAllUserSessions({
+      userId: 7,
+      revokedAt: REVOKED_AT,
+      revokedReason: "logout_all",
+    });
+
+    expect(result).toEqual({ revokedCount: 1 });
+    expect(repo.sessions.find((s) => s.id === 1)?.revokedAt).toBe(
+      alreadyRevokedAt,
+    );
+  });
+
+  it("revokes a session that is expired but not yet revoked", async () => {
+    const repo = createInMemoryAuthRepository({
+      authUsers: [{ id: 7, email: "a@b.com" }],
+      sessions: [
+        {
+          id: 1,
+          userId: 7,
+          tokenHash: "hash-1",
+          expiresAt: new Date("2026-01-01T00:00:00Z"),
+        },
+      ],
+    });
+
+    const result = await repo.revokeAllUserSessions({
+      userId: 7,
+      revokedAt: REVOKED_AT,
+      revokedReason: "logout_all",
+    });
+
+    expect(result).toEqual({ revokedCount: 1 });
+  });
+});

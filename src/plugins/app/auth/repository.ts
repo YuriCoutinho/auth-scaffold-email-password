@@ -53,6 +53,15 @@ export interface CreateSessionInput {
   expiresAt: Date;
 }
 
+export interface RevokeAllUserSessionsInput {
+  userId: number;
+  revokedAt: Date;
+  revokedReason: RevokedReason;
+  // Absent means "revoke literally every session", which is what the caller
+  // asks for when it accepts losing the device it is calling from.
+  exceptSessionId?: number;
+}
+
 export interface SessionRecord {
   id: number;
   userId: number;
@@ -91,4 +100,7 @@ export interface AuthRepository {
     revokedAt: Date,
     revokedReason: RevokedReason,
   ): Promise<void>;
+  revokeAllUserSessions(
+    input: RevokeAllUserSessionsInput,
+  ): Promise<{ revokedCount: number }>;
 }

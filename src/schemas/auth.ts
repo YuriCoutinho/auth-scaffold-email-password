@@ -26,3 +26,11 @@ export const loginBodySchema = z.object({
 export const currentUserResponseSchema = z.object({
   user: z.object({ publicId: z.uuid(), email: z.email() }),
 });
+
+// Two absences, two mechanisms: the field default covers a body that arrived
+// without the key, and `nullish` covers the body being absent altogether, which
+// Fastify hands to the validator as `null`. The handler turns that `null` into
+// the same default the field carries.
+export const logoutAllBodySchema = z
+  .object({ includeCurrentSession: z.boolean().default(false) })
+  .nullish();

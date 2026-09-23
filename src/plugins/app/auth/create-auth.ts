@@ -4,6 +4,7 @@ import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import { createAuthenticateService } from "./authenticate.js";
 import { createLoginService } from "./login.js";
 import { createLogoutService } from "./logout.js";
+import { createLogoutAllService } from "./logout-all.js";
 import type { AuthRepository } from "./repository.js";
 import { createResendCodeService } from "./resend-code.js";
 import { createSignupService } from "./signup.js";
@@ -36,6 +37,7 @@ export function createAuth(deps: AuthDeps) {
   const { login } = createLoginService(shared);
   const { authenticate } = createAuthenticateService(shared);
   const { logout } = createLogoutService(shared);
+  const { logoutAll } = createLogoutAllService(shared);
 
   return {
     signup,
@@ -43,6 +45,7 @@ export function createAuth(deps: AuthDeps) {
     verifyCode,
     login,
     logout,
+    logoutAll,
     authenticate,
     currentUser: (id: number) => deps.repository.findAuthUserById(id),
   };

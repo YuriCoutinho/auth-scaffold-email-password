@@ -28,6 +28,13 @@ describe("createAuth", () => {
       "invalid",
     );
     expect((await auth.authenticate(undefined)).outcome).toBe("invalid");
+    expect(
+      await auth.logoutAll({
+        userId: 999,
+        currentSessionId: 1,
+        includeCurrentSession: false,
+      }),
+    ).toEqual({ revokedCount: 0, currentSessionRevoked: false });
     expect(await auth.currentUser(999)).toBeUndefined();
   });
 
