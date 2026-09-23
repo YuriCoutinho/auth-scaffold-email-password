@@ -19,3 +19,7 @@ export const loginBodySchema = z.object({
 export const loginResponseSchema = z.object({
   user: z.object({ publicId: z.uuid() }),
 });
+
+export const currentUserResponseSchema = z.object({
+  user: z.object({ publicId: z.uuid(), email: z.email() }),
+});
