@@ -5,9 +5,10 @@ import type {
 } from "../../../src/plugins/app/email-outbox/repository.js";
 
 export interface StoredOutboxMessage
-  extends Omit<OutboxMessage, "correlationId"> {
+  extends Omit<OutboxMessage, "correlationId" | "expiresAt"> {
   id: number;
   correlationId: string | null;
+  expiresAt: Date | null;
   status: OutboxStatus;
   attempts: number;
   nextAttemptAt: Date;
@@ -44,6 +45,7 @@ export function createInMemoryEmailOutboxRepository(
       html: message.html ?? "<p>body</p>",
       text: message.text ?? "body",
       correlationId: message.correlationId ?? null,
+      expiresAt: message.expiresAt ?? null,
       status: message.status ?? "pending",
       attempts: message.attempts ?? 0,
       nextAttemptAt: message.nextAttemptAt ?? createdAt,
@@ -58,6 +60,14 @@ export function createInMemoryEmailOutboxRepository(
   }
 
   const find = (id: number) => messages.find((message) => message.id === id);
+
+  const clearMessage = (message: StoredOutboxMessage) => {
+    message.subject = "";
+    message.html = "";
+    message.text = "";
+  };
+
+  const abandoned: OutboxStatus[] = ["failed", "expired", "canceled"];
 
   const repository: EmailOutboxRepository = {
     async enqueue(message) {
@@ -93,6 +103,7 @@ export function createInMemoryEmailOutboxRepository(
         html: message.html,
         text: message.text,
         correlationId: message.correlationId,
+        expiresAt: message.expiresAt,
         attempts: message.attempts,
       }));
     },
@@ -121,10 +132,34 @@ export function createInMemoryEmailOutboxRepository(
         message.attempts = input.attempts;
         message.lastError = input.lastError;
         message.nextAttemptAt = input.at;
-        message.subject = "";
-        message.html = "";
-        message.text = "";
+        clearMessage(message);
       }
+    },
+
+    async expire(input) {
+      const message = find(input.id);
+      if (message) {
+        message.status = "expired";
+        message.nextAttemptAt = input.at;
+        clearMessage(message);
+      }
+    },
+
+    async cancelPending(input) {
+      const targets = messages.filter(
+        (message) =>
+          message.status === "pending" &&
+          message.type === input.type &&
+          message.recipient === input.recipient,
+      );
+
+      for (const message of targets) {
+        message.status = "canceled";
+        message.nextAttemptAt = input.at;
+        clearMessage(message);
+      }
+
+      return { canceled: targets.length };
     },
 
     async purge(input) {
@@ -134,8 +169,8 @@ export function createInMemoryEmailOutboxRepository(
             (message.status === "sent" &&
               message.sentAt !== null &&
               message.sentAt.getTime() < input.sentBefore.getTime()) ||
-            (message.status === "failed" &&
-              message.nextAttemptAt.getTime() < input.failedBefore.getTime())
+            (abandoned.includes(message.status) &&
+              message.nextAttemptAt.getTime() < input.abandonedBefore.getTime())
           ),
       );
       const deleted = messages.length - kept.length;

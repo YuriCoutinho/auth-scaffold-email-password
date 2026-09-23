@@ -136,6 +136,9 @@ describe("resendCode", () => {
     const code = message.subject.match(/\d{6}/)?.[0] ?? "";
     expect(state.codeHash).toBe(hashOtpCode(code));
     expect(message.correlationId).toBe(state.codeHash);
+    // The message dies with the code it carries, so it is never delivered
+    // after the pending signup that minted it has expired.
+    expect(message.expiresAt).toEqual(state.expiresAt);
     expect(state.codeHash).not.toBe("old-hash");
     expect(message.html).toContain(code);
     expect(message.text).toContain(code);

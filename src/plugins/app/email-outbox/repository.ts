@@ -1,4 +1,11 @@
-export type OutboxStatus = "pending" | "sent" | "failed";
+// Three terminal outcomes telling three different stories: the provider
+// refused, we took too long, or the message stopped being the current one.
+export type OutboxStatus =
+  | "pending"
+  | "sent"
+  | "failed"
+  | "expired"
+  | "canceled";
 
 export interface OutboxMessage {
   type: string;
@@ -9,12 +16,16 @@ export interface OutboxMessage {
   // Opaque to the outbox and handed back on give-up, so the domain can tell
   // whether the message that failed still matches the state it wrote.
   correlationId?: string;
+  // The deadline of what the message carries, decided by whoever enqueues.
+  expiresAt?: Date | null;
 }
 
-export interface OutboxRecord extends Omit<OutboxMessage, "correlationId"> {
+export interface OutboxRecord
+  extends Omit<OutboxMessage, "correlationId" | "expiresAt"> {
   id: number;
   attempts: number;
   correlationId: string | null;
+  expiresAt: Date | null;
 }
 
 export interface ClaimDueInput {
@@ -32,13 +43,24 @@ export interface RescheduleInput {
 
 export interface PurgeInput {
   sentBefore: Date;
-  failedBefore: Date;
+  abandonedBefore: Date;
 }
 
 export interface GiveUpInput {
   id: number;
   attempts: number;
   lastError: string;
+  at: Date;
+}
+
+export interface ExpireInput {
+  id: number;
+  at: Date;
+}
+
+export interface CancelPendingInput {
+  type: string;
+  recipient: string;
   at: Date;
 }
 
@@ -53,6 +75,13 @@ export interface EmailOutboxRepository {
   // Giving up also clears the rendered message: it will never be sent, so the
   // body would be exposure and nothing else.
   giveUp(input: GiveUpInput): Promise<void>;
+  // A deadline that passed is terminal too, and for a different reason than a
+  // give-up: nobody refused the message, it simply stopped being worth
+  // delivering. The content goes the same way.
+  expire(input: ExpireInput): Promise<void>;
+  // Generic on purpose: the outbox does not know that a new code invalidates
+  // the previous one, only how to drop the rows a caller declares stale.
+  cancelPending(input: CancelPendingInput): Promise<{ canceled: number }>;
   // Rows stop existing once they stop being useful, so a delivered code does
   // not outlive its own purpose in the database.
   purge(input: PurgeInput): Promise<{ deleted: number }>;

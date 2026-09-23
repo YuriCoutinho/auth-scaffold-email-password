@@ -185,6 +185,9 @@ describe("changePassword", () => {
       expect(repo.outbox.messages[0]).toMatchObject({
         type: PASSWORD_CHANGED_EMAIL_TYPE,
         recipient: "owner@example.com",
+        // A notice carries nothing that stops being valid, so it has no
+        // deadline and only the attempt policy bounds it.
+        expiresAt: null,
       });
     });
 

@@ -2,13 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
 import { EmailProviderError } from "../../../../src/plugins/app/email/sender.js";
 import {
+  ABANDONED_RETENTION_SECONDS,
   createEmailOutboxWorker,
   defaultPolicyFor,
-  FAILED_RETENTION_SECONDS,
   PURGE_INTERVAL_SECONDS,
   SENT_RETENTION_SECONDS,
 } from "../../../../src/plugins/app/email-outbox/worker.js";
-import { createInMemoryEmailOutboxRepository } from "../../../helpers/email-outbox/in-memory-repository.js";
+import {
+  createInMemoryEmailOutboxRepository,
+  type StoredOutboxMessage,
+} from "../../../helpers/email-outbox/in-memory-repository.js";
 
 const NOW = new Date("2025-01-01T10:00:00.000Z");
 const RECIPIENT = "user@example.com";
@@ -35,7 +38,7 @@ function makeLog() {
 
 function makeWorker(
   overrides: Partial<Parameters<typeof createEmailOutboxWorker>[0]> = {},
-  seed = [message],
+  seed: Array<Partial<StoredOutboxMessage>> = [message],
 ) {
   const repo = createInMemoryEmailOutboxRepository({
     messages: seed.map((seeded, position) => ({
@@ -64,7 +67,7 @@ describe("processBatch", () => {
 
     const result = await worker.processBatch();
 
-    expect(result).toEqual({ sent: 2, rescheduled: 0, gaveUp: 0 });
+    expect(result).toEqual({ sent: 2, rescheduled: 0, gaveUp: 0, expired: 0 });
     expect(emailSender.sent).toEqual([
       {
         to: RECIPIENT,
@@ -91,7 +94,7 @@ describe("processBatch", () => {
 
     const result = await worker.processBatch();
 
-    expect(result).toEqual({ sent: 0, rescheduled: 1, gaveUp: 0 });
+    expect(result).toEqual({ sent: 0, rescheduled: 1, gaveUp: 0, expired: 0 });
     expect(repo.messages[0]).toMatchObject({
       status: "pending",
       attempts: 1,
@@ -112,6 +115,7 @@ describe("processBatch", () => {
       attempts: 2,
       nextAttemptAt: NOW,
       lastError: "provider unavailable",
+      expiresAt: null,
       correlationId: null,
       createdAt: NOW,
       sentAt: null,
@@ -119,7 +123,7 @@ describe("processBatch", () => {
 
     const result = await worker.processBatch();
 
-    expect(result).toEqual({ sent: 0, rescheduled: 0, gaveUp: 1 });
+    expect(result).toEqual({ sent: 0, rescheduled: 0, gaveUp: 1, expired: 0 });
     expect(repo.messages[0]).toMatchObject({ status: "failed", attempts: 3 });
   });
 
@@ -136,6 +140,7 @@ describe("processBatch", () => {
       attempts: 2,
       nextAttemptAt: NOW,
       lastError: null,
+      expiresAt: null,
       correlationId: "code-hash",
       createdAt: NOW,
       sentAt: null,
@@ -173,7 +178,7 @@ describe("processBatch", () => {
 
     const result = await worker.processBatch();
 
-    expect(result).toEqual({ sent: 1, rescheduled: 1, gaveUp: 0 });
+    expect(result).toEqual({ sent: 1, rescheduled: 1, gaveUp: 0, expired: 0 });
     expect(repo.messages.map((row) => row.status)).toEqual(["pending", "sent"]);
   });
 
@@ -200,7 +205,7 @@ describe("processBatch", () => {
 
     const result = await worker.processBatch();
 
-    expect(result).toEqual({ sent: 1, rescheduled: 0, gaveUp: 0 });
+    expect(result).toEqual({ sent: 1, rescheduled: 0, gaveUp: 0, expired: 0 });
     expect(spied.reschedule).not.toHaveBeenCalled();
     expect(spied.giveUp).not.toHaveBeenCalled();
     expect(onGiveUp).not.toHaveBeenCalled();
@@ -238,7 +243,7 @@ describe("processBatch", () => {
 
     const result = await worker.processBatch();
 
-    expect(result).toEqual({ sent: 1, rescheduled: 0, gaveUp: 0 });
+    expect(result).toEqual({ sent: 1, rescheduled: 0, gaveUp: 0, expired: 0 });
     expect(emailSender.send).toHaveBeenCalledTimes(2);
     expect(repo.messages[1]?.status).toBe("sent");
   });
@@ -264,7 +269,7 @@ describe("processBatch", () => {
 
     const result = await worker.processBatch();
 
-    expect(result).toEqual({ sent: 0, rescheduled: 0, gaveUp: 0 });
+    expect(result).toEqual({ sent: 0, rescheduled: 0, gaveUp: 0, expired: 0 });
     expect(onGiveUp).not.toHaveBeenCalled();
     expect(repo.messages[0]?.status).toBe("pending");
   });
@@ -309,6 +314,7 @@ describe("processBatch", () => {
       sent: 1,
       rescheduled: 0,
       gaveUp: 0,
+      expired: 0,
     });
     expect(repo.messages[0]?.status).toBe("sent");
   });
@@ -321,8 +327,171 @@ describe("processBatch", () => {
       sent: 0,
       rescheduled: 0,
       gaveUp: 0,
+      expired: 0,
     });
     expect(emailSender.send).not.toHaveBeenCalled();
+  });
+});
+
+describe("deadline", () => {
+  it("abandons a row past its deadline instead of sending it, and compensates", async () => {
+    const onGiveUp = vi.fn().mockResolvedValue(undefined);
+    const { repo, emailSender, worker } = makeWorker({ onGiveUp }, [
+      {
+        ...message,
+        correlationId: "code-hash",
+        expiresAt: new Date(NOW.getTime() - 1),
+      },
+    ]);
+
+    const result = await worker.processBatch();
+
+    expect(result).toEqual({
+      sent: 0,
+      rescheduled: 0,
+      gaveUp: 0,
+      expired: 1,
+    });
+    expect(emailSender.sent).toEqual([]);
+    expect(repo.messages[0]).toMatchObject({
+      status: "expired",
+      subject: "",
+      html: "",
+      text: "",
+      nextAttemptAt: NOW,
+    });
+    expect(onGiveUp).toHaveBeenCalledExactlyOnceWith(
+      message.type,
+      RECIPIENT,
+      "code-hash",
+    );
+  });
+
+  it("sends a row exactly on its deadline, because the window is past it and not at it", async () => {
+    const { repo, emailSender, worker } = makeWorker({}, [
+      { ...message, expiresAt: new Date(NOW.getTime() - 1) },
+      // Exactly on the deadline: the code is still valid at this instant, so a
+      // <= in the comparison would be caught right here.
+      { ...message, expiresAt: NOW },
+      { ...message, expiresAt: new Date(NOW.getTime() + 1) },
+    ]);
+
+    const result = await worker.processBatch();
+
+    expect(result).toEqual({
+      sent: 2,
+      rescheduled: 0,
+      gaveUp: 0,
+      expired: 1,
+    });
+    expect(emailSender.sent).toHaveLength(2);
+    expect(repo.messages.map((row) => row.status)).toEqual([
+      "expired",
+      "sent",
+      "sent",
+    ]);
+  });
+
+  it("never expires a row without a deadline, however old it is", async () => {
+    const { repo, worker } = makeWorker({}, [
+      { ...message, createdAt: new Date(NOW.getTime() - 365 * 86_400_000) },
+    ]);
+
+    const result = await worker.processBatch();
+
+    expect(result).toEqual({
+      sent: 1,
+      rescheduled: 0,
+      gaveUp: 0,
+      expired: 0,
+    });
+    expect(repo.messages[0]?.status).toBe("sent");
+  });
+
+  it("keeps giving up at the pace of the attempt cap when the deadline is far away", async () => {
+    const emailSender = {
+      send: vi.fn().mockRejectedValue(new Error("provider unavailable")),
+    };
+    const onGiveUp = vi.fn().mockResolvedValue(undefined);
+    const { repo, worker } = makeWorker({ emailSender, onGiveUp }, [
+      {
+        ...message,
+        attempts: 2,
+        expiresAt: new Date(NOW.getTime() + 900_000),
+      },
+    ]);
+
+    const result = await worker.processBatch();
+
+    expect(result).toEqual({
+      sent: 0,
+      rescheduled: 0,
+      gaveUp: 1,
+      expired: 0,
+    });
+    expect(repo.messages[0]?.status).toBe("failed");
+    expect(onGiveUp).toHaveBeenCalledOnce();
+  });
+
+  it("keeps processing the batch when the expiry write fails", async () => {
+    const onGiveUp = vi.fn();
+    const log = makeLog();
+    const seeded = createInMemoryEmailOutboxRepository({
+      messages: [
+        {
+          ...message,
+          id: 1,
+          nextAttemptAt: NOW,
+          expiresAt: new Date(NOW.getTime() - 1),
+        },
+        { ...message, id: 2, nextAttemptAt: NOW },
+      ],
+    });
+    const worker = createEmailOutboxWorker({
+      repo: {
+        ...seeded,
+        expire: vi.fn().mockRejectedValue(new Error("connection closed")),
+      },
+      emailSender: new FakeEmailSender(),
+      policyFor: defaultPolicyFor,
+      onGiveUp,
+      log,
+      now: () => NOW,
+    });
+
+    const result = await worker.processBatch();
+
+    expect(result).toEqual({
+      sent: 1,
+      rescheduled: 0,
+      gaveUp: 0,
+      expired: 0,
+    });
+    // The row was not marked, so it is still pending and nothing was
+    // compensated for a message the queue has not abandoned yet.
+    expect(seeded.messages[0]?.status).toBe("pending");
+    expect(onGiveUp).not.toHaveBeenCalled();
+    expect(seeded.messages[1]?.status).toBe("sent");
+  });
+
+  it("never logs the recipient of a message it abandoned on the deadline", async () => {
+    const log = makeLog();
+    const { worker } = makeWorker({ log }, [
+      { ...message, expiresAt: new Date(NOW.getTime() - 1) },
+    ]);
+
+    await worker.processBatch();
+
+    const logged = [
+      ...log.info.mock.calls,
+      ...log.warn.mock.calls,
+      ...log.error.mock.calls,
+    ];
+    expect(logged.length).toBeGreaterThan(0);
+    const serialized = JSON.stringify(logged);
+    expect(serialized).not.toContain(RECIPIENT);
+    expect(serialized).not.toContain(message.subject);
+    expect(serialized).toContain("outbox email expired before delivery");
   });
 });
 
@@ -382,7 +551,7 @@ describe("retention", () => {
     // Policy numbers, like the list of revocation reasons: changing one is a
     // decision, not a refactor, so the value itself is pinned here.
     expect(SENT_RETENTION_SECONDS).toBe(60 * 60);
-    expect(FAILED_RETENTION_SECONDS).toBe(30 * 24 * 60 * 60);
+    expect(ABANDONED_RETENTION_SECONDS).toBe(30 * 24 * 60 * 60);
     expect(PURGE_INTERVAL_SECONDS).toBe(5 * 60);
   });
 
@@ -400,7 +569,9 @@ describe("retention", () => {
 
     expect(purge).toHaveBeenCalledWith({
       sentBefore: new Date(NOW.getTime() - SENT_RETENTION_SECONDS * 1000),
-      failedBefore: new Date(NOW.getTime() - FAILED_RETENTION_SECONDS * 1000),
+      abandonedBefore: new Date(
+        NOW.getTime() - ABANDONED_RETENTION_SECONDS * 1000,
+      ),
     });
   });
 
@@ -470,6 +641,7 @@ describe("retention", () => {
       sent: 1,
       rescheduled: 0,
       gaveUp: 0,
+      expired: 0,
     });
     expect(repo.messages[0]?.status).toBe("sent");
     expect(log.error).toHaveBeenCalledOnce();

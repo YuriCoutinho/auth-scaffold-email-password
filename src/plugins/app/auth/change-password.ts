@@ -72,6 +72,9 @@ export function createChangePasswordService(deps: ChangePasswordServiceDeps) {
         message: {
           type: PASSWORD_CHANGED_EMAIL_TYPE,
           recipient: user.email,
+          // A notice carries nothing that stops being valid, so it has no
+          // deadline and only the attempt policy bounds it.
+          expiresAt: null,
           ...renderPasswordChangedEmail(),
         },
       });

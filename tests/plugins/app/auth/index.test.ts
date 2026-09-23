@@ -56,15 +56,13 @@ describe("signup code give-up compensation", () => {
     const authRepository = createInMemoryAuthRepository({
       pendingSignups: [{ ...PENDING, ...pending }],
     });
-    const opts = makeAppOptions({
-      authRepository,
-      emailSender: {
-        send: vi.fn().mockRejectedValue(new Error("provider down")),
-      },
-    });
+    const emailSender = {
+      send: vi.fn().mockRejectedValue(new Error("provider down")),
+    };
+    const opts = makeAppOptions({ authRepository, emailSender });
     const app = buildApp(opts);
     await app.ready();
-    return { app, opts, authRepository };
+    return { app, opts, authRepository, emailSender };
   }
 
   // Every attempt of the policy, without waiting out the backoff.
@@ -116,6 +114,44 @@ describe("signup code give-up compensation", () => {
     expect(
       authRepository.pendingSignups.get(PENDING.email)?.codeSendCount,
     ).toBe(2);
+    await app.close();
+  });
+
+  it("frees the resend quota when the code passed its deadline undelivered", async () => {
+    const { app, opts, authRepository } = await buildWithDeadProvider();
+    await opts.emailOutboxRepository.enqueue({
+      ...signupCodeMessage("code-hash-a"),
+      expiresAt: new Date(Date.now() - 1),
+    });
+
+    await app.emailOutbox.processBatch();
+
+    expect(opts.emailOutboxRepository.messages[0]?.status).toBe("expired");
+    expect(
+      authRepository.pendingSignups.get(PENDING.email)?.codeSendCount,
+    ).toBe(0);
+    await app.close();
+  });
+
+  it("never claims a canceled row nor compensates for it", async () => {
+    const { app, opts, authRepository, emailSender } =
+      await buildWithDeadProvider();
+    await opts.emailOutboxRepository.enqueue(signupCodeMessage("code-hash-a"));
+    await opts.emailOutboxRepository.cancelPending({
+      type: "signup_code",
+      recipient: PENDING.email,
+      at: new Date(),
+    });
+
+    await app.emailOutbox.processBatch();
+
+    expect(emailSender.send).not.toHaveBeenCalled();
+    expect(opts.emailOutboxRepository.messages[0]?.status).toBe("canceled");
+    // The user asked for the code that replaced this one, so the send was
+    // consumed serving them and the quota is not given back.
+    expect(
+      authRepository.pendingSignups.get(PENDING.email)?.codeSendCount,
+    ).toBe(1);
     await app.close();
   });
 

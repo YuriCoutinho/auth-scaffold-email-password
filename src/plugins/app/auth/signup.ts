@@ -62,6 +62,9 @@ export function createSignupService(deps: SignupServiceDeps) {
       const code = generateOtpCode();
       const codeHash = hashOtpCode(code);
       const sessionToken = generateSignupSessionToken();
+      const expiresAt = new Date(
+        currentTime.getTime() + SIGNUP_TTL_SECONDS * 1000,
+      );
       // The message is rendered here and queued with the row in one write, so
       // the request never waits on the provider and never has to compensate.
       const { id: pendingSignupId } =
@@ -70,9 +73,7 @@ export function createSignupService(deps: SignupServiceDeps) {
           passwordHash: await hashPassword(password),
           codeHash,
           signupSessionToken: sessionToken,
-          expiresAt: new Date(
-            currentTime.getTime() + SIGNUP_TTL_SECONDS * 1000,
-          ),
+          expiresAt,
           now: currentTime,
           message: {
             type: SIGNUP_CODE_EMAIL_TYPE,
@@ -80,6 +81,9 @@ export function createSignupService(deps: SignupServiceDeps) {
             // The hash of this code, so a give-up on it cannot free quota that
             // a later code has already spent.
             correlationId: codeHash,
+            // The message dies with the code it carries: delivering it later
+            // would hand over something the confirmation already refuses.
+            expiresAt,
             ...renderSignupCodeEmail({
               code,
               ttlMinutes: SIGNUP_TTL_SECONDS / 60,

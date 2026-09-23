@@ -99,6 +99,10 @@ export const emailOutbox = pgTable(
     // Opaque to the outbox: the domain that enqueued the row uses it to decide
     // whether a give-up still concerns the state it wrote.
     correlationId: text("correlation_id"),
+    // The instant the content stops being worth delivering, written by whoever
+    // enqueues, because only the domain that minted a code knows when it dies.
+    // Null for a message that carries nothing with a deadline.
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     status: text("status").notNull().default("pending"),
     attempts: integer("attempts").notNull().default(0),
     // Also the lease: claiming pushes it forward, so a worker that dies

@@ -43,10 +43,10 @@ const FALLBACK_SCHEDULE = [30, 120, 600];
 // development, and nothing past that window has any use.
 export const SENT_RETENTION_SECONDS = 60 * 60;
 
-// An abandoned row keeps no message (giveUp clears it) and is kept only so a
-// delivery failure can be investigated, which is a matter of weeks, not of
-// minutes.
-export const FAILED_RETENTION_SECONDS = 30 * 24 * 60 * 60;
+// An abandoned row keeps no message (whatever abandoned it clears it) and is
+// kept only so a delivery failure can be investigated, which is a matter of
+// weeks, not of minutes.
+export const ABANDONED_RETENTION_SECONDS = 30 * 24 * 60 * 60;
 
 // The shortest window this enforces is an hour, so sweeping every five minutes
 // keeps a row past its welcome by at most five extra minutes while running the
@@ -151,6 +151,29 @@ export function createEmailOutboxWorker(deps: EmailOutboxWorkerDeps) {
     return "rescheduled";
   };
 
+  // A message is only worth delivering while what it carries is still valid.
+  // The row is dropped the same way a give-up drops it, under its own status,
+  // and the domain compensates: nobody received this one either.
+  const handleExpired = async (row: OutboxRecord): Promise<boolean> => {
+    try {
+      await deps.repo.expire({ id: row.id, at: now() });
+    } catch (writeError) {
+      // The row was not marked, so it stays claimable. Compensating now would
+      // act on a message the queue has not abandoned.
+      deps.log?.error(
+        { outboxId: row.id, type: row.type, ...describe(writeError) },
+        "outbox expire write failed",
+      );
+      return false;
+    }
+    deps.log?.warn(
+      { outboxId: row.id, type: row.type },
+      "outbox email expired before delivery",
+    );
+    await runGiveUpHandler(row.type, row.recipient, row.correlationId);
+    return true;
+  };
+
   // Runs on the same schedule as the batch, right after it, so no second timer
   // exists and the delete never competes with a claim. A failure here is
   // bookkeeping like any other: it is logged and the cycle carries on.
@@ -173,7 +196,9 @@ export function createEmailOutboxWorker(deps: EmailOutboxWorkerDeps) {
     try {
       const { deleted } = await deps.repo.purge({
         sentBefore: new Date(at.getTime() - SENT_RETENTION_SECONDS * 1000),
-        failedBefore: new Date(at.getTime() - FAILED_RETENTION_SECONDS * 1000),
+        abandonedBefore: new Date(
+          at.getTime() - ABANDONED_RETENTION_SECONDS * 1000,
+        ),
       });
       if (deleted > 0) {
         deps.log?.info({ deleted }, "outbox rows purged");
@@ -191,6 +216,7 @@ export function createEmailOutboxWorker(deps: EmailOutboxWorkerDeps) {
       sent: number;
       rescheduled: number;
       gaveUp: number;
+      expired: number;
     }> {
       const claimed = await deps.repo.claimDue({
         now: now(),
@@ -201,8 +227,21 @@ export function createEmailOutboxWorker(deps: EmailOutboxWorkerDeps) {
       let sent = 0;
       let rescheduled = 0;
       let gaveUp = 0;
+      let expired = 0;
 
       for (const row of claimed) {
+        // Strictly past the deadline: a message whose content dies at that very
+        // instant is still valid when the send starts.
+        if (
+          row.expiresAt !== null &&
+          row.expiresAt.getTime() < now().getTime()
+        ) {
+          if (await handleExpired(row)) {
+            expired += 1;
+          }
+          continue;
+        }
+
         try {
           await deps.emailSender.send({
             to: row.recipient,
@@ -245,7 +284,7 @@ export function createEmailOutboxWorker(deps: EmailOutboxWorkerDeps) {
 
       await purge();
 
-      return { sent, rescheduled, gaveUp };
+      return { sent, rescheduled, gaveUp, expired };
     },
   };
 }

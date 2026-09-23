@@ -61,15 +61,16 @@ export function createResendCodeService(deps: ResendCodeServiceDeps) {
 
       const code = generateOtpCode();
       const codeHash = hashOtpCode(code);
+      const expiresAt = new Date(
+        currentTime.getTime() + SIGNUP_TTL_SECONDS * 1000,
+      );
       // The new state and the message it announces are one write, so there is
       // nothing left to compensate if the provider is down later.
       await deps.repo.updatePendingSignupResendStateAndQueueEmail(
         sessionToken,
         {
           codeHash,
-          expiresAt: new Date(
-            currentTime.getTime() + SIGNUP_TTL_SECONDS * 1000,
-          ),
+          expiresAt,
           codeAttempts: 0,
           lastSentAt: currentTime,
           codeSendCount: pending.codeSendCount + 1,
@@ -78,6 +79,9 @@ export function createResendCodeService(deps: ResendCodeServiceDeps) {
           type: SIGNUP_CODE_EMAIL_TYPE,
           recipient: pending.email,
           correlationId: codeHash,
+          // The message dies with the code it carries, and this new code has
+          // already invalidated the one still queued from the previous send.
+          expiresAt,
           ...renderSignupCodeEmail({
             code,
             ttlMinutes: SIGNUP_TTL_SECONDS / 60,

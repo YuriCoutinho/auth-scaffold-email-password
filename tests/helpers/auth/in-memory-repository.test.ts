@@ -148,6 +148,80 @@ describe("in-memory auth repository", () => {
     ).toBe(2);
   });
 
+  it("cancels the codes still queued for that recipient when a new one is queued", async () => {
+    const repo = createInMemoryAuthRepository();
+    await repo.upsertPendingSignupAndQueueEmail(pendingInput());
+
+    await repo.updatePendingSignupResendStateAndQueueEmail(
+      "token-1",
+      {
+        codeHash: "second-code-hash",
+        expiresAt: new Date(NOW.getTime() + 900_000),
+        codeAttempts: 0,
+        lastSentAt: NOW,
+        codeSendCount: 2,
+      },
+      outboxMessage,
+    );
+
+    expect(repo.outbox.messages.map((row) => row.status)).toEqual([
+      "canceled",
+      "pending",
+    ]);
+    // The clear text code of the replaced message goes with it.
+    expect(repo.outbox.messages[0]).toMatchObject({
+      subject: "",
+      html: "",
+      text: "",
+      recipient: "user@example.com",
+    });
+  });
+
+  it("never cancels a queued message of another recipient or another type", async () => {
+    const repo = createInMemoryAuthRepository();
+    await repo.outbox.enqueue({
+      ...outboxMessage,
+      recipient: "someone@example.com",
+    });
+    await repo.outbox.enqueue({
+      ...outboxMessage,
+      type: "password_changed",
+    });
+
+    await repo.upsertPendingSignupAndQueueEmail(pendingInput());
+    await repo.upsertPendingSignupAndQueueEmail(
+      pendingInput({ signupSessionToken: "token-2" }),
+    );
+
+    expect(repo.outbox.messages.map((row) => row.status)).toEqual([
+      "pending",
+      "pending",
+      "canceled",
+      "pending",
+    ]);
+  });
+
+  it("does not give the resend quota back to a code it replaced", async () => {
+    const repo = createInMemoryAuthRepository();
+    await repo.upsertPendingSignupAndQueueEmail(pendingInput());
+
+    await repo.updatePendingSignupResendStateAndQueueEmail(
+      "token-1",
+      {
+        codeHash: "second-code-hash",
+        expiresAt: new Date(NOW.getTime() + 900_000),
+        codeAttempts: 0,
+        lastSentAt: NOW,
+        codeSendCount: 2,
+      },
+      outboxMessage,
+    );
+
+    expect(
+      (await repo.findPendingSignupByEmail("user@example.com"))?.codeSendCount,
+    ).toBe(2);
+  });
+
   it("promotes a pending signup into user, session and profile atomically", async () => {
     const repo = createInMemoryAuthRepository();
     await repo.upsertPendingSignupAndQueueEmail(pendingInput());

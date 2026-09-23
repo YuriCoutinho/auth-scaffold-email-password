@@ -21,6 +21,7 @@ export interface EmailOutbox {
     sent: number;
     rescheduled: number;
     gaveUp: number;
+    expired: number;
   }>;
   // A domain registers what to compensate when a type is given up on, which is
   // how the outbox stays free of any knowledge about that domain.

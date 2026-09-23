@@ -109,6 +109,17 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
     });
   }
 
+  // Mirrors the Drizzle repository: a new code cancels whatever is still queued
+  // for that address, because it already invalidated the code those rows carry.
+  const queueReplacingCode = async (message: OutboxMessage, at: Date) => {
+    await outbox.cancelPending({
+      type: message.type,
+      recipient: message.recipient,
+      at,
+    });
+    await outbox.enqueue(message);
+  };
+
   const findByToken = (token: string) =>
     [...pendingSignups.values()].find((p) => p.signupSessionToken === token);
 
@@ -144,7 +155,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
         lastSentAt: input.now,
         codeSendCount: 1,
       });
-      await outbox.enqueue(input.message);
+      await queueReplacingCode(input.message, input.now);
       return { id };
     },
 
@@ -168,7 +179,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       if (pending) {
         Object.assign(pending, state);
       }
-      await outbox.enqueue(message);
+      await queueReplacingCode(message, state.lastSentAt);
     },
 
     async incrementCodeAttempts(token) {

@@ -6,6 +6,7 @@ CREATE TABLE "email_outbox" (
 	"html" text NOT NULL,
 	"text" text NOT NULL,
 	"correlation_id" text,
+	"expires_at" timestamp with time zone,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"attempts" integer DEFAULT 0 NOT NULL,
 	"next_attempt_at" timestamp with time zone DEFAULT now() NOT NULL,

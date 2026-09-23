@@ -11,8 +11,13 @@ const claimedColumns = {
   html: emailOutbox.html,
   text: emailOutbox.text,
   correlationId: emailOutbox.correlationId,
+  expiresAt: emailOutbox.expiresAt,
   attempts: emailOutbox.attempts,
 };
+
+// What a row keeps once it is terminal: the envelope, so a delivery problem
+// can still be investigated, and nothing of what it was going to say.
+const clearedMessage = { subject: "", html: "", text: "" };
 
 // The adapter also runs inside a transaction opened elsewhere, which is what
 // keeps a queued email and the domain write that caused it in one commit.
@@ -95,11 +100,45 @@ export function createDrizzleEmailOutboxRepository(
           attempts: input.attempts,
           lastError: input.lastError,
           nextAttemptAt: input.at,
-          subject: "",
-          html: "",
-          text: "",
+          ...clearedMessage,
         })
         .where(eq(emailOutbox.id, input.id));
+    },
+
+    // Same terminal treatment as a give-up, under its own status: folding the
+    // two together would erase the difference between a provider that refuses
+    // and a delivery that took longer than the content stayed valid.
+    async expire(input) {
+      await db
+        .update(emailOutbox)
+        .set({
+          status: "expired",
+          nextAttemptAt: input.at,
+          ...clearedMessage,
+        })
+        .where(eq(emailOutbox.id, input.id));
+    },
+
+    // Only rows still pending: one already sent, abandoned or canceled is
+    // history, and rewriting it would lose what actually happened to it.
+    async cancelPending(input) {
+      const canceled = await db
+        .update(emailOutbox)
+        .set({
+          status: "canceled",
+          nextAttemptAt: input.at,
+          ...clearedMessage,
+        })
+        .where(
+          and(
+            eq(emailOutbox.status, "pending"),
+            eq(emailOutbox.type, input.type),
+            eq(emailOutbox.recipient, input.recipient),
+          ),
+        )
+        .returning({ id: emailOutbox.id });
+
+      return { canceled: canceled.length };
     },
 
     // One DELETE, no read and no lock that delivery cares about. The due index
@@ -116,9 +155,11 @@ export function createDrizzleEmailOutboxRepository(
               eq(emailOutbox.status, "sent"),
               lt(emailOutbox.sentAt, input.sentBefore),
             ),
+            // Abandoned for whatever reason: all three stamp the transition in
+            // next_attempt_at, so one window measures the three of them.
             and(
-              eq(emailOutbox.status, "failed"),
-              lt(emailOutbox.nextAttemptAt, input.failedBefore),
+              inArray(emailOutbox.status, ["failed", "expired", "canceled"]),
+              lt(emailOutbox.nextAttemptAt, input.abandonedBefore),
             ),
           ),
         )

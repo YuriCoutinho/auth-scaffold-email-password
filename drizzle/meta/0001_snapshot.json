@@ -1,5 +1,5 @@
 {
-  "id": "d387b660-4cd3-45af-ac88-447777813b19",
+  "id": "1d8b57b4-d15e-4174-9b13-d213651c94ee",
   "prevId": "e17e27af-0fe8-4f19-8ed4-410d47df1a18",
   "version": "7",
   "dialect": "postgresql",
@@ -136,6 +136,12 @@
         "correlation_id": {
           "name": "correlation_id",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

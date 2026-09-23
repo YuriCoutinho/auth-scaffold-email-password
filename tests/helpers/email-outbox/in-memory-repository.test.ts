@@ -40,6 +40,7 @@ describe("claimDue", () => {
         html: message.html,
         text: message.text,
         correlationId: null,
+        expiresAt: null,
         attempts: 0,
       },
     ]);
@@ -172,6 +173,96 @@ describe("markSent / reschedule / giveUp", () => {
   });
 });
 
+describe("expire", () => {
+  it("marks the row expired, clears the message and stamps the transition", async () => {
+    const repo = createInMemoryEmailOutboxRepository({
+      messages: [{ ...message, id: 1, attempts: 1, nextAttemptAt: NOW }],
+    });
+    const at = new Date(NOW.getTime() + 60_000);
+
+    await repo.expire({ id: 1, at });
+
+    expect(repo.messages[0]).toMatchObject({
+      status: "expired",
+      subject: "",
+      html: "",
+      text: "",
+      type: message.type,
+      recipient: message.recipient,
+      attempts: 1,
+      nextAttemptAt: at,
+    });
+  });
+});
+
+describe("cancelPending", () => {
+  const seed = () =>
+    createInMemoryEmailOutboxRepository({
+      messages: [
+        { ...message, id: 1 },
+        { ...message, id: 2 },
+        { ...message, id: 3, recipient: "other@example.com" },
+        { ...message, id: 4, type: "password_changed" },
+        { ...message, id: 5, status: "sent", sentAt: NOW },
+        { ...message, id: 6, status: "failed" },
+      ],
+    });
+
+  it("cancels the pending rows of that type and recipient, clearing the message", async () => {
+    const repo = seed();
+    const at = new Date(NOW.getTime() + 1_000);
+
+    const { canceled } = await repo.cancelPending({
+      type: message.type,
+      recipient: message.recipient,
+      at,
+    });
+
+    expect(canceled).toBe(2);
+    expect(repo.messages.slice(0, 2)).toMatchObject([
+      {
+        id: 1,
+        status: "canceled",
+        subject: "",
+        html: "",
+        text: "",
+        recipient: message.recipient,
+        nextAttemptAt: at,
+      },
+      { id: 2, status: "canceled", subject: "", html: "", text: "" },
+    ]);
+  });
+
+  it("never touches another recipient, another type, or a row that is not pending", async () => {
+    const repo = seed();
+
+    await repo.cancelPending({
+      type: message.type,
+      recipient: message.recipient,
+      at: NOW,
+    });
+
+    expect(repo.messages.slice(2)).toMatchObject([
+      { id: 3, status: "pending", subject: message.subject },
+      { id: 4, status: "pending", subject: message.subject },
+      { id: 5, status: "sent", subject: message.subject },
+      { id: 6, status: "failed", subject: message.subject },
+    ]);
+  });
+
+  it("reports nothing canceled when no pending row matches", async () => {
+    const repo = seed();
+
+    await expect(
+      repo.cancelPending({
+        type: message.type,
+        recipient: "nobody@example.com",
+        at: NOW,
+      }),
+    ).resolves.toEqual({ canceled: 0 });
+  });
+});
+
 describe("enqueue", () => {
   it("adds a pending row due immediately", async () => {
     const repo = createInMemoryEmailOutboxRepository({ now: () => NOW });
@@ -186,7 +277,17 @@ describe("enqueue", () => {
       nextAttemptAt: NOW,
       lastError: null,
       sentAt: null,
+      expiresAt: null,
     });
+  });
+
+  it("keeps the deadline of whoever enqueued the message", async () => {
+    const repo = createInMemoryEmailOutboxRepository({ now: () => NOW });
+    const expiresAt = new Date(NOW.getTime() + 900_000);
+
+    await repo.enqueue({ ...message, expiresAt });
+
+    expect(repo.messages[0]?.expiresAt).toEqual(expiresAt);
   });
 });
 
@@ -195,7 +296,7 @@ describe("purge", () => {
   const DAY = 24 * HOUR;
   const windows = {
     sentBefore: new Date(NOW.getTime() - HOUR),
-    failedBefore: new Date(NOW.getTime() - 30 * DAY),
+    abandonedBefore: new Date(NOW.getTime() - 30 * DAY),
   };
 
   it("deletes a delivered row past its cutoff and keeps the one exactly on it", async () => {
@@ -237,19 +338,19 @@ describe("purge", () => {
           ...message,
           id: 1,
           status: "failed",
-          nextAttemptAt: new Date(windows.failedBefore.getTime() - 1),
+          nextAttemptAt: new Date(windows.abandonedBefore.getTime() - 1),
         },
         {
           ...message,
           id: 2,
           status: "failed",
-          nextAttemptAt: new Date(windows.failedBefore.getTime()),
+          nextAttemptAt: new Date(windows.abandonedBefore.getTime()),
         },
         {
           ...message,
           id: 3,
           status: "failed",
-          nextAttemptAt: new Date(windows.failedBefore.getTime() + 1),
+          nextAttemptAt: new Date(windows.abandonedBefore.getTime() + 1),
         },
       ],
     });
@@ -258,6 +359,33 @@ describe("purge", () => {
 
     expect(deleted).toBe(1);
     expect(repo.messages.map((row) => row.id)).toEqual([2, 3]);
+  });
+
+  it("measures an expired and a canceled row on the abandoned window too", async () => {
+    const old = new Date(windows.abandonedBefore.getTime() - 1);
+    const repo = createInMemoryEmailOutboxRepository({
+      messages: [
+        { ...message, id: 1, status: "expired", nextAttemptAt: old },
+        { ...message, id: 2, status: "canceled", nextAttemptAt: old },
+        {
+          ...message,
+          id: 3,
+          status: "expired",
+          nextAttemptAt: new Date(NOW.getTime() - HOUR),
+        },
+        {
+          ...message,
+          id: 4,
+          status: "canceled",
+          nextAttemptAt: new Date(NOW.getTime() - HOUR),
+        },
+      ],
+    });
+
+    const { deleted } = await repo.purge(windows);
+
+    expect(deleted).toBe(2);
+    expect(repo.messages.map((row) => row.id)).toEqual([3, 4]);
   });
 
   it("applies each window to its own status", async () => {

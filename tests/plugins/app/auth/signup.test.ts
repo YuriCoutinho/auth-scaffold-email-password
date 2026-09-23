@@ -92,6 +92,9 @@ describe("signup service", () => {
     // The correlation is the hash of this very code, so a give-up on it cannot
     // free quota that a later code already spent.
     expect(message.correlationId).toBe(row.codeHash);
+    // The message dies with the code it carries, so it is never delivered
+    // after the pending signup that minted it has expired.
+    expect(message.expiresAt).toEqual(row.expiresAt);
     expect(message.html).toContain(code);
     expect(message.text).toContain(code);
     expect(row.passwordHash).not.toContain(PASSWORD);

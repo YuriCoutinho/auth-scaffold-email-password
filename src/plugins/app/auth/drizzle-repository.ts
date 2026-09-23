@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { authUsers, pendingSignups, profiles } from "../../../db/schema.js";
 import { createDrizzleEmailOutboxRepository } from "../email-outbox/drizzle-repository.js";
+import type { OutboxMessage } from "../email-outbox/repository.js";
 import {
   createDrizzleSessionRepository,
   type DatabaseOrTransaction,
@@ -23,6 +24,25 @@ const pendingSignupColumns = {
   codeSendCount: pendingSignups.codeSendCount,
   expiresAt: pendingSignups.expiresAt,
 };
+
+// A new code invalidates the previous one right away, not when it expires, so
+// whatever is still queued for that address carries a code that already fails.
+// Cancelling it here, inside the transaction that mints the new one, is what
+// keeps the worker from delivering a burst of dead codes after an outage, and
+// it is auth that decides it: the outbox only knows how to cancel.
+async function queueReplacingCode(
+  tx: DatabaseOrTransaction,
+  message: OutboxMessage,
+  at: Date,
+) {
+  const outbox = createDrizzleEmailOutboxRepository(tx);
+  await outbox.cancelPending({
+    type: message.type,
+    recipient: message.recipient,
+    at,
+  });
+  await outbox.enqueue(message);
+}
 
 export function createDrizzleAuthRepository(
   db: DatabaseOrTransaction,
@@ -77,7 +97,7 @@ export function createDrizzleAuthRepository(
             },
           })
           .returning({ id: pendingSignups.id });
-        await createDrizzleEmailOutboxRepository(tx).enqueue(input.message);
+        await queueReplacingCode(tx, input.message, input.now);
         return rows[0] as { id: number };
       });
     },
@@ -115,7 +135,9 @@ export function createDrizzleAuthRepository(
           .update(pendingSignups)
           .set(state)
           .where(eq(pendingSignups.signupSessionToken, token));
-        await createDrizzleEmailOutboxRepository(tx).enqueue(message);
+        // lastSentAt is the instant of this resend, which is also the instant
+        // the code it replaces stops being valid.
+        await queueReplacingCode(tx, message, state.lastSentAt);
       });
     },
 
