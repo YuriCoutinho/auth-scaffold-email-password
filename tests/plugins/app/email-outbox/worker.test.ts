@@ -185,11 +185,13 @@ describe("processBatch", () => {
       giveUp: vi.fn(),
     };
     const onGiveUp = vi.fn();
+    const log = makeLog();
     const worker = createEmailOutboxWorker({
       repo: spied,
       emailSender: new FakeEmailSender(),
       policyFor: defaultPolicyFor,
       onGiveUp,
+      log,
       now: () => NOW,
     });
 
@@ -199,6 +201,12 @@ describe("processBatch", () => {
     expect(spied.reschedule).not.toHaveBeenCalled();
     expect(spied.giveUp).not.toHaveBeenCalled();
     expect(onGiveUp).not.toHaveBeenCalled();
+    // One record for the row, not a success and a failure side by side.
+    expect(log.info).not.toHaveBeenCalled();
+    expect(log.error).toHaveBeenCalledOnce();
+    expect(log.error.mock.calls[0]?.[1]).toBe(
+      "outbox email sent but not marked, it will be sent again",
+    );
   });
 
   it("keeps processing the batch when the reschedule write fails", async () => {

@@ -176,17 +176,19 @@ export function createEmailOutboxWorker(deps: EmailOutboxWorkerDeps) {
         // one duplicate send, which is the at-least-once trade this queue makes.
         try {
           await deps.repo.markSent(row.id, now());
+          deps.log?.info(
+            { outboxId: row.id, type: row.type },
+            "outbox email sent",
+          );
         } catch (error) {
+          // One record for the row, and it tells the whole truth: the message
+          // went out and only the bookkeeping failed.
           deps.log?.error(
             { outboxId: row.id, type: row.type, ...describe(error) },
-            "outbox email sent but not marked",
+            "outbox email sent but not marked, it will be sent again",
           );
         }
         sent += 1;
-        deps.log?.info(
-          { outboxId: row.id, type: row.type },
-          "outbox email sent",
-        );
       }
 
       return { sent, rescheduled, gaveUp };
