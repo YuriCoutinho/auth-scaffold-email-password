@@ -21,8 +21,10 @@ const routes: FastifyPluginAsyncZod = async (app) => {
           "includeCurrentSession revokes that one too, and only then is the " +
           "session cookie cleared. Requires a valid session, so the response " +
           "is 401 whenever the cookie is missing, unknown, revoked or expired.",
-        // A POST with no body at all reaches the validator as null, not as
-        // undefined, so the schema has to admit it for the default to apply.
+        // Fastify hands a body-less POST to the validator as `null`, which
+        // neither `prefault` nor `optional` admits, so the schema has to accept
+        // it explicitly and the handler falls back below. That is what makes
+        // the plain `fetch(url, { method: "POST" })` the frontend sends valid.
         body: logoutAllBodySchema.nullish(),
         response: {
           204: noContentSchema,

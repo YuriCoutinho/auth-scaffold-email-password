@@ -27,12 +27,13 @@ export const currentUserResponseSchema = z.object({
   user: z.object({ publicId: z.uuid(), email: z.email() }),
 });
 
-// Two defaults for two different absences: `default` covers a body that arrived
-// without the field, `prefault` covers no body at all, which is what
-// `fetch(url, { method: "POST" })` sends when there is nothing to say. It has to
-// be prefault and not default because in Zod 4 `default` takes the output type,
-// so `{}` would not typecheck here, while `prefault` feeds `{}` in as input and
-// lets the inner default fill it.
+// The field default covers a body that arrived without the field. The outer
+// `prefault` covers the object itself being `undefined`, which is what a direct
+// `parse()` outside Fastify passes; over HTTP the absent body arrives as `null`
+// instead, and the route handles that case where it declares the body. It has
+// to be prefault and not default because in Zod 4 `default` takes the output
+// type, so `{}` would not typecheck here, while `prefault` feeds `{}` in as
+// input and lets the inner default fill it.
 export const logoutAllBodySchema = z
   .object({ includeCurrentSession: z.boolean().default(false) })
   .prefault({});
