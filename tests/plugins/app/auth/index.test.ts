@@ -92,7 +92,7 @@ describe("signup code give-up compensation", () => {
 
   it("frees the resend quota when the current signup code is given up on", async () => {
     const { app, opts, authRepository } = await buildWithDeadProvider();
-    await app.emailOutbox.enqueue(signupCodeMessage("code-hash-a"));
+    await opts.emailOutboxRepository.enqueue(signupCodeMessage("code-hash-a"));
 
     await exhaustAttempts(app, opts, 3);
 
@@ -108,7 +108,7 @@ describe("signup code give-up compensation", () => {
       codeHash: "code-hash-b",
       codeSendCount: 2,
     });
-    await app.emailOutbox.enqueue(signupCodeMessage("code-hash-a"));
+    await opts.emailOutboxRepository.enqueue(signupCodeMessage("code-hash-a"));
 
     await exhaustAttempts(app, opts, 3);
 
@@ -121,7 +121,7 @@ describe("signup code give-up compensation", () => {
 
   it("leaves the pending signup alone when a password notice is given up on", async () => {
     const { app, opts, authRepository } = await buildWithDeadProvider();
-    await app.emailOutbox.enqueue({
+    await opts.emailOutboxRepository.enqueue({
       type: "password_changed",
       recipient: PENDING.email,
       subject: "Your password was changed",

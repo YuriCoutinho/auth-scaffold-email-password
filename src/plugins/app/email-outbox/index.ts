@@ -2,7 +2,6 @@ import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import type { AppOptions } from "../../../app-options.js";
 import { createDrizzleEmailOutboxRepository } from "./drizzle-repository.js";
-import type { OutboxMessage } from "./repository.js";
 import { createEmailOutboxWorker, defaultPolicyFor } from "./worker.js";
 
 const POLL_INTERVAL_MS = 1_000;
@@ -12,8 +11,12 @@ export type GiveUpHandler = (
   correlationId: string | null,
 ) => Promise<void>;
 
+// Enqueuing is deliberately absent: a message has to be written in the same
+// transaction as the domain write that caused it, which only a repository
+// holding that transaction can do. A decorator built on fastify.db would be a
+// non-transactional way in, and the whole point of this slice is that no such
+// way exists.
 export interface EmailOutbox {
-  enqueue(message: OutboxMessage): Promise<void>;
   processBatch(): Promise<{
     sent: number;
     rescheduled: number;
@@ -47,7 +50,6 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
   });
 
   fastify.decorate("emailOutbox", {
-    enqueue: (message) => repository.enqueue(message),
     processBatch: () => worker.processBatch(),
     onGiveUp: (type, handler) => {
       giveUpHandlers.set(type, handler);
@@ -75,7 +77,12 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
       inFlight = worker
         .processBatch()
         .catch((error: unknown) => {
-          fastify.log.error({ err: error }, "email outbox batch failed");
+          // Only the error class reaches the log. A database error message can
+          // quote column values, and one of those columns is the recipient.
+          fastify.log.error(
+            { errorName: error instanceof Error ? error.name : "unknown" },
+            "email outbox batch failed",
+          );
         })
         .finally(schedule);
     }, POLL_INTERVAL_MS);
