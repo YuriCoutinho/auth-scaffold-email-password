@@ -7,11 +7,15 @@ declare module "fastify" {
     authenticate: onRequestAsyncHookHandler;
   }
   interface FastifyRequest {
-    user: { id: number };
+    user: { id: number } | null;
   }
 }
 
 const plugin: FastifyPluginAsync = async (fastify) => {
+  // Every request carries the property, so a route that forgets the hook reads
+  // null instead of undefined and the type stays honest about it.
+  fastify.decorateRequest("user", null);
+
   fastify.decorate("authenticate", async (request, reply) => {
     const result = await fastify.auth.authenticate(
       request.cookies[SESSION_COOKIE.name],

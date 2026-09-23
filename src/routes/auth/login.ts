@@ -1,8 +1,11 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
-import { z } from "zod";
 import { SESSION_COOKIE } from "../../lib/cookies.js";
 import { deviceLabelFromUserAgent } from "../../lib/device-label.js";
-import { loginBodySchema, messageSchema } from "../../schemas/auth.js";
+import {
+  loginBodySchema,
+  messageSchema,
+  noContentSchema,
+} from "../../schemas/auth.js";
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   app.post(
@@ -19,7 +22,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
           "or the password is wrong.",
         body: loginBodySchema,
         response: {
-          204: z.null(),
+          204: noContentSchema,
           400: messageSchema,
           401: messageSchema,
         },
@@ -44,7 +47,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         result.sessionToken,
         SESSION_COOKIE.options,
       );
-      return reply.code(204).send(null);
+      return reply.code(204).send();
     },
   );
 };

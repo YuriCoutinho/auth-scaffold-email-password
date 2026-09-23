@@ -21,6 +21,12 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       },
     },
     async (request, reply) => {
+      if (!request.user) {
+        // The route declares the hook, so no user here means the hook was
+        // dropped from the route, not that the caller is unauthorized.
+        throw new Error("Route reached without the authenticate hook");
+      }
+
       const user = await app.auth.currentUser(request.user.id);
 
       if (!user) {

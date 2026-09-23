@@ -107,12 +107,14 @@ describe("in-memory auth repository", () => {
       passwordHash: "hash",
     });
     expect(repo.pendingSignups.size).toBe(0);
-    expect(repo.sessions).toMatchObject([
+    expect(repo.sessions).toEqual([
       {
+        id: 1,
         userId: 1,
         tokenHash: "session-hash",
         deviceLabel: "Mozilla/5.0",
         expiresAt: new Date(NOW.getTime() + 1_000),
+        revokedAt: null,
       },
     ]);
     expect(repo.profiles).toEqual([{ userId: 1 }]);
@@ -128,8 +130,15 @@ describe("in-memory auth repository", () => {
       deviceLabel: null,
       expiresAt: NOW,
     });
-    expect(repo.sessions).toMatchObject([
-      { userId: 7, tokenHash: "t", deviceLabel: null, expiresAt: NOW },
+    expect(repo.sessions).toEqual([
+      {
+        id: 1,
+        userId: 7,
+        tokenHash: "t",
+        deviceLabel: null,
+        expiresAt: NOW,
+        revokedAt: null,
+      },
     ]);
   });
 

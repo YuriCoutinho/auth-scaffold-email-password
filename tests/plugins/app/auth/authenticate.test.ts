@@ -1,18 +1,19 @@
 import { describe, expect, it, vi } from "vitest";
 import { hashSessionToken } from "../../../../src/lib/token-hash.js";
 import { createAuthenticateService } from "../../../../src/plugins/app/auth/authenticate.js";
+import type { SessionRecord } from "../../../../src/plugins/app/auth/repository.js";
 
 const NOW = new Date("2026-09-23T12:00:00Z");
 const TOKEN = "a-session-token";
 
-function makeDeps(session: unknown) {
+function makeDeps(session: SessionRecord | undefined) {
   return {
     repo: { findSessionByTokenHash: vi.fn().mockResolvedValue(session) },
     now: () => NOW,
   };
 }
 
-function validSession() {
+function validSession(): SessionRecord {
   return {
     id: 1,
     userId: 7,

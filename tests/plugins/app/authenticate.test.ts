@@ -80,6 +80,32 @@ describe("authenticate hook", () => {
     await app.close();
   });
 
+  it("never clears the session cookie when it refuses a request", async () => {
+    const authRepository = createInMemoryAuthRepository({
+      authUsers: [{ id: 7, email: "a@b.com" }],
+      sessions: [
+        {
+          userId: 7,
+          tokenHash: hashSessionToken(TOKEN),
+          expiresAt: new Date(Date.now() + 60_000),
+          revokedAt: new Date(),
+        },
+      ],
+    });
+    const app = buildApp(makeAppOptions({ authRepository }));
+    protectedRoute(app, "GET", async () => ({ ok: true }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/protected",
+      cookies: { session: TOKEN },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.headers["set-cookie"]).toBeUndefined();
+    await app.close();
+  });
+
   it("rejects before parsing the body of an unauthenticated request", async () => {
     const app = buildApp(makeAppOptions());
     const handler = vi.fn();
