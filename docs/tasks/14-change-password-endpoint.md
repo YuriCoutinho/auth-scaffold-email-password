@@ -12,7 +12,7 @@ O endpoint nasce da tela de configurações da conta, onde o formulário pede a 
 
 ### Onde o código fica
 
-A rota é `src/routes/auth/change-password.ts`, dentro da pasta cujo nome já é o prefixo, no mesmo desenho de `login.ts` e `signup.ts`. O service é `src/plugins/app/auth/change-password.ts` e chega à rota por `app.auth.changePassword`, montado em `create-auth.ts` ao lado de `signup`, `login`, `verifyCode`, `resendCode` e `authenticate`. O acesso ao banco são dois membros novos da porta `AuthRepository`, `findAuthUserCredentialsById` e `changeUserPassword`, implementados tanto no adaptador Drizzle quanto no adaptador em memória dos testes. O aviso por email segue a divisão que o cadastro já tinha, com o template em `emails/password-changed.ts` e o envio em `send-password-changed.ts`.
+A rota é `src/routes/auth/change-password.ts`, dentro da pasta cujo nome já é o prefixo, no mesmo desenho de `login.ts` e `signup.ts`. O service é `src/plugins/app/auth/change-password.ts` e chega à rota por `app.auth.changePassword`, montado em `create-auth.ts` ao lado de `signup`, `login`, `verifyCode`, `resendCode` e `authenticate`. O acesso ao banco são dois membros novos da porta `AuthRepository`, `findAuthUserCredentialsById` e `changeUserPassword`, implementados tanto no adaptador Drizzle quanto no adaptador em memória dos testes. O aviso por email segue a divisão que o cadastro já tinha, com o template em `emails/password-changed.ts` e a mensagem renderizada entregue ao repositório, que a enfileira no outbox junto das demais escritas.
 
 ### A senha atual é exigida mesmo com a sessão já autenticada
 
@@ -70,22 +70,22 @@ Nenhuma delas é `401`. A sessão é válida em todos esses casos, e foi a confi
 
 O corpo é validado por `changePasswordBodySchema`, então uma senha nova fora da faixa de quinze a cento e vinte e oito caracteres também recebe `400`, antes de o service ser chamado.
 
-### O aviso por email é aguardado, mas nunca muda a resposta
+### O aviso por email é enfileirado junto da troca e nunca muda a resposta
 
-`sendPasswordChanged` é chamado com `await` no fim do fluxo, como todos os envios deste projeto, e o resultado dele é descartado. A senha já está trocada quando o email sai, então deixar uma falha de entrega virar erro da requisição contaria ao usuário o oposto do que aconteceu, e ele tentaria de novo com uma senha atual que não é mais a atual. A função converte qualquer exceção em `false` e registra a falha no log, exatamente como `sendSignupCode` faz, de modo que o service nem precisa de um `try`.
+O service renderiza o template e passa a mensagem para `changeUserPassword`, que a grava na mesma transação da nova senha e da revogação. A requisição não fala com o provedor, então uma indisponibilidade dele não tem como virar erro de uma operação que já aconteceu, e o usuário não recebe um erro que o levaria a tentar de novo com uma senha atual que não é mais a atual. Ficar na mesma transação também garante o outro lado: um aviso sobre uma troca que sofreu rollback nunca chega a existir. Quem entrega a mensagem, com repetições, é o worker descrito na etapa 15.
 
 O email não carrega link. O fluxo de recuperação de senha ainda não existe, então um botão de "não fui eu" não teria para onde apontar, e um link que não resolve o problema só ensina o usuário a clicar em links dentro de emails sobre segurança, que é o hábito que o phishing explora. O texto orienta a procurar o suporte.
 
-Ele também não carrega horário nem nome do dispositivo. O rótulo de dispositivo vem do User-Agent, que é trivialmente forjável, e colocá-lo num aviso de segurança emprestaria a esse dado uma credibilidade que ele não tem, levando o leitor a descartar um aviso legítimo por não reconhecer a descrição. Sem nenhum desses valores, o template não recebe parâmetro algum, o que significa que nenhum dado fornecido pelo usuário chega até ele e não há nada a escapar. O log do envio registra apenas `userId` e o id da mensagem no provedor, nunca o endereço de destino nem o corpo da resposta do provedor, que pode ecoar o endereço.
+Ele também não carrega horário nem nome do dispositivo. O rótulo de dispositivo vem do User-Agent, que é trivialmente forjável, e colocá-lo num aviso de segurança emprestaria a esse dado uma credibilidade que ele não tem, levando o leitor a descartar um aviso legítimo por não reconhecer a descrição. Sem nenhum desses valores, o template não recebe parâmetro algum, o que significa que nenhum dado fornecido pelo usuário chega até ele e não há nada a escapar. O log registra apenas `userId` na troca e, na entrega, o identificador da linha do outbox e o tipo da mensagem, nunca o endereço de destino nem o corpo da resposta do provedor, que pode ecoar o endereço.
 
 ## Definition of done
 
 * `POST /auth/change-password` respondendo `204` sem corpo, com o contrato publicado no OpenAPI sob a tag `auth`
 * Rota atrás do hook `authenticate`, respondendo o `401` genérico com `{ "message": "Unauthorized." }` quando o cookie está ausente, desconhecido, revogado ou expirado
 * Corpo validado por `changePasswordBodySchema`, com a senha nova sob a mesma `passwordSchema` do cadastro e a senha atual apenas sob limite de comprimento
-* `findAuthUserCredentialsById` e `changeUserPassword` declarados em `AuthRepository`, implementados no adaptador Drizzle com as duas escritas numa transação e espelhados no adaptador em memória
+* `findAuthUserCredentialsById` e `changeUserPassword` declarados em `AuthRepository`, implementados no adaptador Drizzle com a nova senha, a revogação e o email enfileirado numa transação só, e espelhados no adaptador em memória
 * `password_changed` acrescentado a `REVOKED_REASONS` e gravado em `revoked_reason` nas sessões revogadas, sem migration
-* Service `changePassword` coberto por teste, incluindo a ordem das checagens, a recusa por senha atual incorreta quando a senha nova é igual a ela, a consulta ao verificador de vazamentos com a senha nova e a troca seguindo quando ele resolve `false`, o sucesso mesmo com o email falhando e o email não saindo em nenhuma das três recusas
+* Service `changePassword` coberto por teste, incluindo a ordem das checagens, a recusa por senha atual incorreta quando a senha nova é igual a ela, a consulta ao verificador de vazamentos com a senha nova e a troca seguindo quando ele resolve `false`, o aviso enfileirado na mesma escrita da troca e nada enfileirado em nenhuma das três recusas
 * Teste do adaptador em memória provando que as sessões de outro usuário permanecem ativas e que a senha dele permanece intacta
 * Teste de rota provando que a sessão atual continua servindo `GET /me` depois da troca, que a outra sessão foi revogada com o motivo correto e que nenhum `Set-Cookie` sai na resposta
 * Teste de rota provando um `400` com mensagem própria para cada recusa e que nenhum hash de senha aparece no corpo da resposta

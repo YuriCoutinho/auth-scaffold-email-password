@@ -71,16 +71,16 @@ interface EmailSender {
 
 ### Falha de envio no fluxo de cadastro
 
-* A ordem continua sendo gravar primeiro e enviar depois
-* Quando o envio falha, o service captura o erro, registra o diagnóstico e o endpoint responde `503` com mensagem genérica, sem setar cookie e sem expor detalhe interno
-* Uma falha de envio não pode consumir a cota de reenvio nem iniciar o cooldown de quem nem recebeu o email. Para isso o contador de envios volta para zero, o que estabelece o significado: contador zerado quer dizer que nenhum email foi entregue para o código atual, e o reenvio deve tratar esse caso como livre de cooldown
+* A mensagem não é entregue dentro da requisição. O service renderiza o template e enfileira a mensagem na mesma transação que grava o cadastro pendente, e quem chama o `EmailSender` é o worker do outbox, descrito na etapa 15
+* Como o provedor não é consultado na requisição, o cadastro nunca responde `503` por causa dele
+* Uma falha de envio não pode consumir a cota de reenvio nem iniciar o cooldown de quem nem recebeu o email. Para isso o contador de envios volta para zero, o que estabelece o significado: contador zerado quer dizer que nenhum email foi entregue para o código atual, e o reenvio deve tratar esse caso como livre de cooldown. Quem zera o contador é o handler de desistência registrado no outbox, quando a entrega falha em definitivo
 
 ## Definition of done
 
 * Interface definida e o fluxo de cadastro dependendo apenas dela, sem conhecer provedor
 * Os três drivers funcionando e selecionados pela variável de ambiente
 * Mailpit no Docker Compose, com instrução de uso no README
-* Testes do cadastro usando o driver fake e verificando destinatário e presença do código na mensagem
+* Testes do cadastro verificando destinatário e presença do código na mensagem enfileirada
 * Testes do adapter de produção cobrindo sucesso, 4xx sem repetir, 5xx repetindo, 429 até esgotar as tentativas, erro de rede, e a mesma chave de idempotência entre as duas tentativas
 * Teste da fábrica de drivers garantindo que cada valor da variável devolve a implementação correta
 * `.env.sample` atualizado e nenhuma chave real versionada

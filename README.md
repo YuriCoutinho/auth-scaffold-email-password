@@ -40,6 +40,8 @@ O driver de envio é escolhido pela variável `EMAIL_DRIVER`:
 
 `EMAIL_FROM` (remetente) é obrigatório para `mailpit` e `resend`.
 
+Nenhum email sai dentro da requisição: a mensagem é gravada na tabela `email_outbox`, na mesma transação da escrita que a motivou, e um worker em segundo plano entrega e repete em caso de falha. Em ambiente de teste o worker fica desligado, e um teste roda um ciclo chamando `fastify.emailOutbox.processBatch()`.
+
 ## Scripts
 
 | Script | O que faz |

@@ -55,17 +55,17 @@ Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que 
 ### Organização do código
 
 * A rota fica em `src/routes/auth/signup.ts` e cuida apenas de HTTP: valida o body com o schema de `src/schemas/auth.ts`, chama `app.auth.signup` e traduz o resultado em status, mensagem e cookie
-* A regra de negócio fica em `src/plugins/app/auth/signup.ts`, numa função `createSignupService(deps)` que recebe repositório, remetente de email e verificador de senha vazada como parâmetro. Ela devolve um resultado discriminado (`accepted`, `pwned-password`, `email-unavailable`) em vez de lançar erro ou conhecer status HTTP, e por isso é testável sem subir Fastify
-* O plugin `src/plugins/app/auth/index.ts` monta esse service junto dos demais fluxos e decora a instância como `fastify.auth`. Ele declara `dependencies` para `database`, `email-sender` e `pwned-password`, porque lê `fastify.db`, `fastify.emailSender` e `fastify.checkPwnedPassword` ao montar o módulo
+* A regra de negócio fica em `src/plugins/app/auth/signup.ts`, numa função `createSignupService(deps)` que recebe repositório e verificador de senha vazada como parâmetro. Ela devolve um resultado discriminado (`accepted`, `pwned-password`) em vez de lançar erro ou conhecer status HTTP, e por isso é testável sem subir Fastify
+* O plugin `src/plugins/app/auth/index.ts` monta esse service junto dos demais fluxos e decora a instância como `fastify.auth`. Ele declara `dependencies` para `database`, `email-outbox` e `pwned-password`, porque lê `fastify.db`, `fastify.emailOutbox` e `fastify.checkPwnedPassword` ao montar o módulo
 * A verificação de senha vazada é o plugin `src/plugins/app/pwned-password/`, cujo `index.ts` decora `fastify.checkPwnedPassword` com o verificador de `checker.ts`. Ela sai de `lib/` porque faz HTTP e precisa de comportamento diferente em teste e em produção, e `lib/` é só para função pura
 * O acesso ao banco passa pela interface `AuthRepository`. O service depende de um `Pick` dos quatro métodos que usa, o adaptador Drizzle em `auth/drizzle-repository.ts` implementa a interface inteira, e o adaptador em memória de `tests/helpers/auth/` substitui o banco nos testes de rota. Testar com um falso do ORM seria testar a implementação do repositório pelo lado errado
 * Tudo isso chega aos testes por `AppOptions`: `buildApp` recebe `authRepository`, `emailSender` e `checkPwnedPassword` opcionais, e cada plugin usa o que veio ou monta a implementação real a partir de `config`
-* O service grava primeiro e envia depois, ordem coberta por teste, para nunca existir código enviado que não esteja registrado
+* O cadastro pendente e o email que o anuncia são gravados na mesma transação, dentro do repositório, então nunca existe código enfileirado sem cadastro nem cadastro cujo código nunca foi enfileirado. A entrega em si acontece fora da requisição, como a etapa 15 detalha
 
 ## Definition of done
 
-* Contrato publicado no OpenAPI, com os três status possíveis descritos
+* Contrato publicado no OpenAPI, com os dois status possíveis descritos
 * Request e response tipados e validados pelo mesmo schema Zod
-* Testes unitários cobrindo validação de email e senha, normalização, idempotência do pendente válido, substituição do pendente expirado, resposta genérica nos três caminhos, ordem de gravar antes de enviar e rejeição de senha vazada
+* Testes unitários cobrindo validação de email e senha, normalização, idempotência do pendente válido, substituição do pendente expirado, resposta genérica nos três caminhos, o enfileiramento do código junto da gravação e rejeição de senha vazada
 * Teste do verificador de senha vazada cobrindo ocorrência encontrada, ausência e indisponibilidade do serviço com fail open
 * Teste de service com o repositório em memória e teste de rota com `app.inject`, e nenhum dos dois toca banco ou rede reais, porque os colaboradores chegam por `AppOptions`
