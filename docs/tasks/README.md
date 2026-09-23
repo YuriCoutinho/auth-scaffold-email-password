@@ -2,7 +2,7 @@
 
 Este diretório documenta, etapa por etapa, como este backend de autenticação foi construído. Cada arquivo traz o que a etapa entrega, quais decisões técnicas foram tomadas e por quê.
 
-A ordem numérica é a ordem em que as etapas foram implementadas, e é a ordem em que vale a pena ler. Juntas, elas funcionam como um guia para levantar um fluxo de cadastro e login com email e senha do zero.
+A ordem numérica é a ordem em que vale a pena ler, e cada documento descreve o estado final do código, não o caminho até ele. Quando uma etapa posterior muda uma decisão anterior, o documento da etapa anterior é atualizado, para que ler os doze na ordem leve a um projeto igual a este. Juntos, eles funcionam como um guia para levantar um fluxo de cadastro e login com email e senha do zero.
 
 ## Estrutura de cada documento
 
@@ -25,6 +25,6 @@ A ordem numérica é a ordem em que as etapas foram implementadas, e é a ordem 
 | 07 | [Agnostic profile](07-agnostic-profile.md) | A fronteira entre dado de autenticação e dado de produto |
 | 08 | [Login endpoint](08-login-endpoint.md) | Verificação de credenciais em tempo constante e sessão por dispositivo |
 | 09 | [Session hook and current user endpoint](09-session-hook-and-current-user-endpoint.md) | Hook que valida a sessão em toda rota protegida e o endpoint que devolve o usuário autenticado |
-| 10 | [Logout endpoint](10-logout-endpoint.md) | Encerramento idempotente da sessão do dispositivo atual, com revogação em banco e limpeza do cookie |
-| 11 | [Logout all endpoint](11-logout-all-endpoint.md) | Revogação em lote das sessões do usuário, com a sessão atual preservada por padrão e o hook publicando a sessão do request |
-| 12 | [Sessions list endpoint](12-sessions-list-endpoint.md) | Lista das sessões ativas do usuário, com id público por sessão e a sessão atual sinalizada, para uma tela de dispositivos conectados |
+| 10 | [Logout endpoint](10-logout-endpoint.md) | `DELETE /sessions/current`, encerramento idempotente da sessão do dispositivo atual, com a fatia de sessão ganhando porta, adaptador e o decorator `fastify.sessions` |
+| 11 | [Logout all endpoint](11-logout-all-endpoint.md) | `DELETE /sessions`, revogação em lote das sessões do usuário, com a sessão atual sempre preservada e o hook publicando a sessão do request |
+| 12 | [Sessions list endpoint](12-sessions-list-endpoint.md) | `GET /sessions`, lista das sessões ativas do usuário, com id público por sessão e a sessão atual sinalizada, para uma tela de dispositivos conectados |

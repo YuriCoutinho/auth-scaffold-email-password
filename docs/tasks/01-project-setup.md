@@ -31,7 +31,7 @@ Os guias do fastify.dev não prescrevem layout de pastas, mas o `fastify-cli gen
 
 * `src/app.ts` exporta duas coisas. A primeira é o plugin `app`, envolto em `fastify-plugin`, que registra `@fastify/autoload` três vezes, em ordem e esperando cada uma terminar: `plugins/external`, `plugins/app` e `routes`. A segunda é `buildApp(opts)`, que cria a instância Fastify, liga o type provider do Zod e registra o plugin `app`. Envolver o plugin raiz em `fastify-plugin` é o que faz decorators do ecossistema, como `app.swagger()`, chegarem até a instância que `buildApp` devolve e que os testes injetam
 * `src/plugins/external/` guarda os plugins do ecossistema. Um arquivo que só faz `export default cookie` já basta, e quando o plugin precisa de opções elas vão numa exportação `autoConfig`, que o autoload lê e repassa
-* `src/plugins/app/` guarda os plugins da aplicação. Cada um decora a instância com uma capacidade (`fastify.db`, `fastify.emailSender`, `fastify.auth`) e declara o tipo dessa capacidade com declaration merging em `FastifyInstance`, dentro do próprio arquivo. Quem usa a capacidade não importa nada, só lê da instância
+* `src/plugins/app/` guarda os plugins da aplicação. Cada um decora a instância com uma capacidade (`fastify.db`, `fastify.emailSender`, `fastify.auth`, `fastify.sessions`) e declara o tipo dessa capacidade com declaration merging em `FastifyInstance`, dentro do próprio arquivo. Quem usa a capacidade não importa nada, só lê da instância
 * Plugin de um arquivo só fica na raiz de `plugins/app`. Plugin com implementação interna vira uma pasta com `index.ts`, e os arquivos irmãos são detalhes dele. Isso funciona porque o autoload, ao encontrar um `index.ts` numa pasta, carrega só ele e não desce nos irmãos, então a implementação pode ter nomes curtos (`auth/repository.ts`, `email/sender.ts`) sem virar plugin por acidente. É o mesmo arranjo do `fastify/demo`, que guarda `tasks-repository.ts` dentro de `plugins/app/tasks/`
 * Código próprio que uma rota consome mora em `plugins/app`, inclusive adaptadores de infraestrutura como drivers de email e repositórios sobre o ORM. O `fastify/demo` não tem pasta `services/`, `db/` nem `lib/`: tudo que não é rota nem schema é plugin. O projeto abre uma única exceção, `lib/`, para função pura sem colaborador, porque não há o que injetar nela
 * Todo plugin de aplicação passa por `fastify-plugin` com `name` e, quando depende de outro, `dependencies`. É isso que garante a ordem de carga dentro de uma pasta, e não prefixo numérico no nome do arquivo. Sem `fastify-plugin` o Fastify encapsula o plugin, e o decorator não sai dele
@@ -45,6 +45,7 @@ Os guias do fastify.dev não prescrevem layout de pastas, mas o `fastify-cli gen
 export interface AppOptions {
   config: Env;
   authRepository?: AuthRepository;
+  sessionRepository?: SessionRepository;
   emailSender?: EmailSender;
   checkPwnedPassword?: CheckPwnedPassword;
 }
@@ -127,9 +128,10 @@ src/
       pwned-password/  index.ts decora fastify.checkPwnedPassword; checker.ts
       email/           index.ts decora fastify.emailSender; sender.ts, create-sender.ts, drivers/
       auth/            index.ts decora fastify.auth; repository.ts, drizzle-repository.ts, services, emails/
+      sessions/        index.ts decora fastify.sessions; repository.ts, drizzle-repository.ts, services
   routes/              plugins de rota, prefixo pelo nome da pasta
   schemas/             schemas Zod compartilhados pelas rotas
-tests/                 espelha src/, mais helpers/ com app-options.ts e auth/in-memory-repository.ts
+tests/                 espelha src/, mais helpers/ com app-options.ts e auth/in-memory-repository.ts, que satisfaz as duas portas
 ```
 
 ## Definition of done

@@ -1,16 +1,22 @@
-# 11. Logout all endpoint
+# 11. Endpoint DELETE /sessions
 
 ## Introdução
 
 O logout da etapa anterior resolve o dispositivo que está na mão de quem clica, e só ele. Falta a ação que alguém procura quando desconfia que a conta foi alcançada por outra pessoa, que é derrubar tudo de uma vez, sem saber onde a sessão intrusa está nem em que aparelho ela foi criada.
 
-Esta etapa entrega `POST /auth/logout-all`, que revoga todas as sessões do usuário autenticado. Por padrão a sessão que está fazendo a requisição é preservada, e um sinalizador opcional no corpo derruba ela junto. A diferença entre os dois comportamentos é só essa, e ela existe porque as duas expectativas são legítimas dependendo de onde o botão está na interface.
+Esta etapa entrega `DELETE /sessions`, que revoga todas as sessões do usuário autenticado menos a que está fazendo a requisição. A sessão atual é sempre preservada, sem sinalizador nenhum para negociar isso, e quem quiser derrubar tudo inclusive a própria chama `DELETE /sessions` e em seguida `DELETE /sessions/current`.
+
+O endereço é a coleção inteira, e o verbo diz o que acontece com ela. `DELETE /sessions` apaga as sessões do usuário, `DELETE /sessions/current` apaga só a deste dispositivo, e as duas convivem na mesma coleção sem que nenhuma precise de parâmetro para decidir qual das duas coisas está fazendo.
 
 A etapa também ajusta o hook `authenticate`, que passa a publicar a sessão do request ao lado do usuário. Esse é o pedaço de infraestrutura que faltava para uma rota poder dizer "todas menos esta" sem voltar ao cookie, e ele vem de graça, porque o hook já resolvia a linha da sessão e estava jogando metade dela fora.
 
 Diferente do logout simples, aqui a autenticação é obrigatória. A operação escreve em nome de um usuário específico, então precisa saber de quem está falando, e um cookie inválido recebe `401` como em qualquer rota protegida.
 
 ## Requisitos técnicos
+
+### Onde o código fica
+
+A rota é `src/routes/sessions/all.ts`, o service é `src/plugins/app/sessions/logout-all.ts` e a fatia expõe os dois por `fastify.sessions.logoutAll`, montado em `create-sessions.ts`. O acesso ao banco é `revokeAllUserSessions`, declarado na porta `SessionRepository` ao lado dos outros métodos de sessão, nunca em `AuthRepository`.
 
 ### O hook publica `request.session` ao lado de `request.user`
 
@@ -28,43 +34,37 @@ Tratar a sessão como atributo do usuário faria o tipo mentir sobre isso. Com e
 
 Ambas as propriedades são decoradas com `decorateRequest` e nascem `null`, para que toda requisição carregue o campo e uma rota que esqueça o hook leia `null` em vez de `undefined`. O Fastify lança se o nome já estiver ocupado, e `session` está livre porque quem decoraria esse nome é o `@fastify/session`, que não faz parte do projeto. Isso não foi assumido, foi fixado por um teste que registra uma rota sem o hook e prova que a aplicação sobe e que os dois campos chegam nulos.
 
-### Preservar a sessão atual é o padrão, derrubar tudo é opt-in
+### A sessão atual é sempre preservada, e não há sinalizador
 
-Os dois comportamentos existem em produtos conhecidos, e nenhum dos dois é errado. A escolha aqui é pelo padrão que não surpreende: quem aperta "sair de todos os dispositivos" está agindo de dentro de um aparelho em que confia, normalmente logo depois de trocar a senha ou de ver um acesso estranho, e ser deslogado desse aparelho no mesmo instante é um efeito colateral que ninguém pediu.
+Quem aperta "sair de todos os dispositivos" está agindo de dentro de um aparelho em que confia, normalmente logo depois de trocar a senha ou de ver um acesso estranho, e ser deslogado desse aparelho no mesmo instante é um efeito colateral que ninguém pediu. Esse é o comportamento que a rota entrega, sempre, e a exclusão da sessão atual não é negociável por parâmetro.
 
-Quem quiser o contrário manda `includeCurrentSession: true`, e aí a sessão atual entra no lote e o cookie é limpo. É a escolha certa para um aparelho emprestado, em que a intenção é justamente não deixar rastro.
+Derrubar tudo inclusive a própria sessão continua possível, e é a composição das duas rotas: `DELETE /sessions` seguido de `DELETE /sessions/current`. O resultado é o mesmo, cada chamada tem um significado só, e a segunda já sabe limpar o cookie porque essa sempre foi a responsabilidade dela.
 
-### O parâmetro é corpo JSON opcional, com default
+### A rota não tem corpo
 
-O sinalizador não vai em query string porque ele é parte do que a requisição pede, não um filtro de leitura, e `POST` com efeito colateral tem corpo. Também não é corpo obrigatório, porque um botão de "sair de todos" no frontend é um `fetch(url, { method: "POST" })` sem nada a dizer, e exigir `{}` seria empurrar cerimônia para o cliente em troca de nada.
+Sem sinalizador, não sobra nada para o cliente dizer além do que o cookie e o método já dizem, então a rota não declara `body` nenhum. Um botão de "sair de todos" no frontend vira um `fetch(url, { method: "DELETE" })` seco, sem header de tipo e sem payload, e não existe forma de escrever essa chamada que resulte em `400` por causa do corpo.
 
-O schema resolve as duas ausências possíveis, cada uma com um mecanismo. O campo faltando dentro de um corpo que chegou é o `default(false)` do próprio campo. O corpo inteiro faltando é o `nullish()` aplicado ao objeto, porque o Fastify converte o corpo ausente em `null` antes de validar, e é o handler que traduz esse `null` para o mesmo padrão com `?? false`.
-
-A conversão vem do core do Fastify, em `lib/validation.js`, na linha `const data = value === undefined ? null : value`. Ela não é específica do corpo: vale igualmente para query, params e headers, e acontece antes de o validador ser chamado. Por isso nem um `optional()` nem um `prefault({})` resolveriam esse caso, já que ambos reagem a `undefined`, que é justamente o valor que nunca chega.
-
-Vale separar corpo ausente de corpo vazio, que não são a mesma coisa. Sem header de tipo e sem payload, a requisição é válida e cai no padrão. Com `Content-Type: application/json` e payload vazio, o analisador de corpo do Fastify recusa antes da validação, e a resposta é `400`, com a mensagem de que o corpo não pode ser vazio quando o tipo está declarado. Essa distinção não atrapalha o cliente pretendido, porque `fetch(url, { method: "POST" })` sem corpo não manda o header, e cai no primeiro caso.
+Isso também elimina uma classe inteira de detalhe que um corpo opcional arrasta atrás de si, que é distinguir corpo ausente de corpo vazio e decidir o que cada um significa. Um endpoint que não lê corpo não precisa responder a essa pergunta.
 
 ### A resposta é `204`, sem contagem
 
 O service conta quantas sessões foram revogadas, e a rota não devolve esse número. Ninguém consome a contagem hoje: a interface que mostra dispositivos conectados, em que esse dado teria uso, é outra etapa, e quando ela chegar vai precisar da lista, não de um total solto.
 
-Devolver um corpo agora significaria fixar um contrato antes de existir um leitor para ele. A contagem existe onde ela tem valor imediato, que é no log, ao lado do `userId` e do escopo da operação.
+Devolver um corpo agora significaria fixar um contrato antes de existir um leitor para ele. A contagem existe onde ela tem valor imediato, que é no log, ao lado do `userId`.
 
-### O service devolve `currentSessionRevoked`, mesmo espelhando a entrada
+### O cookie nunca é limpo por esta rota
 
-`LogoutAllResult` carrega `currentSessionRevoked`, que hoje é exatamente o valor de `includeCurrentSession` que entrou. A redundância é deliberada, e não sobra a ser removida.
-
-A pergunta que a rota precisa responder antes de limpar o cookie é "esse cookie ainda vale?", e essa regra tem um dono só, que é o service. Se a rota decidisse por conta própria olhando o sinalizador de entrada, a mesma regra passaria a existir em dois lugares, e a primeira vez que a revogação ganhasse uma condição a mais, como uma sessão que não pode ser derrubada, a rota continuaria limpando o cookie sem saber que mudou algo. Do jeito que está, a rota limpa o cookie quando, e somente quando, o service diz que a sessão atual caiu.
+Como a sessão atual sempre sobrevive, o cookie que chegou continua valendo depois da resposta, e mandar um `Set-Cookie` de expiração aqui apagaria uma sessão que o próprio servidor acabou de preservar. `LogoutAllResult` carrega só `revokedCount`, a rota não tem decisão de cookie para tomar, e quem apaga cookie no projeto é `DELETE /sessions/current`, que existe justamente para isso.
 
 ### A revogação em lote guarda `revoked_at IS NULL`
 
-`revokeAllUserSessions` faz um `UPDATE` filtrando por `user_id`, por `revoked_at IS NULL` e, quando há exclusão, por `id <>`. A guarda do nulo é a mesma do logout simples e entrega as mesmas duas propriedades.
+`revokeAllUserSessions`, na porta `SessionRepository`, faz um `UPDATE` filtrando por `user_id`, por `revoked_at IS NULL` e, quando há exclusão, por `id <>`. A guarda do nulo é a mesma do logout simples e entrega as mesmas duas propriedades.
 
 A primeira é a idempotência: uma segunda chamada seguida casa zero linhas, então ela não sobrescreve o carimbo que a primeira deixou. A segunda é a honestidade da contagem, porque `revokedCount` vem do `returning` e conta só o que esta chamada de fato revogou, em vez de somar de novo o que já estava revogado antes.
 
 A guarda não olha `expires_at`, de propósito. Uma sessão vencida mas nunca revogada entra no lote e recebe `revoked_reason` igual a `logout_all`, porque expiração e revogação são colunas independentes e o que o registro conta é que o usuário mandou derrubar tudo.
 
-A exclusão da sessão atual é opcional na assinatura, e ausente quer dizer "revogue literalmente todas". No adaptador Drizzle isso vira um argumento `undefined` dentro do `and()`, que o Drizzle ignora, então a cláusula fica condicional sem precisar montar duas queries.
+A exclusão da sessão atual é opcional na assinatura da porta, e o adaptador traduz a ausência num argumento `undefined` dentro do `and()`, que o Drizzle ignora, de modo que a cláusula fica condicional sem precisar montar duas queries. A rota sempre passa a exclusão, porque preservar a sessão atual é a regra, e a opcionalidade fica na porta apenas como a forma de montar uma query só.
 
 ### Nenhuma migration foi necessária
 
@@ -78,18 +78,15 @@ Uma reautenticação antes de derrubar tudo parece prudente, e neste caso trabal
 
 Além disso, quem já está autenticado passou pelo hook, então a identidade está provada na medida em que o resto do sistema exige. Pedir a senha de novo só adiciona atrito, e um atrito que também atrapalha quem esqueceu a senha e está justamente tentando se proteger.
 
-O log registra o evento com `userId`, `revokedCount` e `includeCurrentSession`, porque derrubar todos os dispositivos é sinal de segurança e não rotina. Nenhum token, email ou hash aparece nessa linha.
+O log registra o evento com `userId` e `revokedCount`, porque derrubar todos os dispositivos é sinal de segurança e não rotina. Nenhum token, email ou hash aparece nessa linha.
 
 ## Definition of done
 
-* `POST /auth/logout-all` respondendo `204` sem corpo, com o contrato publicado no OpenAPI
+* `DELETE /sessions` respondendo `204` sem corpo e sem declarar `body`, com o contrato publicado no OpenAPI
 * Rota atrás do hook `authenticate`, respondendo `401` genérico quando o cookie está ausente, desconhecido, revogado ou expirado
-* Corpo ausente, sem header de tipo e sem payload, e `includeCurrentSession` ausente dentro de um corpo presente, resultando no padrão que preserva a sessão atual
-* Corpo vazio com `Content-Type: application/json` respondendo `400`, recusado pelo analisador de corpo antes da validação
-* `includeCurrentSession` não booleano respondendo `400`
+* Requisição sem header de tipo e sem payload tratada como válida, porque a rota não lê corpo
 * Demais sessões do usuário marcadas com `revoked_at` e `revoked_reason` igual a `logout_all`
-* Sessão atual intacta e cookie não limpo quando o padrão vale
-* Sessão atual revogada e cookie limpo com `Max-Age=0`, `HttpOnly`, `Secure`, `SameSite=Strict` e `Path=/` quando `includeCurrentSession` é verdadeiro
+* Sessão atual sempre intacta e cookie nunca limpo, com teste provando que nenhum `Set-Cookie` sai na resposta
 * Sessões de outros usuários intactas, com teste provando o isolamento
 * Usuário sem nenhuma outra sessão recebendo `204`, com contagem zero
 * Segunda chamada seguida preservando o carimbo da primeira revogação
