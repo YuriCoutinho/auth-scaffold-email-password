@@ -1,1 +1,0 @@
-ALTER TABLE "email_outbox" ADD COLUMN "correlation_id" text;
