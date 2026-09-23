@@ -7,6 +7,7 @@ describe("createAuth", () => {
     const repository = createInMemoryAuthRepository();
     const auth = createAuth({
       repository,
+      sessionRepository: repository,
       emailSender: {
         send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
       },
@@ -47,6 +48,7 @@ describe("createAuth", () => {
     });
     const auth = createAuth({
       repository,
+      sessionRepository: repository,
       emailSender: { send: vi.fn() },
       checkPwnedPassword: vi.fn().mockResolvedValue(false),
     });
@@ -55,8 +57,10 @@ describe("createAuth", () => {
   });
 
   it("exposes logout and resolves it for an unknown token", async () => {
+    const repository = createInMemoryAuthRepository();
     const auth = createAuth({
-      repository: createInMemoryAuthRepository(),
+      repository,
+      sessionRepository: repository,
       emailSender: { send: vi.fn() },
       checkPwnedPassword: vi.fn().mockResolvedValue(false),
     });

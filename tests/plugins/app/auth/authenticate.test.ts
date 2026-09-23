@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { hashSessionToken } from "../../../../src/lib/token-hash.js";
 import { createAuthenticateService } from "../../../../src/plugins/app/auth/authenticate.js";
-import type { SessionRecord } from "../../../../src/plugins/app/auth/repository.js";
+import type { SessionRecord } from "../../../../src/plugins/app/sessions/repository.js";
 
 const NOW = new Date("2026-09-23T12:00:00Z");
 const TOKEN = "a-session-token";

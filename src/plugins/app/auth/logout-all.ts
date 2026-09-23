@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import type { AuthRepository } from "./repository.js";
+import type { SessionRepository } from "../sessions/repository.js";
 
 export interface LogoutAllInput {
   userId: number;
@@ -13,7 +13,7 @@ export interface LogoutAllResult {
 }
 
 interface LogoutAllServiceDeps {
-  repo: Pick<AuthRepository, "revokeAllUserSessions">;
+  repo: Pick<SessionRepository, "revokeAllUserSessions">;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }

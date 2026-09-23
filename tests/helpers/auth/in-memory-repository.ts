@@ -6,9 +6,12 @@ import type {
   PendingSignupRecord,
   PendingSignupResendState,
   PromotePendingSignupInput,
-  SessionRecord,
   UpsertPendingSignupInput,
 } from "../../../src/plugins/app/auth/repository.js";
+import type {
+  SessionRecord,
+  SessionRepository,
+} from "../../../src/plugins/app/sessions/repository.js";
 
 export interface InMemorySeed {
   authUsers?: Array<{
@@ -99,7 +102,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
   const findByToken = (token: string) =>
     [...pendingSignups.values()].find((p) => p.signupSessionToken === token);
 
-  const repository: AuthRepository = {
+  const repository: AuthRepository & SessionRepository = {
     async findAuthUserByEmail(email) {
       const user = authUsers.get(email);
       return user

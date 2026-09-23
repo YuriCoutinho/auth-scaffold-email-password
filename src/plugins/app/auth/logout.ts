@@ -1,8 +1,8 @@
 import { hashSessionToken } from "../../../lib/token-hash.js";
-import type { AuthRepository } from "./repository.js";
+import type { SessionRepository } from "../sessions/repository.js";
 
 interface LogoutServiceDeps {
-  repo: Pick<AuthRepository, "revokeSessionByTokenHash">;
+  repo: Pick<SessionRepository, "revokeSessionByTokenHash">;
   now?: () => Date;
 }
 

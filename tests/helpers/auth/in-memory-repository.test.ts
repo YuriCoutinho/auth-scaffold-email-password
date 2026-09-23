@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { SessionRepository } from "../../../src/plugins/app/sessions/repository.js";
 import { createInMemoryAuthRepository } from "./in-memory-repository.js";
 
 const NOW = new Date("2026-09-20T12:00:00Z");
@@ -471,5 +472,23 @@ describe("listActiveUserSessions", () => {
     });
 
     expect(session?.publicId).toMatch(UUID);
+  });
+});
+
+describe("in-memory session repository", () => {
+  it("satisfies the session port with the same store the auth port uses", async () => {
+    const repo: SessionRepository = createInMemoryAuthRepository({
+      authUsers: [{ id: 7, email: "foo@gmail.com" }],
+      sessions: [
+        {
+          userId: 7,
+          tokenHash: "hash",
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+      ],
+    });
+
+    const session = await repo.findSessionByTokenHash("hash");
+    expect(session).toMatchObject({ userId: 7, revokedAt: null });
   });
 });
