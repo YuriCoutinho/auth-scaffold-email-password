@@ -32,9 +32,19 @@ A tabela `email_outbox` guarda `type`, `recipient`, `subject`, `html` e `text`, 
 
 A escolha compra duas coisas. A primeira é que o worker fica livre de conhecimento de domínio, porque entregar uma linha é copiar cinco campos para o `EmailSender` e nada mais. A segunda é que a linha é autocontida no tempo: uma mensagem enfileirada por um deploy antigo continua saindo exatamente como foi escrita, mesmo que o template mude antes de ela ser entregue.
 
-A contrapartida é que o corpo do email fica gravado no banco, e no caso do cadastro esse corpo contém o código de confirmação em texto claro. Como a tabela não tem retenção nem rotina de limpeza, a linha de um código já entregue permanece ali por tempo indeterminado, ao lado do endereço de destino. O código continua valendo por quinze minutos e o que autentica de fato é o `code_hash` do cadastro pendente, então uma linha antiga não confirma conta nenhuma, mas quem lê o banco lê o histórico de códigos e destinatários.
+A contrapartida é que o corpo do email fica gravado no banco, e no caso do cadastro esse corpo contém o código de confirmação em texto claro, ao lado do endereço de destino. Antes desta etapa nenhum código em claro persistia em lugar algum, já que `pending_signups` guarda apenas o hash, e por isso a exposição que a fila cria é resolvida por ela mesma, na seção seguinte.
 
 O `status` é um `text` simples com os valores permitidos vivendo no TypeScript, mesma decisão que `revoked_reason` já tinha tomado, para que acrescentar um estado depois não exija migration. O índice é composto por `status` e `next_attempt_at`, que são exatamente as duas colunas da consulta que o worker faz o tempo todo.
+
+### A linha não sobrevive ao próprio propósito
+
+Guardar a mensagem renderizada só é aceitável se ela deixar de existir quando deixar de servir, e é o que a retenção faz. Ela roda no fim de cada ciclo do worker, reusando o agendamento que já existe, e é um `DELETE` por status e tempo, apoiado no índice que a reivindicação já usa. Uma falha nele é tratada como o resto do bookkeeping, ou seja, vira log e não derruba nem o lote nem o ciclo.
+
+Uma linha entregue é apagada inteira depois de uma hora. Apagar, e não apenas limpar as colunas de conteúdo, porque limpar deixaria o endereço de destino acumulando para sempre sem nenhuma finalidade, e a exposição do destinatário é tão indesejada quanto a do código; de quebra, resolve o crescimento sem teto da tabela. A janela é curta de propósito: o código expira em quinze minutos, então uma hora já é folga generosa para abrir o banco e conferir um envio recente em desenvolvimento, e nada além disso tem valor.
+
+Uma linha abandonada segue o caminho inverso, porque as duas partes dela têm prazos diferentes. O conteúdo é limpo na hora da desistência, dentro do próprio `giveUp`, já que uma mensagem que o worker decidiu não enviar mais é só exposição. O resto da linha, ou seja, o tipo, o destinatário, o número de tentativas e a mensagem do último erro, sobrevive por trinta dias, porque é disso que se precisa para investigar uma falha de entrega. O destinatário fica junto por um motivo simples: investigar uma falha sem saber quem foi afetado não serve para nada.
+
+Uma linha pendente nunca é tocada, porque o conteúdo dela é exatamente o que ainda será enviado. Os dois prazos vivem em constantes nomeadas ao lado da política de repetição, com o comentário que explica de onde cada número sai.
 
 ### `next_attempt_at` é também o lease
 
@@ -107,6 +117,7 @@ A diferença para o usuário é, no balanço, uma melhora. Antes, uma única ten
 * Teste do adaptador em memória cobrindo que só linhas pendentes e vencidas são reivindicadas, que uma segunda reivindicação na mesma janela não devolve nada, que o lease vencido torna a linha elegível de novo e que o limite é respeitado
 * Teste do worker provando que `last_error` guarda apenas a mensagem do erro, nunca o corpo da resposta do provedor
 * `createEmailOutboxWorker` expondo `processBatch` sem nenhum timer, coberto por teste no envio, na reprogramação com a espera da política, na desistência ao atingir o teto, na chamada única do handler de desistência com a correlação, na continuidade do lote quando uma mensagem falha, na marcação que falha sem virar falha de entrega, na escrita de controle que falha sem abortar o lote, e na ausência de destinatário, de mensagem de erro e de corpo do provedor nos logs
+* Retenção rodando no fim de cada ciclo do worker, apagando a linha entregue depois de uma hora e a abandonada depois de trinta dias, com o conteúdo da abandonada limpo já na desistência, coberta por teste em cada janela, na linha pendente que nunca é tocada e na falha de expurgo que não impede a entrega do lote
 * Plugin decorando `fastify.emailOutbox` com `processBatch` e `onGiveUp`, sem caminho público de enfileiramento, agendando por `setTimeout` reagendado com `unref`, encerrando o laço e aguardando o lote em andamento no `onClose`, com testes que provam o agendamento, a espera do lote em voo e que nenhum erro de lote leva destinatário ao log
 * Worker desligado por padrão em ambiente de teste, com o helper de opções fixando `startEmailWorker` em `false` e a suíte inteira encerrando sozinha
 * `AuthRepository` enfileirando o email na mesma transação da escrita de domínio nos três fluxos, com os métodos antigos removidos e os módulos de envio direto apagados
