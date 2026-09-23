@@ -38,7 +38,11 @@ Quem quiser o contrário manda `includeCurrentSession: true`, e aí a sessão at
 
 O sinalizador não vai em query string porque ele é parte do que a requisição pede, não um filtro de leitura, e `POST` com efeito colateral tem corpo. Também não é corpo obrigatório, porque um botão de "sair de todos" no frontend é um `fetch(url, { method: "POST" })` sem nada a dizer, e exigir `{}` seria empurrar cerimônia para o cliente em troca de nada.
 
-O schema resolve as duas ausências possíveis: o campo faltando dentro de um corpo que chegou, e o corpo inteiro faltando. O primeiro caso é o `default(false)` do campo. O segundo precisa de `prefault({})`, e não de `default`, porque no Zod 4 o `default` recebe o tipo de saída, de modo que `{}` não passaria no compilador, enquanto o `prefault` entrega `{}` como entrada e deixa o default interno preencher. Na declaração da rota o schema ainda é marcado como aceitando ausência, porque uma requisição sem corpo nenhum chega ao validador como `null`, e não como `undefined`.
+O schema resolve as duas ausências possíveis, cada uma com um mecanismo. O campo faltando dentro de um corpo que chegou é o `default(false)` do próprio campo. O corpo inteiro faltando é o `nullish()` aplicado ao objeto, porque o Fastify converte o corpo ausente em `null` antes de validar, e é o handler que traduz esse `null` para o mesmo padrão com `?? false`.
+
+A conversão vem do core do Fastify, em `lib/validation.js`, na linha `const data = value === undefined ? null : value`. Ela não é específica do corpo: vale igualmente para query, params e headers, e acontece antes de o validador ser chamado. Por isso nem um `optional()` nem um `prefault({})` resolveriam esse caso, já que ambos reagem a `undefined`, que é justamente o valor que nunca chega.
+
+Vale separar corpo ausente de corpo vazio, que não são a mesma coisa. Sem header de tipo e sem payload, a requisição é válida e cai no padrão. Com `Content-Type: application/json` e payload vazio, o analisador de corpo do Fastify recusa antes da validação, e a resposta é `400`, com a mensagem de que o corpo não pode ser vazio quando o tipo está declarado. Essa distinção não atrapalha o cliente pretendido, porque `fetch(url, { method: "POST" })` sem corpo não manda o header, e cai no primeiro caso.
 
 ### A resposta é `204`, sem contagem
 
@@ -80,7 +84,8 @@ O log registra o evento com `userId`, `revokedCount` e `includeCurrentSession`, 
 
 * `POST /auth/logout-all` respondendo `204` sem corpo, com o contrato publicado no OpenAPI
 * Rota atrás do hook `authenticate`, respondendo `401` genérico quando o cookie está ausente, desconhecido, revogado ou expirado
-* Corpo ausente, corpo vazio e `includeCurrentSession` ausente resultando no padrão que preserva a sessão atual
+* Corpo ausente, sem header de tipo e sem payload, e `includeCurrentSession` ausente dentro de um corpo presente, resultando no padrão que preserva a sessão atual
+* Corpo vazio com `Content-Type: application/json` respondendo `400`, recusado pelo analisador de corpo antes da validação
 * `includeCurrentSession` não booleano respondendo `400`
 * Demais sessões do usuário marcadas com `revoked_at` e `revoked_reason` igual a `logout_all`
 * Sessão atual intacta e cookie não limpo quando o padrão vale

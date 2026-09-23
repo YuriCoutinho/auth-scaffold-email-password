@@ -27,13 +27,10 @@ export const currentUserResponseSchema = z.object({
   user: z.object({ publicId: z.uuid(), email: z.email() }),
 });
 
-// The field default covers a body that arrived without the field. The outer
-// `prefault` covers the object itself being `undefined`, which is what a direct
-// `parse()` outside Fastify passes; over HTTP the absent body arrives as `null`
-// instead, and the route handles that case where it declares the body. It has
-// to be prefault and not default because in Zod 4 `default` takes the output
-// type, so `{}` would not typecheck here, while `prefault` feeds `{}` in as
-// input and lets the inner default fill it.
+// Two absences, two mechanisms: the field default covers a body that arrived
+// without the key, and `nullish` covers the body being absent altogether, which
+// Fastify hands to the validator as `null`. The handler turns that `null` into
+// the same default the field carries.
 export const logoutAllBodySchema = z
   .object({ includeCurrentSession: z.boolean().default(false) })
-  .prefault({});
+  .nullish();

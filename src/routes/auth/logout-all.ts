@@ -21,11 +21,11 @@ const routes: FastifyPluginAsyncZod = async (app) => {
           "includeCurrentSession revokes that one too, and only then is the " +
           "session cookie cleared. Requires a valid session, so the response " +
           "is 401 whenever the cookie is missing, unknown, revoked or expired.",
-        // Fastify hands a body-less POST to the validator as `null`, which
-        // neither `prefault` nor `optional` admits, so the schema has to accept
-        // it explicitly and the handler falls back below. That is what makes
-        // the plain `fetch(url, { method: "POST" })` the frontend sends valid.
-        body: logoutAllBodySchema.nullish(),
+        // The schema admits a null body because Fastify's validation step
+        // turns a missing one into `null` before Ajv sees it, which is what
+        // makes the plain `fetch(url, { method: "POST" })` the frontend sends
+        // valid instead of a 400.
+        body: logoutAllBodySchema,
         response: {
           204: noContentSchema,
           401: messageSchema,

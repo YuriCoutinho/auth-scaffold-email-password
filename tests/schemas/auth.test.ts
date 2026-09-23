@@ -62,10 +62,10 @@ describe("auth schemas", () => {
 });
 
 describe("logoutAllBodySchema", () => {
-  it("defaults to keeping the current session when no body arrives at all", () => {
-    expect(logoutAllBodySchema.parse(undefined)).toEqual({
-      includeCurrentSession: false,
-    });
+  // Fastify turns a missing body into null before validating, so this is the
+  // shape an absent body really arrives as. The route reads the default off it.
+  it("lets a null body through, which is how an absent body arrives", () => {
+    expect(logoutAllBodySchema.parse(null)).toBeNull();
   });
 
   it("defaults to keeping the current session when the field is absent", () => {
