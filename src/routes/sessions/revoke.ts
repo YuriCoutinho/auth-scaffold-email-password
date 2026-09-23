@@ -22,6 +22,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         params: sessionParamsSchema,
         response: {
           204: noContentSchema,
+          400: messageSchema,
           401: messageSchema,
         },
       },
