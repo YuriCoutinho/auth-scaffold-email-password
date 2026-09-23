@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { SIGNUP_TTL_SECONDS } from "../../../../src/lib/session.js";
 import { hashOtpCode } from "../../../../src/lib/token-hash.js";
+import { SIGNUP_CODE_EMAIL_TYPE } from "../../../../src/plugins/app/auth/emails/signup-code.js";
 import {
   createResendCodeService,
   MAX_CODE_SEND_COUNT,
@@ -26,10 +27,9 @@ function makeDeps(pending: ReturnType<typeof makePending> | undefined) {
   return {
     repo: {
       findPendingSignupBySessionToken: vi.fn().mockResolvedValue(pending),
-      updatePendingSignupResendState: vi.fn().mockResolvedValue(undefined),
-    },
-    emailSender: {
-      send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
+      updatePendingSignupResendStateAndQueueEmail: vi
+        .fn()
+        .mockResolvedValue(undefined),
     },
     now: () => NOW,
   };
@@ -63,18 +63,21 @@ describe("resendCode", () => {
     ).resolves.toEqual({
       outcome: "invalid-session",
     });
-    expect(deps.repo.updatePendingSignupResendState).not.toHaveBeenCalled();
+    expect(
+      deps.repo.updatePendingSignupResendStateAndQueueEmail,
+    ).not.toHaveBeenCalled();
   });
 
-  it("returns limit-reached at the send cap without touching state or provider", async () => {
+  it("returns limit-reached at the send cap without touching state or queue", async () => {
     const deps = makeDeps(makePending({ codeSendCount: MAX_CODE_SEND_COUNT }));
     await expect(
       createResendCodeService(deps).resendCode(TOKEN),
     ).resolves.toEqual({
       outcome: "limit-reached",
     });
-    expect(deps.repo.updatePendingSignupResendState).not.toHaveBeenCalled();
-    expect(deps.emailSender.send).not.toHaveBeenCalled();
+    expect(
+      deps.repo.updatePendingSignupResendStateAndQueueEmail,
+    ).not.toHaveBeenCalled();
   });
 
   it("returns cooldown within 60s of the last send", async () => {
@@ -86,8 +89,9 @@ describe("resendCode", () => {
     ).resolves.toEqual({
       outcome: "cooldown",
     });
-    expect(deps.repo.updatePendingSignupResendState).not.toHaveBeenCalled();
-    expect(deps.emailSender.send).not.toHaveBeenCalled();
+    expect(
+      deps.repo.updatePendingSignupResendStateAndQueueEmail,
+    ).not.toHaveBeenCalled();
   });
 
   it("skips the cooldown when code_send_count is 0 (no email delivered for the current code)", async () => {
@@ -105,7 +109,7 @@ describe("resendCode", () => {
     });
   });
 
-  it("writes the new state before sending, with reset attempts and renewed expiry", async () => {
+  it("writes the new state and queues the email in one call, with reset attempts and renewed expiry", async () => {
     const deps = makeDeps(makePending());
     await expect(
       createResendCodeService(deps).resendCode(TOKEN),
@@ -114,8 +118,11 @@ describe("resendCode", () => {
       sessionToken: TOKEN,
     });
 
-    const [token, state] =
-      deps.repo.updatePendingSignupResendState.mock.calls[0] ?? [];
+    expect(
+      deps.repo.updatePendingSignupResendStateAndQueueEmail,
+    ).toHaveBeenCalledOnce();
+    const [token, state, message] =
+      deps.repo.updatePendingSignupResendStateAndQueueEmail.mock.calls[0] ?? [];
     expect(token).toBe(TOKEN);
     expect(state.codeAttempts).toBe(0);
     expect(state.codeSendCount).toBe(2);
@@ -124,52 +131,12 @@ describe("resendCode", () => {
       new Date(NOW.getTime() + SIGNUP_TTL_SECONDS * 1000),
     );
 
-    const message = deps.emailSender.send.mock.calls[0]?.[0];
-    expect(message.to).toBe("foo@gmail.com");
+    expect(message.type).toBe(SIGNUP_CODE_EMAIL_TYPE);
+    expect(message.recipient).toBe("foo@gmail.com");
     const code = message.subject.match(/\d{6}/)?.[0] ?? "";
     expect(state.codeHash).toBe(hashOtpCode(code));
     expect(state.codeHash).not.toBe("old-hash");
-
-    const updateOrder =
-      deps.repo.updatePendingSignupResendState.mock.invocationCallOrder[0] ?? 0;
-    const sendOrder = deps.emailSender.send.mock.invocationCallOrder[0] ?? 0;
-    expect(updateOrder).toBeLessThan(sendOrder);
-  });
-
-  it("restores the previous state and returns email-unavailable when delivery fails", async () => {
-    const pending = makePending();
-    const deps = makeDeps(pending);
-    deps.emailSender.send.mockRejectedValueOnce(new Error("provider down"));
-
-    await expect(
-      createResendCodeService(deps).resendCode(TOKEN),
-    ).resolves.toEqual({
-      outcome: "email-unavailable",
-    });
-
-    expect(deps.repo.updatePendingSignupResendState).toHaveBeenCalledTimes(2);
-    const [, restored] =
-      deps.repo.updatePendingSignupResendState.mock.calls[1] ?? [];
-    expect(restored).toEqual({
-      codeHash: pending.codeHash,
-      expiresAt: pending.expiresAt,
-      codeAttempts: pending.codeAttempts,
-      lastSentAt: pending.lastSentAt,
-      codeSendCount: pending.codeSendCount,
-    });
-  });
-
-  it("still returns email-unavailable when the restore itself fails", async () => {
-    const deps = makeDeps(makePending());
-    deps.emailSender.send.mockRejectedValueOnce(new Error("provider down"));
-    deps.repo.updatePendingSignupResendState
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error("db down"));
-
-    await expect(
-      createResendCodeService(deps).resendCode(TOKEN),
-    ).resolves.toEqual({
-      outcome: "email-unavailable",
-    });
+    expect(message.html).toContain(code);
+    expect(message.text).toContain(code);
   });
 });

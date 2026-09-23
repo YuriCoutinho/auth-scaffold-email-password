@@ -24,17 +24,22 @@ export const TEST_ENV: Env = {
 type AppOptionsOverrides = Partial<
   Omit<AppOptions, "authRepository" | "emailOutboxRepository">
 > & {
-  authRepository?: AuthRepository & SessionRepository;
+  authRepository?: AuthRepository &
+    SessionRepository & { outbox?: InMemoryEmailOutboxRepository };
   emailOutboxRepository?: InMemoryEmailOutboxRepository;
 };
 
 export function makeAppOptions(
   overrides: AppOptionsOverrides = {},
 ): AppOptions & { emailOutboxRepository: InMemoryEmailOutboxRepository } {
+  // The auth repository queues through its own store, so the plugin has to
+  // read that same one or a route test would watch an empty queue.
   const authRepository =
     overrides.authRepository ?? createInMemoryAuthRepository();
   const emailOutboxRepository =
-    overrides.emailOutboxRepository ?? createInMemoryEmailOutboxRepository();
+    overrides.emailOutboxRepository ??
+    authRepository.outbox ??
+    createInMemoryEmailOutboxRepository();
   return {
     config: TEST_ENV,
     logger: false,

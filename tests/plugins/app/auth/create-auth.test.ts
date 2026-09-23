@@ -8,9 +8,6 @@ describe("createAuth", () => {
     const auth = createAuth({
       repository,
       sessionRepository: repository,
-      emailSender: {
-        send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
-      },
       checkPwnedPassword: vi.fn().mockResolvedValue(false),
     });
 
@@ -39,7 +36,6 @@ describe("createAuth", () => {
     const auth = createAuth({
       repository,
       sessionRepository: repository,
-      emailSender: { send: vi.fn() },
       checkPwnedPassword: vi.fn().mockResolvedValue(false),
     });
 

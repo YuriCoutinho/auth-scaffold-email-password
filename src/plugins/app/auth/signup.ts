@@ -6,25 +6,24 @@ import {
   SIGNUP_TTL_SECONDS,
 } from "../../../lib/session.js";
 import { hashOtpCode } from "../../../lib/token-hash.js";
-import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
+import {
+  renderSignupCodeEmail,
+  SIGNUP_CODE_EMAIL_TYPE,
+} from "./emails/signup-code.js";
 import type { AuthRepository } from "./repository.js";
-import { sendSignupCode } from "./send-signup-code.js";
 
 export type SignupResult =
   | { outcome: "accepted"; sessionToken: string }
-  | { outcome: "pwned-password" }
-  | { outcome: "email-unavailable" };
+  | { outcome: "pwned-password" };
 
 interface SignupServiceDeps {
   repo: Pick<
     AuthRepository,
     | "findAuthUserByEmail"
     | "findPendingSignupByEmail"
-    | "upsertPendingSignup"
-    | "markPendingSignupUndelivered"
+    | "upsertPendingSignupAndQueueEmail"
   >;
-  emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
@@ -62,31 +61,28 @@ export function createSignupService(deps: SignupServiceDeps) {
 
       const code = generateOtpCode();
       const sessionToken = generateSignupSessionToken();
-      const { id: pendingSignupId } = await deps.repo.upsertPendingSignup({
-        email,
-        passwordHash: await hashPassword(password),
-        codeHash: hashOtpCode(code),
-        signupSessionToken: sessionToken,
-        expiresAt: new Date(currentTime.getTime() + SIGNUP_TTL_SECONDS * 1000),
-        now: currentTime,
-      });
-
-      const delivered = await sendSignupCode(
-        { emailSender: deps.emailSender, log: deps.log },
-        { to: email, code, pendingSignupId },
-      );
-      if (!delivered) {
-        // Failed delivery must not consume resend quota; the mark is best-effort.
-        try {
-          await deps.repo.markPendingSignupUndelivered(email);
-        } catch (markError) {
-          deps.log?.warn(
-            { err: markError },
-            "failed to mark pending signup as undelivered",
-          );
-        }
-        return { outcome: "email-unavailable" };
-      }
+      // The message is rendered here and queued with the row in one write, so
+      // the request never waits on the provider and never has to compensate.
+      const { id: pendingSignupId } =
+        await deps.repo.upsertPendingSignupAndQueueEmail({
+          email,
+          passwordHash: await hashPassword(password),
+          codeHash: hashOtpCode(code),
+          signupSessionToken: sessionToken,
+          expiresAt: new Date(
+            currentTime.getTime() + SIGNUP_TTL_SECONDS * 1000,
+          ),
+          now: currentTime,
+          message: {
+            type: SIGNUP_CODE_EMAIL_TYPE,
+            recipient: email,
+            ...renderSignupCodeEmail({
+              code,
+              ttlMinutes: SIGNUP_TTL_SECONDS / 60,
+            }),
+          },
+        });
+      deps.log?.info({ pendingSignupId }, "signup code email queued");
 
       return { outcome: "accepted", sessionToken };
     },

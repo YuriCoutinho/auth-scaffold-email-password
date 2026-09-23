@@ -10,14 +10,13 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         tags: ["auth"],
         summary: "Start an email/password signup",
         description:
-          "Creates a pending signup and emails a 6-digit confirmation code. " +
-          "The response is intentionally generic and identical whether or not " +
-          "the email is already registered.",
+          "Creates a pending signup and queues a 6-digit confirmation code for " +
+          "delivery. The response is intentionally generic and identical " +
+          "whether or not the email is already registered.",
         body: signupBodySchema,
         response: {
           202: messageSchema,
           400: messageSchema,
-          503: messageSchema,
         },
       },
     },
@@ -31,13 +30,6 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         return reply.code(400).send({
           message:
             "This password has appeared in a known data breach. Please choose a different one.",
-        });
-      }
-
-      if (result.outcome === "email-unavailable") {
-        return reply.code(503).send({
-          message:
-            "We could not send the confirmation email right now. Please try again shortly.",
         });
       }
 

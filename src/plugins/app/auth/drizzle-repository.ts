@@ -1,5 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { authUsers, pendingSignups, profiles } from "../../../db/schema.js";
+import { createDrizzleEmailOutboxRepository } from "../email-outbox/drizzle-repository.js";
 import {
   createDrizzleSessionRepository,
   type DatabaseOrTransaction,
@@ -9,7 +10,6 @@ import type {
   ChangeUserPasswordInput,
   PendingSignupResendState,
   PromotePendingSignupInput,
-  UpsertPendingSignupInput,
 } from "./repository.js";
 
 const pendingSignupColumns = {
@@ -50,33 +50,36 @@ export function createDrizzleAuthRepository(
       return rows[0];
     },
 
-    // Atomic replace: defaults only fire on real inserts, so the update
-    // clause must renew createdAt/lastSentAt/codeSendCount explicitly.
-    async upsertPendingSignup(input: UpsertPendingSignupInput) {
-      const rows = await db
-        .insert(pendingSignups)
-        .values({
-          email: input.email,
-          passwordHash: input.passwordHash,
-          codeHash: input.codeHash,
-          signupSessionToken: input.signupSessionToken,
-          expiresAt: input.expiresAt,
-        })
-        .onConflictDoUpdate({
-          target: pendingSignups.email,
-          set: {
+    // One transaction for the row and its email: a signup that rolls back
+    // leaves nothing queued, and a queued code always has a signup to confirm.
+    async upsertPendingSignupAndQueueEmail(input) {
+      return await db.transaction(async (tx) => {
+        const rows = await tx
+          .insert(pendingSignups)
+          .values({
+            email: input.email,
             passwordHash: input.passwordHash,
             codeHash: input.codeHash,
             signupSessionToken: input.signupSessionToken,
             expiresAt: input.expiresAt,
-            codeAttempts: 0,
-            createdAt: input.now,
-            lastSentAt: input.now,
-            codeSendCount: 1,
-          },
-        })
-        .returning({ id: pendingSignups.id });
-      return rows[0] as { id: number };
+          })
+          .onConflictDoUpdate({
+            target: pendingSignups.email,
+            set: {
+              passwordHash: input.passwordHash,
+              codeHash: input.codeHash,
+              signupSessionToken: input.signupSessionToken,
+              expiresAt: input.expiresAt,
+              codeAttempts: 0,
+              createdAt: input.now,
+              lastSentAt: input.now,
+              codeSendCount: 1,
+            },
+          })
+          .returning({ id: pendingSignups.id });
+        await createDrizzleEmailOutboxRepository(tx).enqueue(input.message);
+        return rows[0] as { id: number };
+      });
     },
 
     async markPendingSignupUndelivered(email) {
@@ -95,15 +98,18 @@ export function createDrizzleAuthRepository(
       return rows[0];
     },
 
-    // Also used to restore the previous state when delivery fails.
-    async updatePendingSignupResendState(
+    async updatePendingSignupResendStateAndQueueEmail(
       token,
       state: PendingSignupResendState,
+      message,
     ) {
-      await db
-        .update(pendingSignups)
-        .set(state)
-        .where(eq(pendingSignups.signupSessionToken, token));
+      await db.transaction(async (tx) => {
+        await tx
+          .update(pendingSignups)
+          .set(state)
+          .where(eq(pendingSignups.signupSessionToken, token));
+        await createDrizzleEmailOutboxRepository(tx).enqueue(message);
+      });
     },
 
     async incrementCodeAttempts(signupSessionToken) {
@@ -160,8 +166,9 @@ export function createDrizzleAuthRepository(
       return rows[0];
     },
 
-    // One transaction so the two writes cannot come apart: a new password with
-    // the old sessions still alive is the exact state this flow prevents.
+    // One transaction so the writes cannot come apart: a new password with the
+    // old sessions still alive is the state this flow prevents, and a notice
+    // about a change that never happened is the other one.
     async changeUserPassword(input: ChangeUserPasswordInput) {
       await db.transaction(async (tx) => {
         await createDrizzleSessionRepository(tx).revokeAllUserSessions({
@@ -174,6 +181,7 @@ export function createDrizzleAuthRepository(
           .update(authUsers)
           .set({ passwordHash: input.passwordHash })
           .where(eq(authUsers.id, input.userId));
+        await createDrizzleEmailOutboxRepository(tx).enqueue(input.message);
       });
     },
   };

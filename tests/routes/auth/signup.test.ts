@@ -76,35 +76,44 @@ describe("POST /auth/signup", () => {
     const authRepository = createInMemoryAuthRepository({
       authUsers: [{ email: "user@example.com" }],
     });
-    const emailSender = {
-      send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
-    };
-    const response = await post(
-      VALID_BODY,
-      makeAppOptions({ authRepository, emailSender }),
-    );
+    const response = await post(VALID_BODY, makeAppOptions({ authRepository }));
     expect(response.statusCode).toBe(202);
     expect(response.json()).toEqual({ message: GENERIC_MESSAGE });
     expect(response.cookies.some((c) => c.name === "signup_session")).toBe(
       true,
     );
-    expect(emailSender.send).not.toHaveBeenCalled();
+    expect(authRepository.outbox.messages).toHaveLength(0);
     expect(authRepository.pendingSignups.size).toBe(0);
   });
 
-  it("responds 503 with a generic message when email delivery fails", async () => {
+  it("queues the confirmation code instead of sending it in the request", async () => {
+    const authRepository = createInMemoryAuthRepository();
+
+    const response = await post(VALID_BODY, makeAppOptions({ authRepository }));
+
+    expect(response.statusCode).toBe(202);
+    expect(authRepository.outbox.messages).toHaveLength(1);
+    expect(authRepository.outbox.messages[0]).toMatchObject({
+      type: "signup_code",
+      recipient: "user@example.com",
+      status: "pending",
+    });
+  });
+
+  it("still responds 202 with the cookie when the provider is down, because it is never consulted", async () => {
     const opts = makeAppOptions({
       emailSender: {
         send: vi.fn().mockRejectedValue(new Error("provider down")),
       },
     });
+
     const response = await post(VALID_BODY, opts);
-    expect(response.statusCode).toBe(503);
-    expect(response.json()).toEqual({
-      message:
-        "We could not send the confirmation email right now. Please try again shortly.",
-    });
-    expect(response.headers["set-cookie"]).toBeUndefined();
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({ message: GENERIC_MESSAGE });
+    expect(response.cookies.some((c) => c.name === "signup_session")).toBe(
+      true,
+    );
   });
 
   it("rejects a pwned password with 400 and no cookie", async () => {

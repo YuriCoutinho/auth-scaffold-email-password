@@ -20,6 +20,14 @@ function repoWithTwoUsers() {
   });
 }
 
+const outboxMessage = {
+  type: "signup_code",
+  recipient: "user@example.com",
+  subject: "Your verification code: 123456",
+  html: "<p>123456</p>",
+  text: "123456",
+};
+
 function pendingInput(overrides: Record<string, unknown> = {}) {
   return {
     email: "user@example.com",
@@ -28,6 +36,7 @@ function pendingInput(overrides: Record<string, unknown> = {}) {
     signupSessionToken: "token-1",
     expiresAt: new Date(NOW.getTime() + 900_000),
     now: NOW,
+    message: outboxMessage,
     ...overrides,
   };
 }
@@ -45,7 +54,7 @@ describe("in-memory auth repository", () => {
 
   it("upserts a pending signup and finds it by email and by token", async () => {
     const repo = createInMemoryAuthRepository();
-    const { id } = await repo.upsertPendingSignup(pendingInput());
+    const { id } = await repo.upsertPendingSignupAndQueueEmail(pendingInput());
     expect(id).toBe(1);
     expect(
       await repo.findPendingSignupByEmail("user@example.com"),
@@ -65,9 +74,9 @@ describe("in-memory auth repository", () => {
 
   it("upsert on the same email replaces the row and resets counters", async () => {
     const repo = createInMemoryAuthRepository();
-    const first = await repo.upsertPendingSignup(pendingInput());
+    const first = await repo.upsertPendingSignupAndQueueEmail(pendingInput());
     await repo.incrementCodeAttempts("token-1");
-    const second = await repo.upsertPendingSignup(
+    const second = await repo.upsertPendingSignupAndQueueEmail(
       pendingInput({ signupSessionToken: "token-2" }),
     );
     expect(second.id).toBe(first.id);
@@ -84,19 +93,23 @@ describe("in-memory auth repository", () => {
 
   it("marks undelivered, updates resend state and increments attempts", async () => {
     const repo = createInMemoryAuthRepository();
-    await repo.upsertPendingSignup(pendingInput());
+    await repo.upsertPendingSignupAndQueueEmail(pendingInput());
     await repo.markPendingSignupUndelivered("user@example.com");
     expect(
       (await repo.findPendingSignupByEmail("user@example.com"))?.codeSendCount,
     ).toBe(0);
 
-    await repo.updatePendingSignupResendState("token-1", {
-      codeHash: "new-hash",
-      expiresAt: new Date(NOW.getTime() + 1_000),
-      codeAttempts: 0,
-      lastSentAt: NOW,
-      codeSendCount: 3,
-    });
+    await repo.updatePendingSignupResendStateAndQueueEmail(
+      "token-1",
+      {
+        codeHash: "new-hash",
+        expiresAt: new Date(NOW.getTime() + 1_000),
+        codeAttempts: 0,
+        lastSentAt: NOW,
+        codeSendCount: 3,
+      },
+      outboxMessage,
+    );
     await repo.incrementCodeAttempts("token-1");
     expect(await repo.findPendingSignupBySessionToken("token-1")).toMatchObject(
       {
@@ -109,7 +122,7 @@ describe("in-memory auth repository", () => {
 
   it("promotes a pending signup into user, session and profile atomically", async () => {
     const repo = createInMemoryAuthRepository();
-    await repo.upsertPendingSignup(pendingInput());
+    await repo.upsertPendingSignupAndQueueEmail(pendingInput());
     const user = await repo.promotePendingSignup({
       email: "user@example.com",
       passwordHash: "hash",
@@ -637,6 +650,13 @@ describe("changeUserPassword", () => {
     revokedAt: CHANGED_AT,
     revokedReason: "password_changed",
     exceptSessionId: 10,
+    message: {
+      type: "password_changed",
+      recipient: "owner@example.com",
+      subject: "Your password was changed",
+      html: "<p>changed</p>",
+      text: "changed",
+    },
   } as const;
 
   it("stores the new hash and revokes the other sessions of that user", async () => {

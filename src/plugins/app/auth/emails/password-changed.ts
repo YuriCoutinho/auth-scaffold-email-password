@@ -1,3 +1,7 @@
+// The outbox stores this name on the row, and both the retry policy and the
+// give-up handler are chosen by it.
+export const PASSWORD_CHANGED_EMAIL_TYPE = "password_changed";
+
 export interface PasswordChangedEmailContent {
   subject: string;
   html: string;

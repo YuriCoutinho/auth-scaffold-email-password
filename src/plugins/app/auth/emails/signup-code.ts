@@ -1,3 +1,7 @@
+// The outbox stores this name on the row, and both the retry policy and the
+// give-up handler are chosen by it.
+export const SIGNUP_CODE_EMAIL_TYPE = "signup_code";
+
 export interface SignupCodeEmailContent {
   subject: string;
   html: string;

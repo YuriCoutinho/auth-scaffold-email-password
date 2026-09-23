@@ -10,14 +10,13 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         tags: ["auth"],
         summary: "Resend the signup confirmation code",
         description:
-          "Issues a fresh confirmation code for the pending signup identified " +
+          "Queues a fresh confirmation code for the pending signup identified " +
           "by the signup_session cookie. Guarded by a per-signup cooldown and " +
           "a total send cap.",
         response: {
           202: messageSchema,
           401: messageSchema,
           429: messageSchema,
-          503: messageSchema,
         },
       },
     },
@@ -39,11 +38,6 @@ const routes: FastifyPluginAsyncZod = async (app) => {
           return reply.code(429).send({
             message:
               "Code resend limit reached. Wait for the current signup to expire and sign up again.",
-          });
-        case "email-unavailable":
-          return reply.code(503).send({
-            message:
-              "We could not send the confirmation email right now. Please try again shortly.",
           });
         case "sent":
           reply.setCookie(

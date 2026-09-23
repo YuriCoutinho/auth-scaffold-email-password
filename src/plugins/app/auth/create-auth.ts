@@ -1,5 +1,4 @@
 import type { FastifyBaseLogger } from "fastify";
-import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import type { SessionRepository } from "../sessions/repository.js";
 import { createAuthenticateService } from "./authenticate.js";
@@ -13,7 +12,6 @@ import { createVerifyCodeService } from "./verify-code.js";
 export interface AuthDeps {
   repository: AuthRepository;
   sessionRepository: SessionRepository;
-  emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
@@ -27,13 +25,9 @@ export function createAuth(deps: AuthDeps) {
   };
   const { signup } = createSignupService({
     ...shared,
-    emailSender: deps.emailSender,
     checkPwnedPassword: deps.checkPwnedPassword,
   });
-  const { resendCode } = createResendCodeService({
-    ...shared,
-    emailSender: deps.emailSender,
-  });
+  const { resendCode } = createResendCodeService(shared);
   const { verifyCode } = createVerifyCodeService(shared);
   const { login } = createLoginService({
     ...shared,
@@ -48,7 +42,6 @@ export function createAuth(deps: AuthDeps) {
   });
   const { changePassword } = createChangePasswordService({
     ...shared,
-    emailSender: deps.emailSender,
     checkPwnedPassword: deps.checkPwnedPassword,
   });
 

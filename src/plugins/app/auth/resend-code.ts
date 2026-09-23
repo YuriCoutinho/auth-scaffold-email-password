@@ -2,9 +2,11 @@ import type { FastifyBaseLogger } from "fastify";
 import { generateOtpCode } from "../../../lib/otp.js";
 import { SIGNUP_TTL_SECONDS } from "../../../lib/session.js";
 import { hashOtpCode } from "../../../lib/token-hash.js";
-import type { EmailSender } from "../email/sender.js";
+import {
+  renderSignupCodeEmail,
+  SIGNUP_CODE_EMAIL_TYPE,
+} from "./emails/signup-code.js";
 import type { AuthRepository } from "./repository.js";
-import { sendSignupCode } from "./send-signup-code.js";
 
 export const RESEND_COOLDOWN_SECONDS = 60;
 export const MAX_CODE_SEND_COUNT = 5;
@@ -13,15 +15,14 @@ export type ResendCodeResult =
   | { outcome: "sent"; sessionToken: string }
   | { outcome: "invalid-session" }
   | { outcome: "cooldown" }
-  | { outcome: "limit-reached" }
-  | { outcome: "email-unavailable" };
+  | { outcome: "limit-reached" };
 
 interface ResendCodeServiceDeps {
   repo: Pick<
     AuthRepository,
-    "findPendingSignupBySessionToken" | "updatePendingSignupResendState"
+    | "findPendingSignupBySessionToken"
+    | "updatePendingSignupResendStateAndQueueEmail"
   >;
-  emailSender: EmailSender;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }
@@ -59,42 +60,32 @@ export function createResendCodeService(deps: ResendCodeServiceDeps) {
       }
 
       const code = generateOtpCode();
-      const previousState = {
-        codeHash: pending.codeHash,
-        expiresAt: pending.expiresAt,
-        codeAttempts: pending.codeAttempts,
-        lastSentAt: pending.lastSentAt,
-        codeSendCount: pending.codeSendCount,
-      };
-
-      await deps.repo.updatePendingSignupResendState(sessionToken, {
-        codeHash: hashOtpCode(code),
-        expiresAt: new Date(currentTime.getTime() + SIGNUP_TTL_SECONDS * 1000),
-        codeAttempts: 0,
-        lastSentAt: currentTime,
-        codeSendCount: pending.codeSendCount + 1,
-      });
-
-      const delivered = await sendSignupCode(
-        { emailSender: deps.emailSender, log: deps.log },
-        { to: pending.email, code, pendingSignupId: pending.id },
+      // The new state and the message it announces are one write, so there is
+      // nothing left to compensate if the provider is down later.
+      await deps.repo.updatePendingSignupResendStateAndQueueEmail(
+        sessionToken,
+        {
+          codeHash: hashOtpCode(code),
+          expiresAt: new Date(
+            currentTime.getTime() + SIGNUP_TTL_SECONDS * 1000,
+          ),
+          codeAttempts: 0,
+          lastSentAt: currentTime,
+          codeSendCount: pending.codeSendCount + 1,
+        },
+        {
+          type: SIGNUP_CODE_EMAIL_TYPE,
+          recipient: pending.email,
+          ...renderSignupCodeEmail({
+            code,
+            ttlMinutes: SIGNUP_TTL_SECONDS / 60,
+          }),
+        },
       );
-      if (!delivered) {
-        // Failed delivery must not consume quota nor start a cooldown; the
-        // previous code becomes valid again. Restore is best-effort.
-        try {
-          await deps.repo.updatePendingSignupResendState(
-            sessionToken,
-            previousState,
-          );
-        } catch (restoreError) {
-          deps.log?.warn(
-            { err: restoreError },
-            "failed to restore pending signup state after resend failure",
-          );
-        }
-        return { outcome: "email-unavailable" };
-      }
+      deps.log?.info(
+        { pendingSignupId: pending.id },
+        "signup code email queued",
+      );
 
       return { outcome: "sent", sessionToken };
     },

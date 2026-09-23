@@ -9,12 +9,20 @@ import type {
   PromotePendingSignupInput,
   UpsertPendingSignupInput,
 } from "../../../src/plugins/app/auth/repository.js";
+import type { OutboxMessage } from "../../../src/plugins/app/email-outbox/repository.js";
 import type {
   SessionRecord,
   SessionRepository,
 } from "../../../src/plugins/app/sessions/repository.js";
+import {
+  createInMemoryEmailOutboxRepository,
+  type InMemoryEmailOutboxRepository,
+} from "../email-outbox/in-memory-repository.js";
 
 export interface InMemorySeed {
+  // Shared with the outbox plugin in the app options, so a test sees the row
+  // the repository queued no matter which side it asserts on.
+  emailOutbox?: InMemoryEmailOutboxRepository;
   authUsers?: Array<{
     email: string;
     id?: number;
@@ -49,6 +57,7 @@ interface StoredSession extends SessionRecord {
 }
 
 export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
+  const outbox = seed.emailOutbox ?? createInMemoryEmailOutboxRepository();
   const authUsers = new Map<string, StoredAuthUser>();
   const pendingSignups = new Map<string, PendingSignupRecord>();
   const sessions: StoredSession[] = [];
@@ -119,7 +128,9 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       return pendingSignups.get(email);
     },
 
-    async upsertPendingSignup(input: UpsertPendingSignupInput) {
+    async upsertPendingSignupAndQueueEmail(
+      input: UpsertPendingSignupInput & { message: OutboxMessage },
+    ) {
       const existing = pendingSignups.get(input.email);
       const id = existing?.id ?? nextPendingId++;
       pendingSignups.set(input.email, {
@@ -133,6 +144,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
         lastSentAt: input.now,
         codeSendCount: 1,
       });
+      await outbox.enqueue(input.message);
       return { id };
     },
 
@@ -147,14 +159,16 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       return findByToken(token);
     },
 
-    async updatePendingSignupResendState(
+    async updatePendingSignupResendStateAndQueueEmail(
       token,
       state: PendingSignupResendState,
+      message: OutboxMessage,
     ) {
       const pending = findByToken(token);
       if (pending) {
         Object.assign(pending, state);
       }
+      await outbox.enqueue(message);
     },
 
     async incrementCodeAttempts(token) {
@@ -242,6 +256,8 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       if (user) {
         user.passwordHash = input.passwordHash;
       }
+
+      await outbox.enqueue(input.message);
     },
 
     async revokeSessionByTokenHash(tokenHash, revokedAt, revokedReason) {
@@ -310,7 +326,14 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
     },
   };
 
-  return { ...repository, authUsers, pendingSignups, sessions, profiles };
+  return {
+    ...repository,
+    authUsers,
+    pendingSignups,
+    sessions,
+    profiles,
+    outbox,
+  };
 }
 
 export type InMemoryAuthRepository = ReturnType<

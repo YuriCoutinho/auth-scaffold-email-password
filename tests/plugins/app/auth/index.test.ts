@@ -4,6 +4,7 @@ import type { AppOptions } from "../../../../src/app-options.js";
 import authPlugin from "../../../../src/plugins/app/auth/index.js";
 import databasePlugin from "../../../../src/plugins/app/database.js";
 import emailSenderPlugin from "../../../../src/plugins/app/email/index.js";
+import emailOutboxPlugin from "../../../../src/plugins/app/email-outbox/index.js";
 import pwnedPasswordPlugin from "../../../../src/plugins/app/pwned-password/index.js";
 import { makeAppOptions, TEST_ENV } from "../../../helpers/app-options.js";
 
@@ -13,6 +14,7 @@ describe("auth plugin", () => {
     const app = Fastify();
     await app.register(databasePlugin, opts);
     await app.register(emailSenderPlugin, opts);
+    await app.register(emailOutboxPlugin, opts);
     await app.register(pwnedPasswordPlugin, opts);
     await app.register(authPlugin, opts);
     await app.ready();
@@ -29,6 +31,7 @@ describe("auth plugin", () => {
     const app = Fastify();
     await app.register(databasePlugin, opts);
     await app.register(emailSenderPlugin, opts);
+    await app.register(emailOutboxPlugin, opts);
     await app.register(pwnedPasswordPlugin, opts);
     await app.register(authPlugin, opts);
     await app.ready();

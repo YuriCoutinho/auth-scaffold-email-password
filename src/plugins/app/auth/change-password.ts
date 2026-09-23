@@ -1,9 +1,11 @@
 import type { FastifyBaseLogger } from "fastify";
 import { hashPassword, verifyPassword } from "../../../lib/password.js";
-import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
+import {
+  PASSWORD_CHANGED_EMAIL_TYPE,
+  renderPasswordChangedEmail,
+} from "./emails/password-changed.js";
 import type { AuthRepository } from "./repository.js";
-import { sendPasswordChanged } from "./send-password-changed.js";
 
 export type ChangePasswordResult =
   | { outcome: "changed" }
@@ -23,7 +25,6 @@ interface ChangePasswordServiceDeps {
     AuthRepository,
     "findAuthUserCredentialsById" | "changeUserPassword"
   >;
-  emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
@@ -59,22 +60,22 @@ export function createChangePasswordService(deps: ChangePasswordServiceDeps) {
         return { outcome: "pwned-password" };
       }
 
+      // The notice is queued in the same write as the change it announces, so
+      // it can never describe something that did not happen, and the request
+      // never waits on the provider to say that it did.
       await deps.repo.changeUserPassword({
         userId: user.id,
         passwordHash: await hashPassword(input.newPassword),
         revokedAt: now(),
         revokedReason: "password_changed",
         exceptSessionId: input.currentSessionId,
+        message: {
+          type: PASSWORD_CHANGED_EMAIL_TYPE,
+          recipient: user.email,
+          ...renderPasswordChangedEmail(),
+        },
       });
       deps.log?.info({ userId: user.id }, "password changed");
-
-      // Awaited, like every other send in this project, but the result never
-      // reaches the response: the password already changed, so failing the
-      // request here would tell the user the opposite of what happened.
-      await sendPasswordChanged(
-        { emailSender: deps.emailSender, log: deps.log },
-        { to: user.email, userId: user.id },
-      );
 
       return { outcome: "changed" };
     },

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hashPassword } from "../../../../src/lib/password.js";
 import { createChangePasswordService } from "../../../../src/plugins/app/auth/change-password.js";
+import { PASSWORD_CHANGED_EMAIL_TYPE } from "../../../../src/plugins/app/auth/emails/password-changed.js";
 
 const NOW = new Date("2026-03-01T12:00:00.000Z");
 const CURRENT = "current-password-here";
@@ -21,9 +22,6 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
         passwordHash: currentHash,
       }),
       changeUserPassword: vi.fn().mockResolvedValue(undefined),
-    },
-    emailSender: {
-      send: vi.fn().mockResolvedValue({ providerMessageId: "x" }),
     },
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -53,6 +51,10 @@ describe("changePassword", () => {
       revokedAt: NOW,
       revokedReason: "password_changed",
       exceptSessionId: 10,
+      message: expect.objectContaining({
+        type: PASSWORD_CHANGED_EMAIL_TYPE,
+        recipient: "owner@example.com",
+      }),
     });
   });
 
@@ -138,29 +140,20 @@ describe("changePassword", () => {
     expect(deps.checkPwnedPassword).toHaveBeenCalledWith(NEXT);
   });
 
-  it("sends the notification email to the account address", async () => {
+  it("queues the notification email in the same write as the password change", async () => {
     const deps = makeDeps();
     const { changePassword } = createChangePasswordService(deps);
 
     await changePassword(input);
 
-    expect(deps.emailSender.send).toHaveBeenCalledWith(
-      expect.objectContaining({ to: "owner@example.com" }),
-    );
+    const call = deps.repo.changeUserPassword.mock.calls[0]?.[0];
+    expect(call.message.recipient).toBe("owner@example.com");
+    expect(call.message.subject).toBe("Your password was changed");
+    expect(call.message.html).not.toContain(NEXT);
+    expect(call.message.text).not.toContain(NEXT);
   });
 
-  it("still succeeds when the notification email fails", async () => {
-    const deps = makeDeps({
-      emailSender: { send: vi.fn().mockRejectedValue(new Error("down")) },
-    });
-    const { changePassword } = createChangePasswordService(deps);
-
-    await expect(changePassword(input)).resolves.toEqual({
-      outcome: "changed",
-    });
-  });
-
-  it("sends no notification when the current password is wrong", async () => {
+  it("queues no notification when the current password is wrong", async () => {
     const deps = makeDeps();
     const { changePassword } = createChangePasswordService(deps);
 
@@ -169,27 +162,7 @@ describe("changePassword", () => {
       currentPassword: "wrong-password-entirely",
     });
 
-    expect(deps.emailSender.send).not.toHaveBeenCalled();
-  });
-
-  it("sends no notification when the new password equals the current one", async () => {
-    const deps = makeDeps();
-    const { changePassword } = createChangePasswordService(deps);
-
-    await changePassword({ ...input, newPassword: CURRENT });
-
-    expect(deps.emailSender.send).not.toHaveBeenCalled();
-  });
-
-  it("sends no notification when the new password is found in a breach", async () => {
-    const deps = makeDeps({
-      checkPwnedPassword: vi.fn().mockResolvedValue(true),
-    });
-    const { changePassword } = createChangePasswordService(deps);
-
-    await changePassword(input);
-
-    expect(deps.emailSender.send).not.toHaveBeenCalled();
+    expect(deps.repo.changeUserPassword).not.toHaveBeenCalled();
   });
 
   it("logs a failed attempt without the password", async () => {

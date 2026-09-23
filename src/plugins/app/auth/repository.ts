@@ -1,4 +1,5 @@
 import type { RevokedReason } from "../../../lib/session.js";
+import type { OutboxMessage } from "../email-outbox/repository.js";
 
 export interface AuthUserRecord {
   id: number;
@@ -65,6 +66,7 @@ export interface ChangeUserPasswordInput {
   revokedAt: Date;
   revokedReason: RevokedReason;
   exceptSessionId: number;
+  message: OutboxMessage;
 }
 
 export interface AuthRepository {
@@ -72,14 +74,20 @@ export interface AuthRepository {
   findPendingSignupByEmail(
     email: string,
   ): Promise<PendingSignupRecord | undefined>;
-  upsertPendingSignup(input: UpsertPendingSignupInput): Promise<{ id: number }>;
+  // The email is queued in the same transaction as the write that causes it:
+  // a rolled back signup leaves no message to deliver, and a queued message
+  // always has the row it belongs to.
+  upsertPendingSignupAndQueueEmail(
+    input: UpsertPendingSignupInput & { message: OutboxMessage },
+  ): Promise<{ id: number }>;
   markPendingSignupUndelivered(email: string): Promise<void>;
   findPendingSignupBySessionToken(
     token: string,
   ): Promise<PendingSignupRecord | undefined>;
-  updatePendingSignupResendState(
+  updatePendingSignupResendStateAndQueueEmail(
     token: string,
     state: PendingSignupResendState,
+    message: OutboxMessage,
   ): Promise<void>;
   incrementCodeAttempts(signupSessionToken: string): Promise<void>;
   promotePendingSignup(
