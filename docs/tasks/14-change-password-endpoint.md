@@ -28,7 +28,7 @@ No cadastro, a consulta à base de vazamentos acontece antes de qualquer outra c
 
 A consulta ao Have I Been Pwned é uma requisição de saída, com custo de latência e de quota, disparada por um input que o chamador controla inteiramente. Deixá-la na frente daria a quem roubou um cookie a capacidade de gerar tráfego externo ilimitado em nome do serviço, sem nunca precisar acertar a senha. Colocando a prova de posse antes, quem não conhece a senha atual para no primeiro passo e não move nada além de uma verificação de hash local.
 
-O verificador de vazamentos falha aberto por desenho: um timeout ou um erro da API resolve `false`, e a troca segue adiante. É a mesma decisão que o cadastro tomou, pelo mesmo motivo, porque uma base externa indisponível não pode virar uma conta impedida de melhorar a própria senha. Um teste fixa esse comportamento.
+O verificador de vazamentos falha aberto por desenho: um timeout ou um erro da API resolve `false`, e a troca segue adiante. É a mesma decisão que o cadastro tomou, pelo mesmo motivo, porque uma base externa indisponível não pode virar uma conta impedida de melhorar a própria senha. Falhar aberto é comportamento do verificador, e são os testes dele que fixam o timeout e a resposta de erro virando `false`. O service não conhece nem repete essa regra, então o que os testes dele fixam é o outro lado do contrato, que o verificador é consultado com a senha nova e que um `false` não impede a troca.
 
 ### A senha nova não pode ser igual à atual
 
@@ -85,7 +85,7 @@ Ele também não carrega horário nem nome do dispositivo. O rótulo de disposit
 * Corpo validado por `changePasswordBodySchema`, com a senha nova sob a mesma `passwordSchema` do cadastro e a senha atual apenas sob limite de comprimento
 * `findAuthUserCredentialsById` e `changeUserPassword` declarados em `AuthRepository`, implementados no adaptador Drizzle com as duas escritas numa transação e espelhados no adaptador em memória
 * `password_changed` acrescentado a `REVOKED_REASONS` e gravado em `revoked_reason` nas sessões revogadas, sem migration
-* Service `changePassword` coberto por teste, incluindo a ordem das checagens, a recusa por senha atual incorreta quando a senha nova é igual a ela, a troca bem-sucedida quando o verificador de vazamentos falha aberto e o sucesso mesmo com o email falhando
+* Service `changePassword` coberto por teste, incluindo a ordem das checagens, a recusa por senha atual incorreta quando a senha nova é igual a ela, a consulta ao verificador de vazamentos com a senha nova e a troca seguindo quando ele resolve `false`, o sucesso mesmo com o email falhando e o email não saindo em nenhuma das três recusas
 * Teste do adaptador em memória provando que as sessões de outro usuário permanecem ativas e que a senha dele permanece intacta
 * Teste de rota provando que a sessão atual continua servindo `GET /me` depois da troca, que a outra sessão foi revogada com o motivo correto e que nenhum `Set-Cookie` sai na resposta
 * Teste de rota provando um `400` com mensagem própria para cada recusa e que nenhum hash de senha aparece no corpo da resposta

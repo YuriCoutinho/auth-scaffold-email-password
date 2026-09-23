@@ -121,6 +121,7 @@ describe("POST /auth/change-password", () => {
     );
 
     expect(response.statusCode).toBe(400);
+    expect(response.json().message).toBe("The current password is incorrect.");
     expect(
       authRepository.authUsers.get("owner@example.com")?.passwordHash,
     ).toBe(before);
@@ -136,6 +137,9 @@ describe("POST /auth/change-password", () => {
     );
 
     expect(response.statusCode).toBe(400);
+    expect(response.json().message).toBe(
+      "The new password must be different from the current one.",
+    );
     await app.close();
   });
 

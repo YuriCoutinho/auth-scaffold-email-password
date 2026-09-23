@@ -128,15 +128,14 @@ describe("changePassword", () => {
     expect(deps.repo.changeUserPassword).not.toHaveBeenCalled();
   });
 
-  it("changes the password when the breach check fails open", async () => {
-    const deps = makeDeps({
-      checkPwnedPassword: vi.fn().mockResolvedValue(false),
-    });
+  it("asks the breach checker about the new password and proceeds on false", async () => {
+    const deps = makeDeps();
     const { changePassword } = createChangePasswordService(deps);
 
     await expect(changePassword(input)).resolves.toEqual({
       outcome: "changed",
     });
+    expect(deps.checkPwnedPassword).toHaveBeenCalledWith(NEXT);
   });
 
   it("sends the notification email to the account address", async () => {
@@ -159,6 +158,38 @@ describe("changePassword", () => {
     await expect(changePassword(input)).resolves.toEqual({
       outcome: "changed",
     });
+  });
+
+  it("sends no notification when the current password is wrong", async () => {
+    const deps = makeDeps();
+    const { changePassword } = createChangePasswordService(deps);
+
+    await changePassword({
+      ...input,
+      currentPassword: "wrong-password-entirely",
+    });
+
+    expect(deps.emailSender.send).not.toHaveBeenCalled();
+  });
+
+  it("sends no notification when the new password equals the current one", async () => {
+    const deps = makeDeps();
+    const { changePassword } = createChangePasswordService(deps);
+
+    await changePassword({ ...input, newPassword: CURRENT });
+
+    expect(deps.emailSender.send).not.toHaveBeenCalled();
+  });
+
+  it("sends no notification when the new password is found in a breach", async () => {
+    const deps = makeDeps({
+      checkPwnedPassword: vi.fn().mockResolvedValue(true),
+    });
+    const { changePassword } = createChangePasswordService(deps);
+
+    await changePassword(input);
+
+    expect(deps.emailSender.send).not.toHaveBeenCalled();
   });
 
   it("logs a failed attempt without the password", async () => {
