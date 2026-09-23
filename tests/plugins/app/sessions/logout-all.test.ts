@@ -14,13 +14,12 @@ function makeDeps(revokedCount = 2) {
 }
 
 describe("logoutAll", () => {
-  it("excludes the current session by default", async () => {
+  it("always keeps the current session out of the revocation", async () => {
     const deps = makeDeps();
 
     await createLogoutAllService(deps).logoutAll({
       userId: 7,
       currentSessionId: 3,
-      includeCurrentSession: false,
     });
 
     expect(deps.repo.revokeAllUserSessions).toHaveBeenCalledWith({
@@ -31,63 +30,34 @@ describe("logoutAll", () => {
     });
   });
 
-  it("omits the exclusion entirely when the current session is included", async () => {
-    const deps = makeDeps();
-
-    await createLogoutAllService(deps).logoutAll({
-      userId: 7,
-      currentSessionId: 3,
-      includeCurrentSession: true,
-    });
-
-    expect(deps.repo.revokeAllUserSessions).toHaveBeenCalledWith({
-      userId: 7,
-      revokedAt: NOW,
-      revokedReason: "logout_all",
-    });
-  });
-
-  it("reports the current session as surviving when it was excluded", async () => {
-    const result = await createLogoutAllService(makeDeps()).logoutAll({
-      userId: 7,
-      currentSessionId: 3,
-      includeCurrentSession: false,
-    });
-
-    expect(result).toEqual({ revokedCount: 2, currentSessionRevoked: false });
-  });
-
-  it("reports the current session as revoked when it was included", async () => {
+  it("reports how many sessions were revoked", async () => {
     const result = await createLogoutAllService(makeDeps(3)).logoutAll({
       userId: 7,
       currentSessionId: 3,
-      includeCurrentSession: true,
     });
 
-    expect(result).toEqual({ revokedCount: 3, currentSessionRevoked: true });
+    expect(result).toEqual({ revokedCount: 3 });
   });
 
   it("succeeds when the user has no other session to revoke", async () => {
     const result = await createLogoutAllService(makeDeps(0)).logoutAll({
       userId: 7,
       currentSessionId: 3,
-      includeCurrentSession: false,
     });
 
-    expect(result).toEqual({ revokedCount: 0, currentSessionRevoked: false });
+    expect(result).toEqual({ revokedCount: 0 });
   });
 
-  it("logs the event with the count and the scope, and never a token", async () => {
+  it("logs the event with the count, and never a token", async () => {
     const deps = makeDeps(5);
 
     await createLogoutAllService(deps).logoutAll({
       userId: 7,
       currentSessionId: 3,
-      includeCurrentSession: true,
     });
 
     expect(deps.log.info).toHaveBeenCalledWith(
-      { userId: 7, revokedCount: 5, includeCurrentSession: true },
+      { userId: 7, revokedCount: 5 },
       "all sessions revoked",
     );
   });
@@ -99,8 +69,7 @@ describe("logoutAll", () => {
       createLogoutAllService(deps).logoutAll({
         userId: 7,
         currentSessionId: 3,
-        includeCurrentSession: false,
       }),
-    ).resolves.toEqual({ revokedCount: 2, currentSessionRevoked: false });
+    ).resolves.toEqual({ revokedCount: 2 });
   });
 });

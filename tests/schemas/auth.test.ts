@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   currentUserResponseSchema,
   loginBodySchema,
-  logoutAllBodySchema,
   messageSchema,
   signupBodySchema,
   verifyCodeBodySchema,
@@ -58,31 +57,5 @@ describe("auth schemas", () => {
 
   it("describes a message envelope", () => {
     expect(messageSchema.safeParse({ message: "ok" }).success).toBe(true);
-  });
-});
-
-describe("logoutAllBodySchema", () => {
-  // Fastify turns a missing body into null before validating, so this is the
-  // shape an absent body really arrives as. The route reads the default off it.
-  it("lets a null body through, which is how an absent body arrives", () => {
-    expect(logoutAllBodySchema.parse(null)).toBeNull();
-  });
-
-  it("defaults to keeping the current session when the field is absent", () => {
-    expect(logoutAllBodySchema.parse({})).toEqual({
-      includeCurrentSession: false,
-    });
-  });
-
-  it("accepts an explicit true", () => {
-    expect(logoutAllBodySchema.parse({ includeCurrentSession: true })).toEqual({
-      includeCurrentSession: true,
-    });
-  });
-
-  it("rejects a non-boolean", () => {
-    expect(() =>
-      logoutAllBodySchema.parse({ includeCurrentSession: "yes" }),
-    ).toThrow();
   });
 });

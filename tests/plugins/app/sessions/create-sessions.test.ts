@@ -10,12 +10,8 @@ describe("createSessions", () => {
 
     await expect(sessions.logout("unknown-token")).resolves.toBeUndefined();
     expect(
-      await sessions.logoutAll({
-        userId: 999,
-        currentSessionId: 1,
-        includeCurrentSession: false,
-      }),
-    ).toEqual({ revokedCount: 0, currentSessionRevoked: false });
+      await sessions.logoutAll({ userId: 999, currentSessionId: 1 }),
+    ).toEqual({ revokedCount: 0 });
     expect(
       await sessions.listSessions({ userId: 999, currentSessionId: 1 }),
     ).toEqual([]);
