@@ -7,7 +7,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     "/logout",
     {
       schema: {
-        tags: ["auth"],
+        tags: ["sessions"],
         summary: "Sign out of this device",
         description:
           "Revokes the session behind the cookie of this request and clears " +
