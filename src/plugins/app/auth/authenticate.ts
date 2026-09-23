@@ -1,12 +1,12 @@
 import { hashSessionToken } from "../../../lib/token-hash.js";
-import type { AuthRepository } from "./repository.js";
+import type { SessionRepository } from "../sessions/repository.js";
 
 export type AuthenticateResult =
   | { outcome: "authenticated"; user: { id: number }; session: { id: number } }
   | { outcome: "invalid" };
 
 interface AuthenticateServiceDeps {
-  repo: Pick<AuthRepository, "findSessionByTokenHash">;
+  repo: Pick<SessionRepository, "findSessionByTokenHash">;
   now?: () => Date;
 }
 

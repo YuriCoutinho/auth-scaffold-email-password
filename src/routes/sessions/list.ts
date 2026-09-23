@@ -1,10 +1,10 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
-import { messageSchema } from "../schemas/auth.js";
-import { sessionListResponseSchema } from "../schemas/sessions.js";
+import { messageSchema } from "../../schemas/auth.js";
+import { sessionListResponseSchema } from "../../schemas/sessions.js";
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   app.get(
-    "/sessions",
+    "/",
     {
       onRequest: [app.authenticate],
       schema: {
@@ -32,7 +32,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         throw new Error("Route reached without the authenticate hook");
       }
 
-      const sessions = await app.auth.listSessions({
+      const sessions = await app.sessions.listSessions({
         userId: request.user.id,
         currentSessionId: request.session.id,
       });

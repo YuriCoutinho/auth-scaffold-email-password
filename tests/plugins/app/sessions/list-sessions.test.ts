@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createListSessionsService } from "../../../../src/plugins/app/auth/list-sessions.js";
+import { createListSessionsService } from "../../../../src/plugins/app/sessions/list-sessions.js";
 
 const NOW = new Date("2026-01-10T00:00:00.000Z");
 

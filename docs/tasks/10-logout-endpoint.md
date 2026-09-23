@@ -1,10 +1,10 @@
-# 10. Endpoint POST /auth/logout
+# 10. Endpoint DELETE /sessions/current
 
 ## Introdução
 
 O servidor já sabia criar sessão e já sabia ler sessão, mas não sabia encerrar sessão. Quem entrava ficava com um cookie válido por trinta dias e não tinha como devolvê-lo, o que deixava o fluxo incompleto justamente na ponta que o usuário aciona quando quer sair de um dispositivo emprestado, público ou simplesmente compartilhado.
 
-Esta etapa entrega `POST /auth/logout`, que encerra a sessão do dispositivo que fez a requisição. O escopo é deliberadamente estrito, porque logout aqui significa uma coisa só, que é derrubar aquela sessão. Não existe corpo, não existe parâmetro e não existe a possibilidade de revogar a sessão de outro dispositivo, já que encerrar sessões de terceiros é outra funcionalidade, com outra tela e outras perguntas de segurança.
+Esta etapa entrega `DELETE /sessions/current`, que encerra a sessão do dispositivo que fez a requisição. O escopo é deliberadamente estrito, porque logout aqui significa uma coisa só, que é derrubar aquela sessão. Não existe corpo, não existe parâmetro e não existe a possibilidade de revogar a sessão de outro dispositivo, já que encerrar sessões de terceiros é outra funcionalidade, com outra tela e outras perguntas de segurança.
 
 A promessa da sessão em banco, apresentada na etapa anterior, se paga aqui. Como a validade da sessão é verificada no banco a cada requisição, marcar a linha como revogada derruba o acesso imediatamente, sem prazo de carência e sem lista de tokens banidos. O logout de verdade sai de graça exatamente porque a sessão nunca foi um token autoassinado.
 
@@ -12,9 +12,23 @@ A rota também entrega uma propriedade que o cliente precisa poder assumir, que 
 
 ## Requisitos técnicos
 
+### A sessão é uma fatia própria, com porta, adaptador e decorator
+
+A porta `SessionRepository` já existia desde a modelagem, porque login e confirmação de cadastro precisam gravar sessão, mas até aqui ela era só isso, uma porta com dois métodos de escrita. Encerrar sessão é a primeira operação que trata a sessão como coisa em si, e não como subproduto de autenticar alguém, então é aqui que a fatia `src/plugins/app/sessions/` se completa. `repository.ts` declara a porta, `drizzle-repository.ts` é o adaptador dela, os services vivem ao lado, `create-sessions.ts` os monta e `index.ts` decora a instância como `fastify.sessions`. As rotas que falam de sessão ficam juntas em `src/routes/sessions/`, e esta é `current.ts`.
+
+A fronteira com `auth` é de mão única. A fatia de identidade pode pedir alguma coisa à de sessão, como o login pedindo `createSession` e a promoção do cadastro pedindo a inserção dentro da própria transação, e o contrário nunca acontece: nenhum arquivo de `sessions/` importa de `auth/`. Essa direção é o que permite ler a fatia de sessão inteira sem precisar entender cadastro, código de confirmação nem senha, e é ela que mantém `SessionRepository` com cinco métodos em vez de virar um segundo `AuthRepository`.
+
+O service `authenticate` é a única exceção aparente, e ele fica em `auth` de propósito. Ele lê pela porta de sessão, mas a pergunta que responde é "quem é você", que é identidade, e não gestão de sessão.
+
+### O caminho é `DELETE /sessions/current`
+
+O endereço nomeia o recurso e deixa o verbo HTTP dizer o que acontece com ele. A sessão do request é um recurso identificável, `current` é o apelido dela dentro da coleção, e apagá-la é `DELETE`. O par `POST /auth/logout` diria a mesma coisa com um verbo de fluxo colado num prefixo de credencial, e sessão não é credencial, é recurso do usuário autenticado.
+
+A consequência prática é que as três operações de sessão ficam no mesmo lugar e se leem em conjunto: `GET /sessions` lista, `DELETE /sessions/current` derruba esta, e `DELETE /sessions` derruba as outras. Quem abre o Swagger vê a coleção inteira de uma vez, em vez de caçar metade dela sob `/auth`.
+
 ### A rota não exige autenticação
 
-`POST /auth/logout` não usa o hook `authenticate`. Isso parece contraintuitivo, porque logout é uma ação de usuário logado, mas o hook responde a uma pergunta diferente da que esta rota faz. O hook pergunta "prove quem você é", e o logout diz "quero sair", que é um pedido que faz sentido mesmo quando o cookie está vencido, revogado ou corrompido.
+`DELETE /sessions/current` não usa o hook `authenticate`. Isso parece contraintuitivo, porque logout é uma ação de usuário logado, mas o hook responde a uma pergunta diferente da que esta rota faz. O hook pergunta "prove quem você é", e o logout diz "quero sair", que é um pedido que faz sentido mesmo quando o cookie está vencido, revogado ou corrompido.
 
 Se o hook estivesse aplicado, um cookie ruim levaria a `401` e o usuário ficaria preso, com um cookie que não abre nada e que ele também não consegue mandar apagar. Pior, o próprio status viraria oráculo, porque o par `401` e `204` contaria a quem enviou um token qualquer se aquele token corresponde a uma sessão viva. Sem o hook, o único status possível é `204`, e a resposta não carrega informação nenhuma sobre o estado da sessão.
 
@@ -22,7 +36,7 @@ O handler lê o cookie cru de `request.cookies`, entrega ao service e segue adia
 
 ### A idempotência vive no `WHERE` do `UPDATE`
 
-O repositório ganhou `revokeSessionByTokenHash`, cujo `UPDATE` filtra por `token_hash = ?` combinado com `revoked_at IS NULL`. É desse `WHERE` que a idempotência sai. Uma sessão inexistente, uma sessão já revogada ou um token desconhecido simplesmente não casam nenhuma linha, e o comando termina sem efeito e sem erro.
+A porta `SessionRepository` ganhou `revokeSessionByTokenHash`, cujo `UPDATE` no adaptador Drizzle filtra por `token_hash = ?` combinado com `revoked_at IS NULL`. É desse `WHERE` que a idempotência sai. Uma sessão inexistente, uma sessão já revogada ou um token desconhecido simplesmente não casam nenhuma linha, e o comando termina sem efeito e sem erro.
 
 A alternativa seria ler a sessão, decidir em TypeScript se ela ainda vale e escrever em seguida. Ela custaria uma ida a mais ao banco e, principalmente, abriria uma janela entre a leitura e a escrita, em que duas requisições simultâneas poderiam ambas achar a sessão viva e a segunda sobrescrever o carimbo da primeira. Com a guarda no `WHERE`, o banco resolve a corrida sozinho, e o primeiro logout é o que fica registrado.
 
@@ -58,7 +72,7 @@ O logout não escreve nada no log. Sair de um dispositivo é rotina, não sinal 
 
 ## Definition of done
 
-* `POST /auth/logout` respondendo `204` sem corpo, com o contrato publicado no OpenAPI
+* `DELETE /sessions/current` respondendo `204` sem corpo, com o contrato publicado no OpenAPI
 * A rota funcionando sem o hook `authenticate`, respondendo `204` também quando não há cookie de sessão
 * Sessão do cookie marcada com `revoked_at` e `revoked_reason` igual a `user_logout`
 * Demais sessões do mesmo usuário intactas, com teste provando o isolamento
@@ -66,4 +80,6 @@ O logout não escreve nada no log. Sair de um dispositivo é rotina, não sinal 
 * Token desconhecido, cookie vazio e sessão já revogada respondendo `204` sem tocar o banco indevidamente
 * Cookie de sessão limpo com `Max-Age=0` e com `HttpOnly`, `Secure`, `SameSite=Strict` e `Path=/`
 * Teste garantindo que o repositório recebe o hash do token, nunca o token
+* Fatia `src/plugins/app/sessions/` com a porta `SessionRepository`, o adaptador Drizzle e o decorator `fastify.sessions`, sem nenhum import de `src/plugins/app/auth/`
+* Rota em `src/routes/sessions/current.ts`, dentro da coleção que o prefixo da pasta define
 * `pnpm test`, `pnpm typecheck`, `pnpm lint` e `pnpm build` verdes

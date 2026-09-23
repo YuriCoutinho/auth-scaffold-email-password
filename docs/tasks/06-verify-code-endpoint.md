@@ -43,7 +43,7 @@ Criar o perfil aqui dentro estabelece um invariante que o resto do sistema pode 
 
 A sessão também fica dentro da transação, e não depois. Se a criação da sessão falhasse fora dela, existiria uma conta criada sem o autologin prometido, e o cadastro pendente já estaria apagado.
 
-A transação vive atrás de um único método da interface `AuthRepository`, `promotePendingSignup`, e é o adaptador Drizzle em `src/plugins/app/auth/drizzle-repository.ts` que abre `db.transaction` e executa os quatro passos. O service em `src/plugins/app/auth/verify-code.ts` só decide se a promoção deve acontecer e chama o método uma vez. Colocar a fronteira aí mantém a atomicidade como responsabilidade de quem conhece o banco, e permite ao adaptador em memória dos testes implementar a mesma operação sem simular transação.
+A transação vive atrás de um único método da interface `AuthRepository`, `promotePendingSignup`, e é o adaptador Drizzle em `src/plugins/app/auth/drizzle-repository.ts` que abre `db.transaction` e executa os quatro passos. O passo da sessão não é escrito ali: o adaptador de auth chama `createDrizzleSessionRepository(tx)` e pede a inserção à fatia de sessão, passando a própria transação. É assim que o SQL da tabela `sessions` fica num lugar só, dentro de `src/plugins/app/sessions/`, sem que a atomicidade do autologin se perca. O service em `src/plugins/app/auth/verify-code.ts` só decide se a promoção deve acontecer e chama o método uma vez. Colocar a fronteira aí mantém a atomicidade como responsabilidade de quem conhece o banco, e permite ao adaptador em memória dos testes implementar a mesma operação sem simular transação.
 
 ### A sessão
 

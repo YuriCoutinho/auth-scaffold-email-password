@@ -1,7 +1,9 @@
 import { vi } from "vitest";
 import type { AppOptions } from "../../src/app-options.js";
 import type { Env } from "../../src/config/env.js";
+import type { AuthRepository } from "../../src/plugins/app/auth/repository.js";
 import { FakeEmailSender } from "../../src/plugins/app/email/drivers/fake.js";
+import type { SessionRepository } from "../../src/plugins/app/sessions/repository.js";
 import { createInMemoryAuthRepository } from "./auth/in-memory-repository.js";
 
 // Never reaches a server: postgres.js only connects on the first query.
@@ -12,15 +14,25 @@ export const TEST_ENV: Env = {
   EMAIL_DRIVER: "fake",
 };
 
+// The in-memory helper implements both ports over one store, so a test that
+// overrides the repository gets the same rows on both sides instead of the
+// route reading one store while the session hook reads another.
+type AppOptionsOverrides = Partial<Omit<AppOptions, "authRepository">> & {
+  authRepository?: AuthRepository & SessionRepository;
+};
+
 export function makeAppOptions(
-  overrides: Partial<AppOptions> = {},
+  overrides: AppOptionsOverrides = {},
 ): AppOptions {
+  const authRepository =
+    overrides.authRepository ?? createInMemoryAuthRepository();
   return {
     config: TEST_ENV,
     logger: false,
-    authRepository: createInMemoryAuthRepository(),
     emailSender: new FakeEmailSender(),
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
     ...overrides,
+    authRepository,
+    sessionRepository: overrides.sessionRepository ?? authRepository,
   };
 }

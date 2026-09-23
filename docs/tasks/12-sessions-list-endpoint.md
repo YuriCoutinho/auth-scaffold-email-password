@@ -14,7 +14,9 @@ O endpoint alimenta uma tela de dispositivos conectados e prepara o terreno para
 
 Todo caminho sob `/auth` neste projeto é um verbo de fluxo de credencial, como `signup`, `login`, `verify-code` e `resend-code`. Sessão não é isso, é um recurso do usuário autenticado, e o `/me` já firmou que recurso do usuário autenticado fica na raiz. Colocar a lista sob `/auth` misturaria duas naturezas de rota no mesmo prefixo, e o prefixo deixaria de significar alguma coisa.
 
-Pelo mesmo motivo, a tag do Swagger vira `sessions`, e `POST /auth/logout` e `POST /auth/logout-all` migram junto. Os dois tratam do ciclo de vida da sessão, não da credencial, e deixar metade dessa vida em cada grupo seria o pior dos dois mundos para quem lê a documentação. O `/me` continua em `auth` porque o que ele lê é o usuário.
+Pelo mesmo motivo, a coleção `/sessions` guarda as três operações de sessão e a tag do Swagger que as agrupa também se chama `sessions`. `GET /sessions` lista, `DELETE /sessions/current` derruba a deste dispositivo e `DELETE /sessions` derruba as outras. As três tratam do ciclo de vida da sessão, não da credencial, e deixar parte dessa vida em cada grupo seria o pior dos dois mundos para quem lê a documentação. O `/me` continua em `auth` porque o que ele lê é o usuário.
+
+Os arquivos seguem o mesmo desenho: `src/routes/sessions/` é a pasta cujo nome vira o prefixo, e dentro dela `list.ts` registra `GET /`, `current.ts` registra `DELETE /current` e `all.ts` registra `DELETE /`. Nenhuma rota repete o prefixo no próprio caminho, então mover a coleção inteira é renomear uma pasta.
 
 ### A sessão ganha um `public_id` e a chave primária nunca sai
 
@@ -24,7 +26,7 @@ No JSON esse campo se chama apenas `id`. Dentro de `GET /sessions` não existe i
 
 ### O `token_hash` fica fora até da projeção da query
 
-A leitura entra no seam `AuthRepository` como `listActiveUserSessions`, e a projeção do `SELECT` lista campo por campo: id interno, id público, rótulo do dispositivo, criação e expiração. O hash do token não está lá.
+A leitura entra no seam `SessionRepository` como `listActiveUserSessions`, e a projeção do `SELECT` lista campo por campo: id interno, id público, rótulo do dispositivo, criação e expiração. O hash do token não está lá.
 
 Isso é mais forte do que filtrar o campo depois, na rota ou no service, porque a coluna nunca chega a sair do repositório. Não existe ponto no caminho em que um `...spread` distraído possa vazá-la, e o teste que garante isso procura o hash no corpo bruto da resposta, não numa propriedade específica.
 
@@ -35,6 +37,12 @@ Uma sessão entra na lista quando `user_id` é o do usuário autenticado, `revok
 A comparação é `expires_at > now()` e não `>=`, então a sessão que expira no instante exato fica de fora. Uma sessão que vence agora já não abre nada, e mostrá-la como ativa daria ao usuário uma informação falsa no momento em que ela mais engana. O caso está coberto por teste, porque é o tipo de limite que uma refatoração troca sem querer.
 
 A ordenação é por `created_at` decrescente, com o `id` decrescente como desempate, para que duas sessões criadas no mesmo instante saiam sempre na mesma ordem em vez de ficarem a critério do plano de execução do Postgres. A criação é o único sinal temporal de atividade que a linha guarda, e a sessão mais nova é a que o usuário tem mais chance de reconhecer como sua.
+
+### O service é da fatia de sessão, exposto por `fastify.sessions`
+
+`listSessions` vive em `src/plugins/app/sessions/list-sessions.ts` e chega à rota por `app.sessions.listSessions`, ao lado de `logout` e `logoutAll`. Ele não passa por `fastify.auth`, que guarda os fluxos de identidade, e depende apenas de `listActiveUserSessions` da porta `SessionRepository`.
+
+A rota continua lendo `request.user` e `request.session`, que o hook `authenticate` publica, e é só isso que ela precisa da fatia de identidade. Sessão e identidade se encontram no request, não nos módulos, e é por isso que `sessions/` não importa nada de `auth/`.
 
 ### O `isCurrent` é derivado no service, não na rota
 
@@ -61,9 +69,9 @@ A recusa é o mesmo `401` genérico com `{ "message": "Unauthorized." }` para co
 ## Definition of done
 
 * `sessions` com `public_id` em uuid, `NOT NULL`, `UNIQUE` e default aleatório, com a migration aplicada num Postgres 16 local
-* `listActiveUserSessions` declarado no `AuthRepository`, implementado no adaptador Drizzle com o filtro e a ordenação, e espelhado no adaptador em memória
-* Service `listSessions` cobrindo lista vazia, derivação do `isCurrent` e ausência do id interno na saída
+* `listActiveUserSessions` declarado no `SessionRepository`, implementado no adaptador Drizzle com o filtro e a ordenação, e espelhado no adaptador em memória
+* Service `listSessions` exposto por `fastify.sessions` e cobrindo lista vazia, derivação do `isCurrent` e ausência do id interno na saída
 * `GET /sessions` cobrindo a listagem ordenada com a sessão atual sinalizada, a ausência do hash do token na resposta, a sessão de outro usuário fora da lista e o `401` genérico para cookie ausente, revogado e expirado
 * Sessão que expira no instante exato comprovadamente fora da lista
-* `GET /sessions`, `POST /auth/logout` e `POST /auth/logout-all` agrupados sob a tag `sessions` no Swagger UI
+* `GET /sessions`, `DELETE /sessions/current` e `DELETE /sessions` agrupados sob a tag `sessions` no Swagger UI
 * `pnpm typecheck`, `pnpm lint`, `pnpm test` e `pnpm build` verdes

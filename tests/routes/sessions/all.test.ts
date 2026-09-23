@@ -20,20 +20,14 @@ function repoWithThreeSessions() {
   });
 }
 
-function sessionCookie(response: { headers: Record<string, unknown> }) {
-  const header = response.headers["set-cookie"];
-  const values = Array.isArray(header) ? header : [header];
-  return values.find((value) => String(value).startsWith("session="));
-}
-
-describe("POST /auth/logout-all", () => {
+describe("DELETE /sessions", () => {
   it("revokes the other sessions and keeps the current one", async () => {
     const authRepository = repoWithThreeSessions();
     const app = buildApp(makeAppOptions({ authRepository }));
 
     const response = await app.inject({
-      method: "POST",
-      url: "/auth/logout-all",
+      method: "DELETE",
+      url: "/sessions",
       cookies: { session: TOKEN },
     });
 
@@ -51,45 +45,19 @@ describe("POST /auth/logout-all", () => {
     await app.close();
   });
 
-  it("never clears the cookie when the current session survives", async () => {
+  it("never clears the cookie, because the current session always survives", async () => {
     const app = buildApp(
       makeAppOptions({ authRepository: repoWithThreeSessions() }),
     );
 
     const response = await app.inject({
-      method: "POST",
-      url: "/auth/logout-all",
+      method: "DELETE",
+      url: "/sessions",
       cookies: { session: TOKEN },
-      payload: { includeCurrentSession: false },
     });
 
     expect(response.statusCode).toBe(204);
     expect(response.headers["set-cookie"]).toBeUndefined();
-    await app.close();
-  });
-
-  it("revokes the current session too and clears the cookie when asked", async () => {
-    const authRepository = repoWithThreeSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/auth/logout-all",
-      cookies: { session: TOKEN },
-      payload: { includeCurrentSession: true },
-    });
-
-    expect(response.statusCode).toBe(204);
-    expect(authRepository.sessions.find((s) => s.id === 1)).toMatchObject({
-      revokedReason: "logout_all",
-    });
-
-    const cookie = String(sessionCookie(response));
-    expect(cookie).toContain("Max-Age=0");
-    expect(cookie).toContain("HttpOnly");
-    expect(cookie).toContain("Secure");
-    expect(cookie).toContain("SameSite=Strict");
-    expect(cookie).toContain("Path=/");
     await app.close();
   });
 
@@ -108,8 +76,8 @@ describe("POST /auth/logout-all", () => {
     const app = buildApp(makeAppOptions({ authRepository }));
 
     const response = await app.inject({
-      method: "POST",
-      url: "/auth/logout-all",
+      method: "DELETE",
+      url: "/sessions",
       cookies: { session: TOKEN },
     });
 
@@ -137,10 +105,9 @@ describe("POST /auth/logout-all", () => {
     const app = buildApp(makeAppOptions({ authRepository }));
 
     await app.inject({
-      method: "POST",
-      url: "/auth/logout-all",
+      method: "DELETE",
+      url: "/sessions",
       cookies: { session: TOKEN },
-      payload: { includeCurrentSession: true },
     });
 
     expect(authRepository.sessions.find((s) => s.id === 2)).toMatchObject({
@@ -191,8 +158,8 @@ describe("POST /auth/logout-all", () => {
       const app = buildApp(makeAppOptions({ authRepository }));
 
       const response = await app.inject({
-        method: "POST",
-        url: "/auth/logout-all",
+        method: "DELETE",
+        url: "/sessions",
         ...(cookie ? { cookies: { session: cookie } } : {}),
       });
 
@@ -202,19 +169,15 @@ describe("POST /auth/logout-all", () => {
     },
   );
 
-  it("rejects a non-boolean flag with a 400", async () => {
-    const app = buildApp(
-      makeAppOptions({ authRepository: repoWithThreeSessions() }),
-    );
+  it("no longer answers on the old address", async () => {
+    const app = buildApp(makeAppOptions());
 
     const response = await app.inject({
       method: "POST",
       url: "/auth/logout-all",
-      cookies: { session: TOKEN },
-      payload: { includeCurrentSession: "yes" },
     });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(404);
     await app.close();
   });
 });

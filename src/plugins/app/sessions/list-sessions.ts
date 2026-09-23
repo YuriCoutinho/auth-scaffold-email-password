@@ -1,4 +1,4 @@
-import type { AuthRepository } from "./repository.js";
+import type { SessionRepository } from "./repository.js";
 
 export interface ListSessionsInput {
   userId: number;
@@ -14,7 +14,7 @@ export interface SessionSummary {
 }
 
 interface ListSessionsServiceDeps {
-  repo: Pick<AuthRepository, "listActiveUserSessions">;
+  repo: Pick<SessionRepository, "listActiveUserSessions">;
   now?: () => Date;
 }
 

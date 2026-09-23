@@ -5,6 +5,7 @@ import {
   SESSION_TTL_SECONDS,
 } from "../../../lib/session.js";
 import { hashSessionToken } from "../../../lib/token-hash.js";
+import type { SessionRepository } from "../sessions/repository.js";
 import type { AuthRepository } from "./repository.js";
 
 export type LoginResult =
@@ -12,7 +13,8 @@ export type LoginResult =
   | { outcome: "invalid" };
 
 interface LoginServiceDeps {
-  repo: Pick<AuthRepository, "findAuthUserByEmail" | "createSession">;
+  repo: Pick<AuthRepository, "findAuthUserByEmail"> &
+    Pick<SessionRepository, "createSession">;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }

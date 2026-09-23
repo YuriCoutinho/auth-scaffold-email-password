@@ -7,6 +7,7 @@ describe("createAuth", () => {
     const repository = createInMemoryAuthRepository();
     const auth = createAuth({
       repository,
+      sessionRepository: repository,
       emailSender: {
         send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
       },
@@ -28,16 +29,6 @@ describe("createAuth", () => {
       "invalid",
     );
     expect((await auth.authenticate(undefined)).outcome).toBe("invalid");
-    expect(
-      await auth.logoutAll({
-        userId: 999,
-        currentSessionId: 1,
-        includeCurrentSession: false,
-      }),
-    ).toEqual({ revokedCount: 0, currentSessionRevoked: false });
-    expect(
-      await auth.listSessions({ userId: 999, currentSessionId: 1 }),
-    ).toEqual([]);
     expect(await auth.currentUser(999)).toBeUndefined();
   });
 
@@ -47,20 +38,11 @@ describe("createAuth", () => {
     });
     const auth = createAuth({
       repository,
+      sessionRepository: repository,
       emailSender: { send: vi.fn() },
       checkPwnedPassword: vi.fn().mockResolvedValue(false),
     });
 
     expect(await auth.currentUser(7)).toMatchObject({ email: "a@b.com" });
-  });
-
-  it("exposes logout and resolves it for an unknown token", async () => {
-    const auth = createAuth({
-      repository: createInMemoryAuthRepository(),
-      emailSender: { send: vi.fn() },
-      checkPwnedPassword: vi.fn().mockResolvedValue(false),
-    });
-
-    await expect(auth.logout("unknown-token")).resolves.toBeUndefined();
   });
 });
