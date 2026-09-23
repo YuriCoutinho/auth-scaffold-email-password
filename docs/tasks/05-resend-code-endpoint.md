@@ -4,7 +4,7 @@
 
 Código de confirmação se perde. Cai em spam, chega atrasado, some junto com a aba fechada. Sem um caminho de reenvio, a única saída é esperar o cadastro expirar, e é aí que a pessoa desiste.
 
-Por outro lado, este é o endpoint que mais chama o provedor de email, e provedor de email se paga por mensagem. Ele é o ponto natural para alguém transformar seu produto numa máquina de enviar email para terceiros. Por isso o controle de custo e abuso vive aqui, em camadas, e sempre antes de gastar a chamada.
+Por outro lado, este é o endpoint que mais gera email, e provedor de email se paga por mensagem. Ele é o ponto natural para alguém transformar seu produto numa máquina de enviar email para terceiros. Por isso o controle de custo e abuso vive aqui, em camadas, e sempre antes de enfileirar qualquer mensagem.
 
 Este é também o único caminho de reenvio do sistema, já que o cadastro é idempotente e nunca reenvia nada.
 
@@ -18,12 +18,12 @@ Este é também o único caminho de reenvio do sistema, já que o cadastro é id
 * Cookie ausente, token desconhecido e cadastro expirado respondem o mesmo `401`, sem diferenciar os três casos
 * Documentado no OpenAPI com os três status possíveis
 
-### Controles de custo, checados antes de gravar e de chamar o provedor
+### Controles de custo, checados antes de gravar e de enfileirar
 
 A ordem importa, e é teto primeiro, cooldown depois.
 
 1. **Teto por cadastro**: no máximo 5 envios no total, contando o disparado pelo próprio cadastro. Atingido o teto, responde `429` explicando que só resta esperar o cadastro expirar e começar de novo
-2. **Cooldown por cadastro**: 60 segundos desde o último envio, respondendo `429` pedindo para aguardar, sem tocar o banco além da leitura e sem chamar o provedor
+2. **Cooldown por cadastro**: 60 segundos desde o último envio, respondendo `429` pedindo para aguardar, sem escrever nada e sem enfileirar nada
 
 O contador regressivo desabilitando o botão no front é usabilidade e não segurança. A barreira real precisa estar no servidor, porque o front é só uma sugestão para quem tem um cliente HTTP.
 
@@ -33,25 +33,27 @@ Existe uma exceção ao cooldown que vem da etapa anterior: quando o contador de
 
 * Gera código novo, substitui o hash, zera o contador de tentativas e renova a expiração por mais 15 minutos, o mesmo tempo de vida do cadastro
 * Zerar as tentativas é o que tira do limbo um cadastro cujo código foi invalidado por erros seguidos, e por isso o reenvio é a saída natural daquele estado
-* Reaproveita a interface de envio e o template da etapa anterior, sem falar com o provedor diretamente
+* Reaproveita o template da etapa anterior, renderiza a mensagem ali mesmo e a entrega ao repositório. O service não conhece `EmailSender` nem provedor nenhum: quem entrega é o worker do outbox, descrito na etapa 15
 
 ### Falha de envio sem nada a compensar
 
 * O estado novo e a mensagem que o anuncia são gravados na mesma transação, então não existe janela entre gravar e enviar em que algo precise ser desfeito
 * O provedor não é consultado na requisição, e por isso o reenvio nunca responde `503`
-* Quando a entrega falha em definitivo, depois de esgotadas as tentativas do worker, o handler de desistência zera o contador de envios, o que devolve a cota e dispensa o cooldown do próximo reenvio. A etapa 15 descreve esse caminho
+* Quando a entrega falha em definitivo, depois de esgotadas as tentativas do worker, o handler de desistência zera o contador de envios, o que devolve a cota e dispensa o cooldown do próximo reenvio. A devolução é condicionada ao código que falhou, pelo `code_hash` gravado como correlação na linha da fila, então um reenvio posterior que chegou ao destino mantém sua cota gasta. A etapa 15 descreve esse caminho
+* O que se perdeu em relação à compensação antiga é o retorno do código anterior. Antes, uma falha de envio devolvia validade ao código velho; agora o código novo já substituiu o antigo no momento da gravação, então um abandono definitivo deixa a pessoa sem nenhum código válido e com a cota devolvida para pedir outro
 
 ### Organização do código
 
 * Rota em `src/routes/auth/resend-code.ts`, lendo o cookie e traduzindo o resultado do service em um dos três status. O resultado é discriminado (`sent`, `invalid-session`, `cooldown`, `limit-reached`), e os dois casos de 429 têm mensagens diferentes porque falam de estados do próprio cadastro de quem tem o cookie, não de outras contas
 * Service em `src/plugins/app/auth/resend-code.ts`, montado pelo plugin `auth` junto dos outros fluxos e exposto como `fastify.auth.resendCode`
 * A interface `AuthRepository` ganha `findPendingSignupBySessionToken` e `updatePendingSignupResendStateAndQueueEmail`. O segundo método recebe os cinco campos de uma vez junto da mensagem já renderizada e grava tudo numa transação só, o que torna o reenvio uma única escrita indivisível
+* A devolução de cota é `markPendingSignupUndeliveredIfCurrent`, um único UPDATE condicionado a email e `code_hash`, sem leitura antes da escrita, no mesmo espírito da revogação da etapa 13
 
 ### Logs
 
-* Apenas identificador do cadastro pendente e identificador da mensagem no provedor
+* Na requisição, apenas o identificador do cadastro pendente, registrando que a mensagem foi enfileirada
 * O código nunca aparece em log e nunca é gravado em claro
-* Erro de provedor é logado pelo worker do outbox, com o tipo da mensagem e o status devolvido, nunca com o corpo da resposta nem com o destinatário
+* Erro de provedor é logado pelo worker do outbox, com o identificador da linha, o tipo da mensagem e o status devolvido, nunca com a mensagem do erro, o corpo da resposta ou o destinatário
 
 ## Definition of done
 
@@ -60,5 +62,6 @@ Existe uma exceção ao cooldown que vem da etapa anterior: quando o contador de
 * Testes unitários cobrindo reenvio bem-sucedido, com hash novo, tentativas zeradas, expiração renovada e a mensagem enfileirada na mesma chamada
 * Teste do cooldown, incluindo a exceção do contador zerado
 * Teste do teto de envios verificando que nada é gravado e nada é enfileirado
+* Teste provando que a desistência de um código já substituído não devolve cota nenhuma
 * Teste de sessão inválida e expirada devolvendo o mesmo 401
 * Testes de rota cobrindo os três status, com o cookie renovado apenas no sucesso
