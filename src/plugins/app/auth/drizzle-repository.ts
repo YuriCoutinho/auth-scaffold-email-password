@@ -141,5 +141,28 @@ export function createDrizzleAuthRepository(db: Database): AuthRepository {
     async createSession(input: CreateSessionInput) {
       await db.insert(sessions).values(input);
     },
+
+    async findSessionByTokenHash(tokenHash) {
+      const rows = await db
+        .select({
+          id: sessions.id,
+          userId: sessions.userId,
+          expiresAt: sessions.expiresAt,
+          revokedAt: sessions.revokedAt,
+        })
+        .from(sessions)
+        .where(eq(sessions.tokenHash, tokenHash))
+        .limit(1);
+      return rows[0];
+    },
+
+    async findAuthUserById(id) {
+      const rows = await db
+        .select({ publicId: authUsers.publicId, email: authUsers.email })
+        .from(authUsers)
+        .where(eq(authUsers.id, id))
+        .limit(1);
+      return rows[0];
+    },
   };
 }

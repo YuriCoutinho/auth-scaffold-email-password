@@ -2,10 +2,10 @@ import { randomUUID } from "node:crypto";
 import type {
   AuthRepository,
   AuthUserRecord,
-  CreateSessionInput,
   PendingSignupRecord,
   PendingSignupResendState,
   PromotePendingSignupInput,
+  SessionRecord,
   UpsertPendingSignupInput,
 } from "../../../src/plugins/app/auth/repository.js";
 
@@ -19,19 +19,33 @@ export interface InMemorySeed {
   pendingSignups?: Array<
     Partial<PendingSignupRecord> & { email: string; expiresAt: Date }
   >;
+  sessions?: Array<{
+    userId: number;
+    tokenHash: string;
+    expiresAt: Date;
+    id?: number;
+    deviceLabel?: string | null;
+    revokedAt?: Date | null;
+  }>;
 }
 
 interface StoredAuthUser extends AuthUserRecord {
   email: string;
 }
 
+interface StoredSession extends SessionRecord {
+  tokenHash: string;
+  deviceLabel: string | null;
+}
+
 export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
   const authUsers = new Map<string, StoredAuthUser>();
   const pendingSignups = new Map<string, PendingSignupRecord>();
-  const sessions: CreateSessionInput[] = [];
+  const sessions: StoredSession[] = [];
   const profiles: Array<{ userId: number }> = [];
   let nextUserId = 1;
   let nextPendingId = 1;
+  let nextSessionId = 1;
 
   for (const user of seed.authUsers ?? []) {
     const id = user.id ?? nextUserId;
@@ -57,6 +71,19 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       lastSentAt: pending.lastSentAt ?? new Date(),
       codeSendCount: pending.codeSendCount ?? 1,
       expiresAt: pending.expiresAt,
+    });
+  }
+
+  for (const session of seed.sessions ?? []) {
+    const id = session.id ?? nextSessionId;
+    nextSessionId = Math.max(nextSessionId, id + 1);
+    sessions.push({
+      id,
+      userId: session.userId,
+      tokenHash: session.tokenHash,
+      deviceLabel: session.deviceLabel ?? null,
+      expiresAt: session.expiresAt,
+      revokedAt: session.revokedAt ?? null,
     });
   }
 
@@ -137,17 +164,36 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
         pendingSignups.delete(pending.email);
       }
       sessions.push({
+        id: nextSessionId++,
         userId: user.id,
         tokenHash: input.sessionTokenHash,
         deviceLabel: input.deviceLabel,
         expiresAt: input.sessionExpiresAt,
+        revokedAt: null,
       });
       profiles.push({ userId: user.id });
       return { id: user.id, publicId: user.publicId };
     },
 
     async createSession(input) {
-      sessions.push({ ...input });
+      sessions.push({ ...input, id: nextSessionId++, revokedAt: null });
+    },
+
+    async findSessionByTokenHash(tokenHash) {
+      const session = sessions.find((s) => s.tokenHash === tokenHash);
+      return session
+        ? {
+            id: session.id,
+            userId: session.userId,
+            expiresAt: session.expiresAt,
+            revokedAt: session.revokedAt,
+          }
+        : undefined;
+    },
+
+    async findAuthUserById(id) {
+      const user = [...authUsers.values()].find((u) => u.id === id);
+      return user ? { publicId: user.publicId, email: user.email } : undefined;
     },
   };
 

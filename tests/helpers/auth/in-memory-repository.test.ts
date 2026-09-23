@@ -107,7 +107,7 @@ describe("in-memory auth repository", () => {
       passwordHash: "hash",
     });
     expect(repo.pendingSignups.size).toBe(0);
-    expect(repo.sessions).toEqual([
+    expect(repo.sessions).toMatchObject([
       {
         userId: 1,
         tokenHash: "session-hash",
@@ -128,8 +128,66 @@ describe("in-memory auth repository", () => {
       deviceLabel: null,
       expiresAt: NOW,
     });
-    expect(repo.sessions).toEqual([
+    expect(repo.sessions).toMatchObject([
       { userId: 7, tokenHash: "t", deviceLabel: null, expiresAt: NOW },
     ]);
+  });
+
+  it("seeds sessions and finds them by token hash", async () => {
+    const repo = createInMemoryAuthRepository({
+      authUsers: [{ email: "a@b.com", id: 7 }],
+      sessions: [
+        {
+          userId: 7,
+          tokenHash: "hash-1",
+          expiresAt: new Date(NOW.getTime() + 1000),
+        },
+      ],
+    });
+    const session = await repo.findSessionByTokenHash("hash-1");
+    expect(session).toMatchObject({ userId: 7, revokedAt: null });
+    expect(await repo.findSessionByTokenHash("unknown")).toBeUndefined();
+  });
+
+  it("keeps the revoked_at given in the seed", async () => {
+    const revokedAt = new Date(NOW.getTime() - 1000);
+    const repo = createInMemoryAuthRepository({
+      authUsers: [{ email: "a@b.com", id: 7 }],
+      sessions: [{ userId: 7, tokenHash: "hash-1", expiresAt: NOW, revokedAt }],
+    });
+    expect((await repo.findSessionByTokenHash("hash-1"))?.revokedAt).toEqual(
+      revokedAt,
+    );
+  });
+
+  it("finds sessions created through createSession", async () => {
+    const repo = createInMemoryAuthRepository();
+    await repo.createSession({
+      userId: 3,
+      tokenHash: "hash-2",
+      deviceLabel: null,
+      expiresAt: new Date(NOW.getTime() + 1000),
+    });
+    expect(await repo.findSessionByTokenHash("hash-2")).toMatchObject({
+      userId: 3,
+      revokedAt: null,
+    });
+  });
+
+  it("finds an auth user by id, without the password hash", async () => {
+    const repo = createInMemoryAuthRepository({
+      authUsers: [
+        {
+          id: 7,
+          email: "a@b.com",
+          publicId: "11111111-1111-4111-8111-111111111111",
+        },
+      ],
+    });
+    expect(await repo.findAuthUserById(7)).toEqual({
+      publicId: "11111111-1111-4111-8111-111111111111",
+      email: "a@b.com",
+    });
+    expect(await repo.findAuthUserById(999)).toBeUndefined();
   });
 });

@@ -51,6 +51,18 @@ export interface CreateSessionInput {
   expiresAt: Date;
 }
 
+export interface SessionRecord {
+  id: number;
+  userId: number;
+  expiresAt: Date;
+  revokedAt: Date | null;
+}
+
+export interface AuthUserIdentity {
+  publicId: string;
+  email: string;
+}
+
 export interface AuthRepository {
   findAuthUserByEmail(email: string): Promise<AuthUserRecord | undefined>;
   findPendingSignupByEmail(
@@ -70,4 +82,6 @@ export interface AuthRepository {
     input: PromotePendingSignupInput,
   ): Promise<{ id: number; publicId: string }>;
   createSession(input: CreateSessionInput): Promise<void>;
+  findSessionByTokenHash(tokenHash: string): Promise<SessionRecord | undefined>;
+  findAuthUserById(id: number): Promise<AuthUserIdentity | undefined>;
 }
