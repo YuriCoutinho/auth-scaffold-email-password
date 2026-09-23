@@ -129,6 +129,29 @@ describe("markSent / reschedule / giveUp", () => {
     });
   });
 
+  it("clears the rendered message on give-up and keeps the rest of the row", async () => {
+    const repo = createInMemoryEmailOutboxRepository({
+      messages: [{ ...message, id: 1, attempts: 2, nextAttemptAt: NOW }],
+    });
+
+    await repo.giveUp({
+      id: 1,
+      attempts: 3,
+      lastError: "provider unavailable",
+      at: NOW,
+    });
+
+    expect(repo.messages[0]).toMatchObject({
+      subject: "",
+      html: "",
+      text: "",
+      type: message.type,
+      recipient: message.recipient,
+      attempts: 3,
+      lastError: "provider unavailable",
+    });
+  });
+
   it("gives up by marking the row failed", async () => {
     const repo = createInMemoryEmailOutboxRepository({
       messages: [{ ...message, id: 1, nextAttemptAt: NOW }],
@@ -164,5 +187,80 @@ describe("enqueue", () => {
       lastError: null,
       sentAt: null,
     });
+  });
+});
+
+describe("purge", () => {
+  const HOUR = 60 * 60 * 1000;
+  const DAY = 24 * HOUR;
+  const windows = {
+    sentBefore: new Date(NOW.getTime() - HOUR),
+    failedBefore: new Date(NOW.getTime() - 30 * DAY),
+  };
+
+  it("deletes a delivered row once its window has passed, and not before", async () => {
+    const repo = createInMemoryEmailOutboxRepository({
+      messages: [
+        {
+          ...message,
+          id: 1,
+          status: "sent",
+          sentAt: new Date(NOW.getTime() - HOUR - 1),
+        },
+        {
+          ...message,
+          id: 2,
+          status: "sent",
+          sentAt: new Date(NOW.getTime() - HOUR + 1),
+        },
+      ],
+    });
+
+    const { deleted } = await repo.purge(windows);
+
+    expect(deleted).toBe(1);
+    expect(repo.messages.map((row) => row.id)).toEqual([2]);
+  });
+
+  it("deletes an abandoned row only after the long window", async () => {
+    const repo = createInMemoryEmailOutboxRepository({
+      messages: [
+        {
+          ...message,
+          id: 1,
+          status: "failed",
+          nextAttemptAt: new Date(NOW.getTime() - 30 * DAY - 1),
+        },
+        {
+          ...message,
+          id: 2,
+          status: "failed",
+          nextAttemptAt: new Date(NOW.getTime() - HOUR),
+        },
+      ],
+    });
+
+    const { deleted } = await repo.purge(windows);
+
+    expect(deleted).toBe(1);
+    expect(repo.messages.map((row) => row.id)).toEqual([2]);
+  });
+
+  it("never touches a pending row, however old", async () => {
+    const repo = createInMemoryEmailOutboxRepository({
+      messages: [
+        {
+          ...message,
+          id: 1,
+          status: "pending",
+          nextAttemptAt: new Date(NOW.getTime() - 365 * DAY),
+        },
+      ],
+    });
+
+    const { deleted } = await repo.purge(windows);
+
+    expect(deleted).toBe(0);
+    expect(repo.messages).toHaveLength(1);
   });
 });

@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lte } from "drizzle-orm";
+import { and, asc, eq, inArray, lt, lte, or } from "drizzle-orm";
 import { emailOutbox } from "../../../db/schema.js";
 import type { DatabaseOrTransaction } from "../sessions/drizzle-repository.js";
 import type { EmailOutboxRepository } from "./repository.js";
@@ -83,6 +83,10 @@ export function createDrizzleEmailOutboxRepository(
         .where(eq(emailOutbox.id, input.id));
     },
 
+    // The message is cleared here, not at purge time: once the queue gives up,
+    // the body will never be sent and only the envelope is worth keeping for an
+    // investigation. nextAttemptAt doubles as the moment of the give-up, which
+    // is what the purge later measures the retention window from.
     async giveUp(input) {
       await db
         .update(emailOutbox)
@@ -91,8 +95,33 @@ export function createDrizzleEmailOutboxRepository(
           attempts: input.attempts,
           lastError: input.lastError,
           nextAttemptAt: input.at,
+          subject: "",
+          html: "",
+          text: "",
         })
         .where(eq(emailOutbox.id, input.id));
+    },
+
+    // One indexed DELETE, no read and no lock that delivery cares about. The
+    // status leads both branches, which is the first column of the due index.
+    async purge(input) {
+      const deleted = await db
+        .delete(emailOutbox)
+        .where(
+          or(
+            and(
+              eq(emailOutbox.status, "sent"),
+              lt(emailOutbox.sentAt, input.sentBefore),
+            ),
+            and(
+              eq(emailOutbox.status, "failed"),
+              lt(emailOutbox.nextAttemptAt, input.failedBefore),
+            ),
+          ),
+        )
+        .returning({ id: emailOutbox.id });
+
+      return { deleted: deleted.length };
     },
   };
 }

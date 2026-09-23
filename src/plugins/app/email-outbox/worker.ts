@@ -37,6 +37,17 @@ const RETRY_SCHEDULES: Record<string, number[]> = {
 
 const FALLBACK_SCHEDULE = [30, 120, 600];
 
+// A delivered row holds the rendered message, and for a signup that message
+// carries the confirmation code in clear text. The code itself dies in 15
+// minutes, so an hour is already generous room to inspect a recent send in
+// development, and nothing past that window has any use.
+const SENT_RETENTION_SECONDS = 60 * 60;
+
+// An abandoned row keeps no message (giveUp clears it) and is kept only so a
+// delivery failure can be investigated, which is a matter of weeks, not of
+// minutes.
+const FAILED_RETENTION_SECONDS = 30 * 24 * 60 * 60;
+
 export function defaultPolicyFor(type: string): RetryPolicy {
   const schedule = RETRY_SCHEDULES[type] ?? FALLBACK_SCHEDULE;
   return {
@@ -134,6 +145,24 @@ export function createEmailOutboxWorker(deps: EmailOutboxWorkerDeps) {
     return "rescheduled";
   };
 
+  // Runs on the same schedule as the batch, right after it, so no second timer
+  // exists and the delete never competes with a claim. A failure here is
+  // bookkeeping like any other: it is logged and the cycle carries on.
+  const purge = async () => {
+    const at = now();
+    try {
+      await deps.repo.purge({
+        sentBefore: new Date(at.getTime() - SENT_RETENTION_SECONDS * 1000),
+        failedBefore: new Date(at.getTime() - FAILED_RETENTION_SECONDS * 1000),
+      });
+    } catch (error) {
+      deps.log?.error(
+        { errorName: error instanceof Error ? error.name : "unknown" },
+        "outbox purge failed",
+      );
+    }
+  };
+
   return {
     async processBatch(): Promise<{
       sent: number;
@@ -190,6 +219,8 @@ export function createEmailOutboxWorker(deps: EmailOutboxWorkerDeps) {
         }
         sent += 1;
       }
+
+      await purge();
 
       return { sent, rescheduled, gaveUp };
     },

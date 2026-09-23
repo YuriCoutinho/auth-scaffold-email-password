@@ -30,6 +30,11 @@ export interface RescheduleInput {
   lastError: string;
 }
 
+export interface PurgeInput {
+  sentBefore: Date;
+  failedBefore: Date;
+}
+
 export interface GiveUpInput {
   id: number;
   attempts: number;
@@ -45,5 +50,10 @@ export interface EmailOutboxRepository {
   claimDue(input: ClaimDueInput): Promise<OutboxRecord[]>;
   markSent(id: number, at: Date): Promise<void>;
   reschedule(input: RescheduleInput): Promise<void>;
+  // Giving up also clears the rendered message: it will never be sent, so the
+  // body would be exposure and nothing else.
   giveUp(input: GiveUpInput): Promise<void>;
+  // Rows stop existing once they stop being useful, so a delivered code does
+  // not outlive its own purpose in the database.
+  purge(input: PurgeInput): Promise<{ deleted: number }>;
 }

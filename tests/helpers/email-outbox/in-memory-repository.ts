@@ -121,7 +121,26 @@ export function createInMemoryEmailOutboxRepository(
         message.attempts = input.attempts;
         message.lastError = input.lastError;
         message.nextAttemptAt = input.at;
+        message.subject = "";
+        message.html = "";
+        message.text = "";
       }
+    },
+
+    async purge(input) {
+      const kept = messages.filter(
+        (message) =>
+          !(
+            (message.status === "sent" &&
+              message.sentAt !== null &&
+              message.sentAt.getTime() < input.sentBefore.getTime()) ||
+            (message.status === "failed" &&
+              message.nextAttemptAt.getTime() < input.failedBefore.getTime())
+          ),
+      );
+      const deleted = messages.length - kept.length;
+      messages.splice(0, messages.length, ...kept);
+      return { deleted };
     },
   };
 

@@ -323,6 +323,85 @@ describe("processBatch", () => {
   });
 });
 
+describe("retention", () => {
+  const HOUR = 60 * 60 * 1000;
+  const DAY = 24 * HOUR;
+
+  it("purges delivered and abandoned rows past their windows, and nothing else", async () => {
+    const repo = createInMemoryEmailOutboxRepository({
+      messages: [
+        {
+          ...message,
+          id: 1,
+          status: "sent",
+          sentAt: new Date(NOW.getTime() - HOUR - 1_000),
+        },
+        {
+          ...message,
+          id: 2,
+          status: "sent",
+          sentAt: new Date(NOW.getTime() - 60_000),
+        },
+        {
+          ...message,
+          id: 3,
+          status: "failed",
+          nextAttemptAt: new Date(NOW.getTime() - 30 * DAY - 1_000),
+        },
+        {
+          ...message,
+          id: 4,
+          status: "failed",
+          nextAttemptAt: new Date(NOW.getTime() - 29 * DAY),
+        },
+        {
+          ...message,
+          id: 5,
+          status: "pending",
+          nextAttemptAt: new Date(NOW.getTime() - 365 * DAY),
+        },
+      ],
+    });
+    const worker = createEmailOutboxWorker({
+      repo,
+      emailSender: new FakeEmailSender(),
+      policyFor: defaultPolicyFor,
+      now: () => NOW,
+    });
+
+    await worker.processBatch();
+
+    // Row 5 was due, so it was delivered by this very batch, not purged.
+    expect(repo.messages.map((row) => row.id)).toEqual([2, 4, 5]);
+  });
+
+  it("delivers the batch even when the purge fails", async () => {
+    const repo = createInMemoryEmailOutboxRepository({
+      messages: [{ ...message, id: 1, nextAttemptAt: NOW }],
+    });
+    const log = makeLog();
+    const worker = createEmailOutboxWorker({
+      repo: {
+        ...repo,
+        purge: vi.fn().mockRejectedValue(new Error("connection closed")),
+      },
+      emailSender: new FakeEmailSender(),
+      policyFor: defaultPolicyFor,
+      log,
+      now: () => NOW,
+    });
+
+    await expect(worker.processBatch()).resolves.toEqual({
+      sent: 1,
+      rescheduled: 0,
+      gaveUp: 0,
+    });
+    expect(repo.messages[0]?.status).toBe("sent");
+    expect(log.error).toHaveBeenCalledOnce();
+    expect(log.error.mock.calls[0]?.[1]).toBe("outbox purge failed");
+  });
+});
+
 describe("defaultPolicyFor", () => {
   it("retries a signup code fewer times than a password notice, because the code expires", () => {
     expect(defaultPolicyFor("signup_code").maxAttempts).toBe(3);
