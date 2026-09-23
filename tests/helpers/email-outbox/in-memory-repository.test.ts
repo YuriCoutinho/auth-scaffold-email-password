@@ -198,20 +198,28 @@ describe("purge", () => {
     failedBefore: new Date(NOW.getTime() - 30 * DAY),
   };
 
-  it("deletes a delivered row once its window has passed, and not before", async () => {
+  it("deletes a delivered row past its cutoff and keeps the one exactly on it", async () => {
     const repo = createInMemoryEmailOutboxRepository({
       messages: [
         {
           ...message,
           id: 1,
           status: "sent",
-          sentAt: new Date(NOW.getTime() - HOUR - 1),
+          sentAt: new Date(windows.sentBefore.getTime() - 1),
         },
+        // Exactly on the cutoff: the window is "older than", not "as old as",
+        // so this row stays and a <= would be caught here.
         {
           ...message,
           id: 2,
           status: "sent",
-          sentAt: new Date(NOW.getTime() - HOUR + 1),
+          sentAt: new Date(windows.sentBefore.getTime()),
+        },
+        {
+          ...message,
+          id: 3,
+          status: "sent",
+          sentAt: new Date(windows.sentBefore.getTime() + 1),
         },
       ],
     });
@@ -219,29 +227,53 @@ describe("purge", () => {
     const { deleted } = await repo.purge(windows);
 
     expect(deleted).toBe(1);
-    expect(repo.messages.map((row) => row.id)).toEqual([2]);
+    expect(repo.messages.map((row) => row.id)).toEqual([2, 3]);
   });
 
-  it("deletes an abandoned row only after the long window", async () => {
+  it("deletes an abandoned row past its cutoff and keeps the one exactly on it", async () => {
     const repo = createInMemoryEmailOutboxRepository({
       messages: [
         {
           ...message,
           id: 1,
           status: "failed",
-          nextAttemptAt: new Date(NOW.getTime() - 30 * DAY - 1),
+          nextAttemptAt: new Date(windows.failedBefore.getTime() - 1),
         },
         {
           ...message,
           id: 2,
           status: "failed",
-          nextAttemptAt: new Date(NOW.getTime() - HOUR),
+          nextAttemptAt: new Date(windows.failedBefore.getTime()),
+        },
+        {
+          ...message,
+          id: 3,
+          status: "failed",
+          nextAttemptAt: new Date(windows.failedBefore.getTime() + 1),
         },
       ],
     });
 
     const { deleted } = await repo.purge(windows);
 
+    expect(deleted).toBe(1);
+    expect(repo.messages.map((row) => row.id)).toEqual([2, 3]);
+  });
+
+  it("applies each window to its own status", async () => {
+    const twoHoursAgo = new Date(NOW.getTime() - 2 * HOUR);
+    const repo = createInMemoryEmailOutboxRepository({
+      messages: [
+        // Past the short window, nowhere near the long one.
+        { ...message, id: 1, status: "sent", sentAt: twoHoursAgo },
+        // Same age, but this status is kept for thirty days.
+        { ...message, id: 2, status: "failed", nextAttemptAt: twoHoursAgo },
+      ],
+    });
+
+    const { deleted } = await repo.purge(windows);
+
+    // Swapping the two windows would invert exactly this result.
     expect(deleted).toBe(1);
     expect(repo.messages.map((row) => row.id)).toEqual([2]);
   });
