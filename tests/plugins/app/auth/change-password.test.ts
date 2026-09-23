@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hashPassword } from "../../../../src/lib/password.js";
 import { createChangePasswordService } from "../../../../src/plugins/app/auth/change-password.js";
 import { PASSWORD_CHANGED_EMAIL_TYPE } from "../../../../src/plugins/app/auth/emails/password-changed.js";
+import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 
 const NOW = new Date("2026-03-01T12:00:00.000Z");
 const CURRENT = "current-password-here";
@@ -153,16 +154,71 @@ describe("changePassword", () => {
     expect(call.message.text).not.toContain(NEXT);
   });
 
-  it("queues no notification when the current password is wrong", async () => {
-    const deps = makeDeps();
-    const { changePassword } = createChangePasswordService(deps);
+  // Over the in-memory repository, so these assert on the queue itself and not
+  // on a method that a future refactor could stop going through.
+  describe("nothing is queued unless the password actually changes", () => {
+    function makeRepoBackedDeps(overrides: Record<string, unknown> = {}) {
+      const repo = createInMemoryAuthRepository({
+        authUsers: [
+          { id: 1, email: "owner@example.com", passwordHash: currentHash },
+        ],
+      });
+      return {
+        repo,
+        deps: {
+          repo,
+          checkPwnedPassword: vi.fn().mockResolvedValue(false),
+          now: () => NOW,
+          ...overrides,
+        },
+      };
+    }
 
-    await changePassword({
-      ...input,
-      currentPassword: "wrong-password-entirely",
+    it("queues exactly one message when it does change", async () => {
+      const { repo, deps } = makeRepoBackedDeps();
+
+      await expect(
+        createChangePasswordService(deps).changePassword(input),
+      ).resolves.toEqual({ outcome: "changed" });
+
+      expect(repo.outbox.messages).toHaveLength(1);
+      expect(repo.outbox.messages[0]).toMatchObject({
+        type: PASSWORD_CHANGED_EMAIL_TYPE,
+        recipient: "owner@example.com",
+      });
     });
 
-    expect(deps.repo.changeUserPassword).not.toHaveBeenCalled();
+    it("queues nothing when the current password is wrong", async () => {
+      const { repo, deps } = makeRepoBackedDeps();
+
+      await createChangePasswordService(deps).changePassword({
+        ...input,
+        currentPassword: "wrong-password-entirely",
+      });
+
+      expect(repo.outbox.messages).toHaveLength(0);
+    });
+
+    it("queues nothing when the new password equals the current one", async () => {
+      const { repo, deps } = makeRepoBackedDeps();
+
+      await createChangePasswordService(deps).changePassword({
+        ...input,
+        newPassword: CURRENT,
+      });
+
+      expect(repo.outbox.messages).toHaveLength(0);
+    });
+
+    it("queues nothing when the new password is found in a breach", async () => {
+      const { repo, deps } = makeRepoBackedDeps({
+        checkPwnedPassword: vi.fn().mockResolvedValue(true),
+      });
+
+      await createChangePasswordService(deps).changePassword(input);
+
+      expect(repo.outbox.messages).toHaveLength(0);
+    });
   });
 
   it("logs a failed attempt without the password", async () => {
