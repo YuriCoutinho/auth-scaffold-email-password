@@ -43,4 +43,14 @@ describe("createAuth", () => {
 
     expect(await auth.currentUser(7)).toMatchObject({ email: "a@b.com" });
   });
+
+  it("exposes logout and resolves it for an unknown token", async () => {
+    const auth = createAuth({
+      repository: createInMemoryAuthRepository(),
+      emailSender: { send: vi.fn() },
+      checkPwnedPassword: vi.fn().mockResolvedValue(false),
+    });
+
+    await expect(auth.logout("unknown-token")).resolves.toBeUndefined();
+  });
 });

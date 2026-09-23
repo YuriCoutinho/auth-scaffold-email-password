@@ -25,3 +25,4 @@ A ordem numérica é a ordem em que as etapas foram implementadas, e é a ordem 
 | 07 | [Agnostic profile](07-agnostic-profile.md) | A fronteira entre dado de autenticação e dado de produto |
 | 08 | [Login endpoint](08-login-endpoint.md) | Verificação de credenciais em tempo constante e sessão por dispositivo |
 | 09 | [Session hook and current user endpoint](09-session-hook-and-current-user-endpoint.md) | Hook que valida a sessão em toda rota protegida e o endpoint que devolve o usuário autenticado |
+| 10 | [Logout endpoint](10-logout-endpoint.md) | Encerramento idempotente da sessão do dispositivo atual, com revogação em banco e limpeza do cookie |

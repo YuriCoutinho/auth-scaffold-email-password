@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Database } from "../../../db/client.js";
 import {
   authUsers,
@@ -163,6 +163,17 @@ export function createDrizzleAuthRepository(db: Database): AuthRepository {
         .where(eq(authUsers.id, id))
         .limit(1);
       return rows[0];
+    },
+
+    async revokeSessionByTokenHash(tokenHash, revokedAt, revokedReason) {
+      // The revoked_at IS NULL guard is what makes logout idempotent: a second
+      // call matches no row instead of overwriting the first revocation.
+      await db
+        .update(sessions)
+        .set({ revokedAt, revokedReason })
+        .where(
+          and(eq(sessions.tokenHash, tokenHash), isNull(sessions.revokedAt)),
+        );
     },
   };
 }

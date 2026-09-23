@@ -3,6 +3,7 @@ import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import { createAuthenticateService } from "./authenticate.js";
 import { createLoginService } from "./login.js";
+import { createLogoutService } from "./logout.js";
 import type { AuthRepository } from "./repository.js";
 import { createResendCodeService } from "./resend-code.js";
 import { createSignupService } from "./signup.js";
@@ -34,12 +35,14 @@ export function createAuth(deps: AuthDeps) {
   const { verifyCode } = createVerifyCodeService(shared);
   const { login } = createLoginService(shared);
   const { authenticate } = createAuthenticateService(shared);
+  const { logout } = createLogoutService(shared);
 
   return {
     signup,
     resendCode,
     verifyCode,
     login,
+    logout,
     authenticate,
     currentUser: (id: number) => deps.repository.findAuthUserById(id),
   };
