@@ -25,6 +25,8 @@ export interface InMemorySeed {
     tokenHash: string;
     expiresAt: Date;
     id?: number;
+    publicId?: string;
+    createdAt?: Date;
     deviceLabel?: string | null;
     revokedAt?: Date | null;
   }>;
@@ -35,8 +37,10 @@ interface StoredAuthUser extends AuthUserRecord {
 }
 
 interface StoredSession extends SessionRecord {
+  publicId: string;
   tokenHash: string;
   deviceLabel: string | null;
+  createdAt: Date;
   revokedReason: RevokedReason | null;
 }
 
@@ -81,9 +85,11 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
     nextSessionId = Math.max(nextSessionId, id + 1);
     sessions.push({
       id,
+      publicId: session.publicId ?? randomUUID(),
       userId: session.userId,
       tokenHash: session.tokenHash,
       deviceLabel: session.deviceLabel ?? null,
+      createdAt: session.createdAt ?? new Date(),
       expiresAt: session.expiresAt,
       revokedAt: session.revokedAt ?? null,
       revokedReason: null,
@@ -168,9 +174,11 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       }
       sessions.push({
         id: nextSessionId++,
+        publicId: randomUUID(),
         userId: user.id,
         tokenHash: input.sessionTokenHash,
         deviceLabel: input.deviceLabel,
+        createdAt: new Date(),
         expiresAt: input.sessionExpiresAt,
         revokedAt: null,
         revokedReason: null,
@@ -183,6 +191,8 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       sessions.push({
         ...input,
         id: nextSessionId++,
+        publicId: randomUUID(),
+        createdAt: new Date(),
         revokedAt: null,
         revokedReason: null,
       });
@@ -229,6 +239,27 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       }
 
       return { revokedCount: targets.length };
+    },
+
+    async listActiveUserSessions(input) {
+      return sessions
+        .filter(
+          (session) =>
+            session.userId === input.userId &&
+            session.revokedAt === null &&
+            session.expiresAt.getTime() > input.now.getTime(),
+        )
+        .sort(
+          (a, b) =>
+            b.createdAt.getTime() - a.createdAt.getTime() || b.id - a.id,
+        )
+        .map((session) => ({
+          id: session.id,
+          publicId: session.publicId,
+          deviceLabel: session.deviceLabel,
+          createdAt: session.createdAt,
+          expiresAt: session.expiresAt,
+        }));
     },
   };
 

@@ -1,5 +1,5 @@
 {
-  "id": "8555f881-1ec8-4365-8496-dec32a42b3aa",
+  "id": "e17e27af-0fe8-4f19-8ed4-410d47df1a18",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -308,6 +308,13 @@
             "cycle": false
           }
         },
+        "public_id": {
+          "name": "public_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
         "user_id": {
           "name": "user_id",
           "type": "integer",
@@ -338,12 +345,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
-        },
-        "last_used_at": {
-          "name": "last_used_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         },
         "revoked_at": {
           "name": "revoked_at",
@@ -407,6 +408,13 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
+        "sessions_public_id_unique": {
+          "name": "sessions_public_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "public_id"
+          ]
+        },
         "sessions_token_hash_unique": {
           "name": "sessions_token_hash_unique",
           "nullsNotDistinct": false,

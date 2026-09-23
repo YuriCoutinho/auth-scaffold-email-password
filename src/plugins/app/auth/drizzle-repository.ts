@@ -1,4 +1,4 @@
-import { and, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import type { Database } from "../../../db/client.js";
 import {
   authUsers,
@@ -195,6 +195,26 @@ export function createDrizzleAuthRepository(db: Database): AuthRepository {
         .returning({ id: sessions.id });
 
       return { revokedCount: revoked.length };
+    },
+
+    async listActiveUserSessions(input) {
+      return db
+        .select({
+          id: sessions.id,
+          publicId: sessions.publicId,
+          deviceLabel: sessions.deviceLabel,
+          createdAt: sessions.createdAt,
+          expiresAt: sessions.expiresAt,
+        })
+        .from(sessions)
+        .where(
+          and(
+            eq(sessions.userId, input.userId),
+            isNull(sessions.revokedAt),
+            gt(sessions.expiresAt, input.now),
+          ),
+        )
+        .orderBy(desc(sessions.createdAt), desc(sessions.id));
     },
   };
 }

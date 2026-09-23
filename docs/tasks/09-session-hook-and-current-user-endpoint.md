@@ -52,11 +52,10 @@ A recusa também não limpa o cookie. Limpar exigiria mandar um `Set-Cookie` de 
 
 A consequência direta é que `POST /auth/login` e `POST /auth/verify-code` deixaram de devolver corpo e passaram a responder `204`. Do ponto de vista do cliente os dois fazem a mesma coisa, que é entregar o cookie de sessão, então respondem igual. Ter o login descrevendo o usuário criaria um segundo contrato de "usuário logado" em paralelo ao do `/me`, e dois contratos para o mesmo conceito divergem assim que um campo novo entra em um e não no outro. Com o `204`, o frontend tem um caminho só para aprender quem está logado, valendo tanto no boot quanto logo depois de autenticar.
 
-Ficam de fora do corpo, além do óbvio token de sessão e do hash de senha, três campos que poderiam parecer naturais:
+Ficam de fora do corpo, além do óbvio token de sessão e do hash de senha, dois campos que poderiam parecer naturais:
 
 * `fullName` e os demais dados de perfil moram em `profiles`, a tabela que separa dado de autenticação de dado de produto. Trazê-los aqui custaria um join em toda chamada do bootstrap para servir um dado que a tela de perfil busca quando precisa
 * `role` não existe no modelo, porque o projeto ainda não tem autorização por papel. Devolver um campo constante hoje só para ele já estar lá é resolver um problema que não apareceu
-* `last_used_at` não é atualizado a cada requisição autenticada. Seria uma escrita em toda requisição protegida do sistema inteiro, em troca de um dado que ninguém lê ainda
 
 ### O consumo pelo frontend
 

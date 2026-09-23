@@ -37,14 +37,15 @@ CREATE TABLE "profiles" (
 --> statement-breakpoint
 CREATE TABLE "sessions" (
 	"id" integer PRIMARY KEY GENERATED ALWAYS AS IDENTITY (sequence name "sessions_id_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 2147483647 START WITH 1 CACHE 1),
+	"public_id" uuid DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" integer NOT NULL,
 	"token_hash" text NOT NULL,
 	"device_label" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"expires_at" timestamp with time zone NOT NULL,
-	"last_used_at" timestamp with time zone,
 	"revoked_at" timestamp with time zone,
 	"revoked_reason" text,
+	CONSTRAINT "sessions_public_id_unique" UNIQUE("public_id"),
 	CONSTRAINT "sessions_token_hash_unique" UNIQUE("token_hash")
 );
 --> statement-breakpoint

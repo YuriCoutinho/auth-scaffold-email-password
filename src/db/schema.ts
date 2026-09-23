@@ -66,6 +66,7 @@ export const sessions = pgTable(
   "sessions",
   {
     id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+    publicId: uuid("public_id").notNull().unique().defaultRandom(),
     userId: integer("user_id")
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
@@ -75,7 +76,6 @@ export const sessions = pgTable(
       .notNull()
       .defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revokedReason: text("revoked_reason"),
   },

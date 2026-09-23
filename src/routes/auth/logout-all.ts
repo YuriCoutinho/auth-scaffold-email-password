@@ -12,7 +12,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
     {
       onRequest: [app.authenticate],
       schema: {
-        tags: ["auth"],
+        tags: ["sessions"],
         summary: "Sign out of every device",
         description:
           "Revokes every session of the signed-in user. The session behind " +
