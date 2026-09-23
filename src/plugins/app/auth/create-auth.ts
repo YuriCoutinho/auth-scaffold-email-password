@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import { createAuthenticateService } from "./authenticate.js";
+import { createListSessionsService } from "./list-sessions.js";
 import { createLoginService } from "./login.js";
 import { createLogoutService } from "./logout.js";
 import { createLogoutAllService } from "./logout-all.js";
@@ -38,6 +39,7 @@ export function createAuth(deps: AuthDeps) {
   const { authenticate } = createAuthenticateService(shared);
   const { logout } = createLogoutService(shared);
   const { logoutAll } = createLogoutAllService(shared);
+  const { listSessions } = createListSessionsService(shared);
 
   return {
     signup,
@@ -46,6 +48,7 @@ export function createAuth(deps: AuthDeps) {
     login,
     logout,
     logoutAll,
+    listSessions,
     authenticate,
     currentUser: (id: number) => deps.repository.findAuthUserById(id),
   };
