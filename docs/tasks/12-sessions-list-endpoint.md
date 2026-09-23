@@ -22,10 +22,6 @@ A chave primária de `sessions` é um serial, ótimo para chave estrangeira e ju
 
 No JSON esse campo se chama apenas `id`. Dentro de `GET /sessions` não existe id concorrente no payload, então chamar de `publicId` carregaria para fora uma distinção que só faz sentido dentro do backend.
 
-A mesma etapa aproveita para remover `last_used_at` do schema. A coluna foi criada na modelagem inicial e nunca recebeu uma escrita sequer, porque atualizá-la significaria um `UPDATE` em toda requisição autenticada do sistema. Mantê-la e devolver `null` seria um campo que mente sobre a atividade da sessão, e o projeto prefere resolver o requisito concreto a preservar o hipotético.
-
-Como não existe nada em produção nem em staging, a pasta `drizzle/` é regenerada do zero em vez de ganhar uma migration de `DROP COLUMN`. Quem reconstrói o projeto a partir desta documentação aplica uma migration só, já com o schema final, sem passar pela arqueologia de uma coluna que, na receita, nunca existiu. Como o hash gravado em `__drizzle_migrations` não corresponde mais ao arquivo reescrito, o banco local nasce de novo com `docker compose down -v` antes de `pnpm db:migrate`.
-
 ### O `token_hash` fica fora até da projeção da query
 
 A leitura entra no seam `AuthRepository` como `listActiveUserSessions`, e a projeção do `SELECT` lista campo por campo: id interno, id público, rótulo do dispositivo, criação e expiração. O hash do token não está lá.
@@ -38,7 +34,7 @@ Uma sessão entra na lista quando `user_id` é o do usuário autenticado, `revok
 
 A comparação é `expires_at > now()` e não `>=`, então a sessão que expira no instante exato fica de fora. Uma sessão que vence agora já não abre nada, e mostrá-la como ativa daria ao usuário uma informação falsa no momento em que ela mais engana. O caso está coberto por teste, porque é o tipo de limite que uma refatoração troca sem querer.
 
-A ordenação é por `created_at` decrescente. Com `last_used_at` fora do modelo, esse é o único sinal temporal de atividade que existe, e a sessão mais nova é a que o usuário tem mais chance de reconhecer como sua.
+A ordenação é por `created_at` decrescente, com o `id` decrescente como desempate, para que duas sessões criadas no mesmo instante saiam sempre na mesma ordem em vez de ficarem a critério do plano de execução do Postgres. A criação é o único sinal temporal de atividade que a linha guarda, e a sessão mais nova é a que o usuário tem mais chance de reconhecer como sua.
 
 ### O `isCurrent` é derivado no service, não na rota
 
@@ -58,13 +54,13 @@ O `expires_at` é devolvido mesmo sendo derivável de `created_at` mais o TTL fi
 
 A resposta é `{ "sessions": [...] }`, seguindo o envelope que o `/me` firmou com `{ "user": {...} }`. Um array na raiz fecharia a porta para qualquer campo de acompanhamento depois, como uma contagem ou um cursor, e abrir essa porta mais tarde quebraria o contrato de quem já consome.
 
-Um usuário sem nenhuma sessão ativa recebe `200` com a lista vazia. Lista vazia é uma resposta legítima para uma consulta que funcionou, e `404` seria dizer que o recurso não existe quando ele existe e está vazio. Na prática o caso é raro, porque a requisição chegou até aqui com um cookie válido, mas o comportamento está fixado por teste.
+Um usuário sem nenhuma sessão ativa recebe `200` com a lista vazia. Lista vazia é uma resposta legítima para uma consulta que funcionou, e `404` seria dizer que o recurso não existe quando ele existe e está vazio. Pela rota esse caminho é inalcançável, porque a requisição só chega aqui autenticada e o cookie que a autenticou pertence a uma sessão ativa, então quem fixa o comportamento é o teste do service, que chama o fluxo com um repositório sem nenhuma sessão.
 
 A recusa é o mesmo `401` genérico com `{ "message": "Unauthorized." }` para cookie ausente, desconhecido, revogado ou expirado, pelo motivo de sempre: distinguir os casos transformaria a rota num oráculo sobre quais tokens já existiram.
 
 ## Definition of done
 
-* `sessions` com `public_id` em uuid, `NOT NULL`, `UNIQUE` e default aleatório, sem `last_used_at`, e migration regenerada e aplicada num Postgres 16 local
+* `sessions` com `public_id` em uuid, `NOT NULL`, `UNIQUE` e default aleatório, com a migration aplicada num Postgres 16 local
 * `listActiveUserSessions` declarado no `AuthRepository`, implementado no adaptador Drizzle com o filtro e a ordenação, e espelhado no adaptador em memória
 * Service `listSessions` cobrindo lista vazia, derivação do `isCurrent` e ausência do id interno na saída
 * `GET /sessions` cobrindo a listagem ordenada com a sessão atual sinalizada, a ausência do hash do token na resposta, a sessão de outro usuário fora da lista e o `401` genérico para cookie ausente, revogado e expirado
