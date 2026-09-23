@@ -19,6 +19,7 @@ export const REVOKED_REASONS = [
   "user_logout",
   "logout_all",
   "session_revoked",
+  "password_changed",
 ] as const;
 
 export type RevokedReason = (typeof REVOKED_REASONS)[number];
