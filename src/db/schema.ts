@@ -84,3 +84,32 @@ export const sessions = pgTable(
     index("sessions_expires_at_idx").on(table.expiresAt),
   ],
 );
+
+export const emailOutbox = pgTable(
+  "email_outbox",
+  {
+    id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+    // Names the kind of email so the retry policy and the give-up handler can
+    // differ per type without the outbox knowing what any of them mean.
+    type: text("type").notNull(),
+    recipient: text("recipient").notNull(),
+    subject: text("subject").notNull(),
+    html: text("html").notNull(),
+    text: text("text").notNull(),
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    // Also the lease: claiming pushes it forward, so a worker that dies
+    // mid-send leaves a row that becomes due again on its own.
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("email_outbox_due_idx").on(table.status, table.nextAttemptAt),
+  ],
+);
