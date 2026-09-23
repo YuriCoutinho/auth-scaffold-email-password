@@ -25,7 +25,7 @@ O CLI acima (via Bash) para status/comment/create; Bash e Git para worktree, edi
 ## Passos
 
 1. Ler o plano no arquivo indicado pelo orquestrador (`docs/superpowers/plans/<IDENTIFIER>.md`); ele é a fonte única do que implementar.
-2. Criar a worktree: `git worktree add` num branch derivado da issue (o `get` do CLI retorna `branchName` sugerido pelo Linear; use-o).
+2. Criar a worktree: `git worktree add` num branch **nomeado por você**, nunca o `branchName` que o Linear sugere. Aquele carrega o identificador do board e o usuário do dono, e o nome da branch aparece na página da PR num repo público. O nome é **sempre em inglês e semântico**, no formato `<tipo>/<escopo>-<slug>`, onde `<tipo>` é o mesmo do Conventional Commit (`feat`, `fix`, `refactor`, `docs`) e o resto descreve a entrega: `feat/auth-change-password`, `fix/sessions-expired-cookie`. Sem identificador de issue, sem nome ou email de pessoa, sem português.
 3. Executar o plano passo a passo, editando o código na worktree.
 4. Rodar os checks do projeto; corrigir até passarem.
 5. Gravar o documento da task em `docs/tasks/NN-slug-em-ingles.md` (`NN` = ordem cronológica), autocontido e sem citar o board, com as seções `## Introdução`, `## Requisitos técnicos` e `## Definition of done`; atualizar o índice `docs/tasks/README.md`.
