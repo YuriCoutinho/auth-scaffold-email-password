@@ -49,8 +49,8 @@ export function createResendCodeService(deps: ResendCodeServiceDeps) {
         return { outcome: "limit-reached" };
       }
 
-      // An undelivered code (see AuthRepository.markPendingSignupUndelivered)
-      // owes no cooldown.
+      // An undelivered code (see
+      // AuthRepository.markPendingSignupUndeliveredIfCurrent) owes no cooldown.
       const withinCooldown =
         pending.codeSendCount > 0 &&
         currentTime.getTime() - pending.lastSentAt.getTime() <
@@ -60,12 +60,13 @@ export function createResendCodeService(deps: ResendCodeServiceDeps) {
       }
 
       const code = generateOtpCode();
+      const codeHash = hashOtpCode(code);
       // The new state and the message it announces are one write, so there is
       // nothing left to compensate if the provider is down later.
       await deps.repo.updatePendingSignupResendStateAndQueueEmail(
         sessionToken,
         {
-          codeHash: hashOtpCode(code),
+          codeHash,
           expiresAt: new Date(
             currentTime.getTime() + SIGNUP_TTL_SECONDS * 1000,
           ),
@@ -76,6 +77,7 @@ export function createResendCodeService(deps: ResendCodeServiceDeps) {
         {
           type: SIGNUP_CODE_EMAIL_TYPE,
           recipient: pending.email,
+          correlationId: codeHash,
           ...renderSignupCodeEmail({
             code,
             ttlMinutes: SIGNUP_TTL_SECONDS / 60,

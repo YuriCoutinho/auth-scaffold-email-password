@@ -47,13 +47,14 @@ describe("signup code give-up compensation", () => {
   const PENDING = {
     email: "user@example.com",
     signupSessionToken: "token-1",
+    codeHash: "code-hash-a",
     codeSendCount: 1,
     expiresAt: new Date(Date.now() + 900_000),
   };
 
-  async function buildWithDeadProvider() {
+  async function buildWithDeadProvider(pending: Partial<typeof PENDING> = {}) {
     const authRepository = createInMemoryAuthRepository({
-      pendingSignups: [PENDING],
+      pendingSignups: [{ ...PENDING, ...pending }],
     });
     const opts = makeAppOptions({
       authRepository,
@@ -80,15 +81,18 @@ describe("signup code give-up compensation", () => {
     }
   }
 
-  it("frees the resend quota when a signup code is given up on", async () => {
+  const signupCodeMessage = (correlationId: string) => ({
+    type: "signup_code",
+    recipient: PENDING.email,
+    correlationId,
+    subject: "Your verification code: 123456",
+    html: "<p>123456</p>",
+    text: "123456",
+  });
+
+  it("frees the resend quota when the current signup code is given up on", async () => {
     const { app, opts, authRepository } = await buildWithDeadProvider();
-    await app.emailOutbox.enqueue({
-      type: "signup_code",
-      recipient: PENDING.email,
-      subject: "Your verification code: 123456",
-      html: "<p>123456</p>",
-      text: "123456",
-    });
+    await app.emailOutbox.enqueue(signupCodeMessage("code-hash-a"));
 
     await exhaustAttempts(app, opts, 3);
 
@@ -96,6 +100,22 @@ describe("signup code give-up compensation", () => {
     expect(
       authRepository.pendingSignups.get(PENDING.email)?.codeSendCount,
     ).toBe(0);
+    await app.close();
+  });
+
+  it("leaves the quota alone when the given-up code was already replaced by a delivered one", async () => {
+    const { app, opts, authRepository } = await buildWithDeadProvider({
+      codeHash: "code-hash-b",
+      codeSendCount: 2,
+    });
+    await app.emailOutbox.enqueue(signupCodeMessage("code-hash-a"));
+
+    await exhaustAttempts(app, opts, 3);
+
+    expect(opts.emailOutboxRepository.messages[0]?.status).toBe("failed");
+    expect(
+      authRepository.pendingSignups.get(PENDING.email)?.codeSendCount,
+    ).toBe(2);
     await app.close();
   });
 

@@ -135,6 +135,7 @@ describe("resendCode", () => {
     expect(message.recipient).toBe("foo@gmail.com");
     const code = message.subject.match(/\d{6}/)?.[0] ?? "";
     expect(state.codeHash).toBe(hashOtpCode(code));
+    expect(message.correlationId).toBe(state.codeHash);
     expect(state.codeHash).not.toBe("old-hash");
     expect(message.html).toContain(code);
     expect(message.text).toContain(code);

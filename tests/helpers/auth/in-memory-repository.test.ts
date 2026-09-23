@@ -94,7 +94,10 @@ describe("in-memory auth repository", () => {
   it("marks undelivered, updates resend state and increments attempts", async () => {
     const repo = createInMemoryAuthRepository();
     await repo.upsertPendingSignupAndQueueEmail(pendingInput());
-    await repo.markPendingSignupUndelivered("user@example.com");
+    await repo.markPendingSignupUndeliveredIfCurrent(
+      "user@example.com",
+      "code-hash",
+    );
     expect(
       (await repo.findPendingSignupByEmail("user@example.com"))?.codeSendCount,
     ).toBe(0);
@@ -118,6 +121,31 @@ describe("in-memory auth repository", () => {
         codeSendCount: 3,
       },
     );
+  });
+
+  it("leaves the send count alone when the given-up code is no longer the current one", async () => {
+    const repo = createInMemoryAuthRepository();
+    await repo.upsertPendingSignupAndQueueEmail(pendingInput());
+    await repo.updatePendingSignupResendStateAndQueueEmail(
+      "token-1",
+      {
+        codeHash: "second-code-hash",
+        expiresAt: new Date(NOW.getTime() + 900_000),
+        codeAttempts: 0,
+        lastSentAt: NOW,
+        codeSendCount: 2,
+      },
+      outboxMessage,
+    );
+
+    await repo.markPendingSignupUndeliveredIfCurrent(
+      "user@example.com",
+      "code-hash",
+    );
+
+    expect(
+      (await repo.findPendingSignupByEmail("user@example.com"))?.codeSendCount,
+    ).toBe(2);
   });
 
   it("promotes a pending signup into user, session and profile atomically", async () => {

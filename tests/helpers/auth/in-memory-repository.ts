@@ -148,9 +148,9 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       return { id };
     },
 
-    async markPendingSignupUndelivered(email) {
+    async markPendingSignupUndeliveredIfCurrent(email, codeHash) {
       const pending = pendingSignups.get(email);
-      if (pending) {
+      if (pending && pending.codeHash === codeHash) {
         pending.codeSendCount = 0;
       }
     },

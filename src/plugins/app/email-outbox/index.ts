@@ -7,7 +7,10 @@ import { createEmailOutboxWorker, defaultPolicyFor } from "./worker.js";
 
 const POLL_INTERVAL_MS = 1_000;
 
-export type GiveUpHandler = (recipient: string) => Promise<void>;
+export type GiveUpHandler = (
+  recipient: string,
+  correlationId: string | null,
+) => Promise<void>;
 
 export interface EmailOutbox {
   enqueue(message: OutboxMessage): Promise<void>;
@@ -37,8 +40,8 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
     repo: repository,
     emailSender: fastify.emailSender,
     policyFor: defaultPolicyFor,
-    onGiveUp: async (type, recipient) => {
-      await giveUpHandlers.get(type)?.(recipient);
+    onGiveUp: async (type, recipient, correlationId) => {
+      await giveUpHandlers.get(type)?.(recipient, correlationId);
     },
     log: fastify.log,
   });

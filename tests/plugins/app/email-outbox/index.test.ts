@@ -84,7 +84,7 @@ describe("email outbox plugin", () => {
     }
 
     expect(opts.emailOutboxRepository.messages[0]?.status).toBe("failed");
-    expect(onGiveUp).toHaveBeenCalledExactlyOnceWith(message.recipient);
+    expect(onGiveUp).toHaveBeenCalledExactlyOnceWith(message.recipient, null);
     await app.close();
   });
 

@@ -80,7 +80,13 @@ export interface AuthRepository {
   upsertPendingSignupAndQueueEmail(
     input: UpsertPendingSignupInput & { message: OutboxMessage },
   ): Promise<{ id: number }>;
-  markPendingSignupUndelivered(email: string): Promise<void>;
+  // Conditional on the code hash so a give-up only frees the quota of the code
+  // that failed: a later resend that did arrive must keep its cooldown and its
+  // place against the cap.
+  markPendingSignupUndeliveredIfCurrent(
+    email: string,
+    codeHash: string,
+  ): Promise<void>;
   findPendingSignupBySessionToken(
     token: string,
   ): Promise<PendingSignupRecord | undefined>;

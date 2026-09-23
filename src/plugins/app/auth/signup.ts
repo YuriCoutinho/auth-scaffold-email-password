@@ -60,6 +60,7 @@ export function createSignupService(deps: SignupServiceDeps) {
       }
 
       const code = generateOtpCode();
+      const codeHash = hashOtpCode(code);
       const sessionToken = generateSignupSessionToken();
       // The message is rendered here and queued with the row in one write, so
       // the request never waits on the provider and never has to compensate.
@@ -67,7 +68,7 @@ export function createSignupService(deps: SignupServiceDeps) {
         await deps.repo.upsertPendingSignupAndQueueEmail({
           email,
           passwordHash: await hashPassword(password),
-          codeHash: hashOtpCode(code),
+          codeHash,
           signupSessionToken: sessionToken,
           expiresAt: new Date(
             currentTime.getTime() + SIGNUP_TTL_SECONDS * 1000,
@@ -76,6 +77,9 @@ export function createSignupService(deps: SignupServiceDeps) {
           message: {
             type: SIGNUP_CODE_EMAIL_TYPE,
             recipient: email,
+            // The hash of this code, so a give-up on it cannot free quota that
+            // a later code has already spent.
+            correlationId: codeHash,
             ...renderSignupCodeEmail({
               code,
               ttlMinutes: SIGNUP_TTL_SECONDS / 60,

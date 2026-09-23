@@ -101,6 +101,7 @@ describe("processBatch", () => {
       attempts: 2,
       nextAttemptAt: NOW,
       lastError: "provider unavailable",
+      correlationId: null,
       createdAt: NOW,
       sentAt: null,
     });
@@ -111,7 +112,7 @@ describe("processBatch", () => {
     expect(repo.messages[0]).toMatchObject({ status: "failed", attempts: 3 });
   });
 
-  it("calls onGiveUp with the type and recipient exactly once on give-up", async () => {
+  it("calls onGiveUp with the type, recipient and correlation exactly once on give-up", async () => {
     const emailSender = {
       send: vi.fn().mockRejectedValue(new Error("provider unavailable")),
     };
@@ -124,6 +125,7 @@ describe("processBatch", () => {
       attempts: 2,
       nextAttemptAt: NOW,
       lastError: null,
+      correlationId: "code-hash",
       createdAt: NOW,
       sentAt: null,
     });
@@ -131,7 +133,7 @@ describe("processBatch", () => {
     await worker.processBatch();
 
     expect(onGiveUp).toHaveBeenCalledTimes(1);
-    expect(onGiveUp).toHaveBeenCalledWith(message.type, RECIPIENT);
+    expect(onGiveUp).toHaveBeenCalledWith(message.type, RECIPIENT, "code-hash");
   });
 
   it("never calls onGiveUp on a reschedule", async () => {

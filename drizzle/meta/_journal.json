@@ -15,6 +15,13 @@
       "when": 1790200413929,
       "tag": "0001_spicy_gamora",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790201771046,
+      "tag": "0002_special_mercury",
+      "breakpoints": true
     }
   ]
 }

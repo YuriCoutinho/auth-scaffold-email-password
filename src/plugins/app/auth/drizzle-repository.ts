@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { authUsers, pendingSignups, profiles } from "../../../db/schema.js";
 import { createDrizzleEmailOutboxRepository } from "../email-outbox/drizzle-repository.js";
 import {
@@ -82,11 +82,18 @@ export function createDrizzleAuthRepository(
       });
     },
 
-    async markPendingSignupUndelivered(email) {
+    // One conditional UPDATE, with no read before it: a code that is no longer
+    // the current one matches no row, which is exactly the wanted outcome.
+    async markPendingSignupUndeliveredIfCurrent(email, codeHash) {
       await db
         .update(pendingSignups)
         .set({ codeSendCount: 0 })
-        .where(eq(pendingSignups.email, email));
+        .where(
+          and(
+            eq(pendingSignups.email, email),
+            eq(pendingSignups.codeHash, codeHash),
+          ),
+        );
     },
 
     async findPendingSignupBySessionToken(token) {

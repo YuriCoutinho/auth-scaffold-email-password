@@ -6,11 +6,15 @@ export interface OutboxMessage {
   subject: string;
   html: string;
   text: string;
+  // Opaque to the outbox and handed back on give-up, so the domain can tell
+  // whether the message that failed still matches the state it wrote.
+  correlationId?: string;
 }
 
-export interface OutboxRecord extends OutboxMessage {
+export interface OutboxRecord extends Omit<OutboxMessage, "correlationId"> {
   id: number;
   attempts: number;
+  correlationId: string | null;
 }
 
 export interface ClaimDueInput {

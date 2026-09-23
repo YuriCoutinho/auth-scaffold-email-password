@@ -11,7 +11,11 @@ export interface EmailOutboxWorkerDeps {
   repo: EmailOutboxRepository;
   emailSender: EmailSender;
   policyFor: (type: string) => RetryPolicy;
-  onGiveUp?: (type: string, recipient: string) => Promise<void>;
+  onGiveUp?: (
+    type: string,
+    recipient: string,
+    correlationId: string | null,
+  ) => Promise<void>;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
   batchSize?: number;
@@ -57,12 +61,16 @@ export function createEmailOutboxWorker(deps: EmailOutboxWorkerDeps) {
 
   // The compensation is best-effort: a handler that throws must not abort the
   // rest of the batch, which would leave sendable rows leased and untouched.
-  const runGiveUpHandler = async (type: string, recipient: string) => {
+  const runGiveUpHandler = async (
+    type: string,
+    recipient: string,
+    correlationId: string | null,
+  ) => {
     if (!deps.onGiveUp) {
       return;
     }
     try {
-      await deps.onGiveUp(type, recipient);
+      await deps.onGiveUp(type, recipient, correlationId);
     } catch (error) {
       deps.log?.error(
         { type, ...describe(error) },
@@ -99,7 +107,7 @@ export function createEmailOutboxWorker(deps: EmailOutboxWorkerDeps) {
         { ...context, ...describe(error) },
         "outbox email given up on",
       );
-      await runGiveUpHandler(row.type, row.recipient);
+      await runGiveUpHandler(row.type, row.recipient, row.correlationId);
       return "gave-up";
     }
 

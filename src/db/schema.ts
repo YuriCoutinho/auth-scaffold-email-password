@@ -96,6 +96,9 @@ export const emailOutbox = pgTable(
     subject: text("subject").notNull(),
     html: text("html").notNull(),
     text: text("text").notNull(),
+    // Opaque to the outbox: the domain that enqueued the row uses it to decide
+    // whether a give-up still concerns the state it wrote.
+    correlationId: text("correlation_id"),
     status: text("status").notNull().default("pending"),
     attempts: integer("attempts").notNull().default(0),
     // Also the lease: claiming pushes it forward, so a worker that dies

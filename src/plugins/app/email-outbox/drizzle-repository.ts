@@ -10,6 +10,7 @@ const claimedColumns = {
   subject: emailOutbox.subject,
   html: emailOutbox.html,
   text: emailOutbox.text,
+  correlationId: emailOutbox.correlationId,
   attempts: emailOutbox.attempts,
 };
 

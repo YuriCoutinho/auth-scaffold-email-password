@@ -89,6 +89,9 @@ describe("signup service", () => {
     const code = message.subject.match(/\d{6}/)?.[0] ?? "";
     expect(code).toMatch(/^\d{6}$/);
     expect(row.codeHash).toBe(hashOtpCode(code));
+    // The correlation is the hash of this very code, so a give-up on it cannot
+    // free quota that a later code already spent.
+    expect(message.correlationId).toBe(row.codeHash);
     expect(message.html).toContain(code);
     expect(message.text).toContain(code);
     expect(row.passwordHash).not.toContain(PASSWORD);

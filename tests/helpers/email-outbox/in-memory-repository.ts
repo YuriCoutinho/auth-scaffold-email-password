@@ -4,8 +4,10 @@ import type {
   OutboxStatus,
 } from "../../../src/plugins/app/email-outbox/repository.js";
 
-export interface StoredOutboxMessage extends OutboxMessage {
+export interface StoredOutboxMessage
+  extends Omit<OutboxMessage, "correlationId"> {
   id: number;
+  correlationId: string | null;
   status: OutboxStatus;
   attempts: number;
   nextAttemptAt: Date;
@@ -28,7 +30,9 @@ export function createInMemoryEmailOutboxRepository(
   const messages: StoredOutboxMessage[] = [];
   let nextId = 1;
 
-  const store = (message: Partial<StoredOutboxMessage>) => {
+  const store = (
+    message: Partial<StoredOutboxMessage> & { correlationId?: string | null },
+  ) => {
     const id = message.id ?? nextId;
     nextId = Math.max(nextId, id + 1);
     const createdAt = message.createdAt ?? now();
@@ -39,6 +43,7 @@ export function createInMemoryEmailOutboxRepository(
       subject: message.subject ?? "subject",
       html: message.html ?? "<p>body</p>",
       text: message.text ?? "body",
+      correlationId: message.correlationId ?? null,
       status: message.status ?? "pending",
       attempts: message.attempts ?? 0,
       nextAttemptAt: message.nextAttemptAt ?? createdAt,
@@ -87,6 +92,7 @@ export function createInMemoryEmailOutboxRepository(
         subject: message.subject,
         html: message.html,
         text: message.text,
+        correlationId: message.correlationId,
         attempts: message.attempts,
       }));
     },

@@ -40,6 +40,7 @@ describe("claimDue", () => {
         subject: message.subject,
         html: message.html,
         text: message.text,
+        correlationId: null,
         attempts: 0,
       },
     ]);
