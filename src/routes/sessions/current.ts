@@ -3,8 +3,8 @@ import { SESSION_COOKIE } from "../../lib/cookies.js";
 import { noContentSchema } from "../../schemas/auth.js";
 
 const routes: FastifyPluginAsyncZod = async (app) => {
-  app.post(
-    "/logout",
+  app.delete(
+    "/current",
     {
       schema: {
         tags: ["sessions"],

@@ -26,14 +26,14 @@ function sessionCookie(response: { headers: Record<string, unknown> }) {
   return values.find((value) => String(value).startsWith("session="));
 }
 
-describe("POST /auth/logout-all", () => {
+describe("DELETE /sessions", () => {
   it("revokes the other sessions and keeps the current one", async () => {
     const authRepository = repoWithThreeSessions();
     const app = buildApp(makeAppOptions({ authRepository }));
 
     const response = await app.inject({
-      method: "POST",
-      url: "/auth/logout-all",
+      method: "DELETE",
+      url: "/sessions",
       cookies: { session: TOKEN },
     });
 
@@ -57,8 +57,8 @@ describe("POST /auth/logout-all", () => {
     );
 
     const response = await app.inject({
-      method: "POST",
-      url: "/auth/logout-all",
+      method: "DELETE",
+      url: "/sessions",
       cookies: { session: TOKEN },
       payload: { includeCurrentSession: false },
     });
@@ -73,8 +73,8 @@ describe("POST /auth/logout-all", () => {
     const app = buildApp(makeAppOptions({ authRepository }));
 
     const response = await app.inject({
-      method: "POST",
-      url: "/auth/logout-all",
+      method: "DELETE",
+      url: "/sessions",
       cookies: { session: TOKEN },
       payload: { includeCurrentSession: true },
     });
@@ -108,8 +108,8 @@ describe("POST /auth/logout-all", () => {
     const app = buildApp(makeAppOptions({ authRepository }));
 
     const response = await app.inject({
-      method: "POST",
-      url: "/auth/logout-all",
+      method: "DELETE",
+      url: "/sessions",
       cookies: { session: TOKEN },
     });
 
@@ -137,8 +137,8 @@ describe("POST /auth/logout-all", () => {
     const app = buildApp(makeAppOptions({ authRepository }));
 
     await app.inject({
-      method: "POST",
-      url: "/auth/logout-all",
+      method: "DELETE",
+      url: "/sessions",
       cookies: { session: TOKEN },
       payload: { includeCurrentSession: true },
     });
@@ -191,8 +191,8 @@ describe("POST /auth/logout-all", () => {
       const app = buildApp(makeAppOptions({ authRepository }));
 
       const response = await app.inject({
-        method: "POST",
-        url: "/auth/logout-all",
+        method: "DELETE",
+        url: "/sessions",
         ...(cookie ? { cookies: { session: cookie } } : {}),
       });
 
@@ -208,13 +208,25 @@ describe("POST /auth/logout-all", () => {
     );
 
     const response = await app.inject({
-      method: "POST",
-      url: "/auth/logout-all",
+      method: "DELETE",
+      url: "/sessions",
       cookies: { session: TOKEN },
       payload: { includeCurrentSession: "yes" },
     });
 
     expect(response.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("no longer answers on the old address", async () => {
+    const app = buildApp(makeAppOptions());
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/logout-all",
+    });
+
+    expect(response.statusCode).toBe(404);
     await app.close();
   });
 });

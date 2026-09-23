@@ -1,10 +1,10 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
-import { messageSchema } from "../schemas/auth.js";
-import { sessionListResponseSchema } from "../schemas/sessions.js";
+import { messageSchema } from "../../schemas/auth.js";
+import { sessionListResponseSchema } from "../../schemas/sessions.js";
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   app.get(
-    "/sessions",
+    "/",
     {
       onRequest: [app.authenticate],
       schema: {

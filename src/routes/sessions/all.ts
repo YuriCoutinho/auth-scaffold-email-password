@@ -7,8 +7,8 @@ import {
 } from "../../schemas/auth.js";
 
 const routes: FastifyPluginAsyncZod = async (app) => {
-  app.post(
-    "/logout-all",
+  app.delete(
+    "/",
     {
       onRequest: [app.authenticate],
       schema: {

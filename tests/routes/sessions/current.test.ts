@@ -24,14 +24,14 @@ function sessionCookie(response: { headers: Record<string, unknown> }) {
   return values.find((value) => String(value).startsWith("session="));
 }
 
-describe("POST /auth/logout", () => {
+describe("DELETE /sessions/current", () => {
   it("revokes the session of the cookie and answers 204", async () => {
     const authRepository = repoWithTwoSessions();
     const app = buildApp(makeAppOptions({ authRepository }));
 
     const response = await app.inject({
-      method: "POST",
-      url: "/auth/logout",
+      method: "DELETE",
+      url: "/sessions/current",
       cookies: { session: TOKEN },
     });
 
@@ -48,8 +48,8 @@ describe("POST /auth/logout", () => {
     const app = buildApp(makeAppOptions({ authRepository }));
 
     await app.inject({
-      method: "POST",
-      url: "/auth/logout",
+      method: "DELETE",
+      url: "/sessions/current",
       cookies: { session: TOKEN },
     });
 
@@ -66,8 +66,8 @@ describe("POST /auth/logout", () => {
     );
 
     const response = await app.inject({
-      method: "POST",
-      url: "/auth/logout",
+      method: "DELETE",
+      url: "/sessions/current",
       cookies: { session: TOKEN },
     });
 
@@ -83,7 +83,10 @@ describe("POST /auth/logout", () => {
   it("answers 204 and still clears the cookie without a session cookie", async () => {
     const app = buildApp(makeAppOptions());
 
-    const response = await app.inject({ method: "POST", url: "/auth/logout" });
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/sessions/current",
+    });
 
     expect(response.statusCode).toBe(204);
     expect(String(sessionCookie(response))).toContain("Max-Age=0");
@@ -95,15 +98,15 @@ describe("POST /auth/logout", () => {
     const app = buildApp(makeAppOptions({ authRepository }));
 
     await app.inject({
-      method: "POST",
-      url: "/auth/logout",
+      method: "DELETE",
+      url: "/sessions/current",
       cookies: { session: TOKEN },
     });
     const first = authRepository.sessions[0]?.revokedAt;
 
     const response = await app.inject({
-      method: "POST",
-      url: "/auth/logout",
+      method: "DELETE",
+      url: "/sessions/current",
       cookies: { session: TOKEN },
     });
 
@@ -118,12 +121,21 @@ describe("POST /auth/logout", () => {
     );
 
     const response = await app.inject({
-      method: "POST",
-      url: "/auth/logout",
+      method: "DELETE",
+      url: "/sessions/current",
       cookies: { session: "unknown-token" },
     });
 
     expect(response.statusCode).toBe(204);
+    await app.close();
+  });
+
+  it("no longer answers on the old address", async () => {
+    const app = buildApp(makeAppOptions());
+
+    const response = await app.inject({ method: "POST", url: "/auth/logout" });
+
+    expect(response.statusCode).toBe(404);
     await app.close();
   });
 });

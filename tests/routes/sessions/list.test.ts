@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildApp } from "../../src/app.js";
-import { hashSessionToken } from "../../src/lib/token-hash.js";
-import { makeAppOptions } from "../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../helpers/auth/in-memory-repository.js";
+import { buildApp } from "../../../src/app.js";
+import { hashSessionToken } from "../../../src/lib/token-hash.js";
+import { makeAppOptions } from "../../helpers/app-options.js";
+import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
 
 const TOKEN = "a-session-token";
 const OTHER_TOKEN = "another-session-token";
