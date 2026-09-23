@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  currentUserResponseSchema,
   loginBodySchema,
   messageSchema,
   signupBodySchema,
@@ -36,6 +37,22 @@ describe("auth schemas", () => {
     expect(verifyCodeBodySchema.safeParse({ code: "12a456" }).success).toBe(
       false,
     );
+  });
+
+  it("currentUserResponseSchema requires a uuid public id and an email", () => {
+    expect(
+      currentUserResponseSchema.safeParse({
+        user: {
+          publicId: "11111111-1111-4111-8111-111111111111",
+          email: "a@b.com",
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      currentUserResponseSchema.safeParse({
+        user: { publicId: "nope", email: "a@b.com" },
+      }).success,
+    ).toBe(false);
   });
 
   it("describes a message envelope", () => {

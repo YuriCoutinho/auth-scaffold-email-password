@@ -24,3 +24,4 @@ A ordem numérica é a ordem em que as etapas foram implementadas, e é a ordem 
 | 06 | [Verify code endpoint](06-verify-code-endpoint.md) | Confirmação do código, promoção atômica para conta real e autologin |
 | 07 | [Agnostic profile](07-agnostic-profile.md) | A fronteira entre dado de autenticação e dado de produto |
 | 08 | [Login endpoint](08-login-endpoint.md) | Verificação de credenciais em tempo constante e sessão por dispositivo |
+| 09 | [Session hook and current user endpoint](09-session-hook-and-current-user-endpoint.md) | Hook que valida a sessão em toda rota protegida e o endpoint que devolve o usuário autenticado |

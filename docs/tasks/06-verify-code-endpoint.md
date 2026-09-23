@@ -15,7 +15,7 @@ A resposta para isso é uma transação só, com a sessão dentro dela. Ou tudo 
 * `POST /auth/verify-code`, com body `{ code }` validado por `^\d{6}$`
 * O endpoint **nunca recebe email**, buscando o cadastro pelo token do cookie. Isso impede que alguém tente o mesmo código contra muitas contas diferentes
 * Formato inválido cai no 400 automático da validação, que fala do formato e não revela nada sobre contas
-* Sucesso responde `200` confirmando a conta e a sessão iniciada
+* Sucesso responde `204` sem corpo, com a conta confirmada e o cookie de sessão entregue, porque descrever o usuário logado passou a ser responsabilidade de um endpoint próprio
 * Documentado no OpenAPI com os três status possíveis
 
 ### Resposta de erro única

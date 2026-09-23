@@ -1,7 +1,11 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { SESSION_COOKIE, SIGNUP_SESSION_COOKIE } from "../../lib/cookies.js";
 import { deviceLabelFromUserAgent } from "../../lib/device-label.js";
-import { messageSchema, verifyCodeBodySchema } from "../../schemas/auth.js";
+import {
+  messageSchema,
+  noContentSchema,
+  verifyCodeBodySchema,
+} from "../../schemas/auth.js";
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   app.post(
@@ -13,10 +17,12 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         description:
           "Verifies the 6-digit code for the pending signup identified by the " +
           "signup_session cookie, promotes it to a real account and starts an " +
-          "authenticated session. The error response is intentionally generic.",
+          "authenticated session. The session lives only in the cookie: the " +
+          "signed-in user is read from GET /me. The error response is " +
+          "intentionally generic.",
         body: verifyCodeBodySchema,
         response: {
-          200: messageSchema,
+          204: noContentSchema,
           400: messageSchema,
           401: messageSchema,
         },
@@ -44,9 +50,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         result.sessionToken,
         SESSION_COOKIE.options,
       );
-      return reply.code(200).send({
-        message: "Email confirmed. You are now signed in.",
-      });
+      return reply.code(204).send();
     },
   );
 };
