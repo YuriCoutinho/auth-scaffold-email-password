@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   currentUserResponseSchema,
   loginBodySchema,
+  logoutAllBodySchema,
   messageSchema,
   signupBodySchema,
   verifyCodeBodySchema,
@@ -57,5 +58,31 @@ describe("auth schemas", () => {
 
   it("describes a message envelope", () => {
     expect(messageSchema.safeParse({ message: "ok" }).success).toBe(true);
+  });
+});
+
+describe("logoutAllBodySchema", () => {
+  it("defaults to keeping the current session when no body arrives at all", () => {
+    expect(logoutAllBodySchema.parse(undefined)).toEqual({
+      includeCurrentSession: false,
+    });
+  });
+
+  it("defaults to keeping the current session when the field is absent", () => {
+    expect(logoutAllBodySchema.parse({})).toEqual({
+      includeCurrentSession: false,
+    });
+  });
+
+  it("accepts an explicit true", () => {
+    expect(logoutAllBodySchema.parse({ includeCurrentSession: true })).toEqual({
+      includeCurrentSession: true,
+    });
+  });
+
+  it("rejects a non-boolean", () => {
+    expect(() =>
+      logoutAllBodySchema.parse({ includeCurrentSession: "yes" }),
+    ).toThrow();
   });
 });
