@@ -1,6 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
+import { createAuthenticateService } from "./authenticate.js";
 import { createLoginService } from "./login.js";
 import type { AuthRepository } from "./repository.js";
 import { createResendCodeService } from "./resend-code.js";
@@ -32,8 +33,16 @@ export function createAuth(deps: AuthDeps) {
   });
   const { verifyCode } = createVerifyCodeService(shared);
   const { login } = createLoginService(shared);
+  const { authenticate } = createAuthenticateService(shared);
 
-  return { signup, resendCode, verifyCode, login };
+  return {
+    signup,
+    resendCode,
+    verifyCode,
+    login,
+    authenticate,
+    currentUser: (id: number) => deps.repository.findAuthUserById(id),
+  };
 }
 
 export type Auth = ReturnType<typeof createAuth>;

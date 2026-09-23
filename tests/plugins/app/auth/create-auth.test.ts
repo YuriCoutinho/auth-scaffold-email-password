@@ -3,7 +3,7 @@ import { createAuth } from "../../../../src/plugins/app/auth/create-auth.js";
 import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 
 describe("createAuth", () => {
-  it("exposes the four auth flows over one repository", async () => {
+  it("exposes every auth flow over one repository", async () => {
     const repository = createInMemoryAuthRepository();
     const auth = createAuth({
       repository,
@@ -27,5 +27,20 @@ describe("createAuth", () => {
     expect((await auth.login("nobody@example.com", "x", null)).outcome).toBe(
       "invalid",
     );
+    expect((await auth.authenticate(undefined)).outcome).toBe("invalid");
+    expect(await auth.currentUser(999)).toBeUndefined();
+  });
+
+  it("resolves the current user through the repository", async () => {
+    const repository = createInMemoryAuthRepository({
+      authUsers: [{ id: 7, email: "a@b.com" }],
+    });
+    const auth = createAuth({
+      repository,
+      emailSender: { send: vi.fn() },
+      checkPwnedPassword: vi.fn().mockResolvedValue(false),
+    });
+
+    expect(await auth.currentUser(7)).toMatchObject({ email: "a@b.com" });
   });
 });
