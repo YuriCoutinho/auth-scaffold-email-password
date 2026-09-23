@@ -15,12 +15,12 @@ Esta etapa entrega `POST /auth/login` com essa armadilha fechada e cria uma sess
 * `POST /auth/login`, com body `{ email, password }` validado por Zod
 * Email com formato validado e limite de 254 caracteres
 * Senha aceita de 1 a 128 caracteres, deliberadamente **sem** a política mínima do cadastro. Login verifica uma senha que já existe, então aplicar a política aqui transformaria o comprimento num oráculo, revelando qual conta tem senha fora do padrão atual
-* Sucesso responde `200` com `{ user: { publicId } }`
+* Sucesso responde `204` sem corpo, entregando apenas o cookie de sessão, porque descrever o usuário logado passou a ser responsabilidade de um endpoint próprio
 * Documentado no OpenAPI com os três status possíveis
 
 ### O corpo da resposta
 
-O que fica de fora importa mais do que o que fica dentro.
+A resposta não tem corpo, e o que ficou de fora vale registrar porque explica a decisão.
 
 * Sem token de sessão, porque ele vive no cookie `HttpOnly` e devolvê-lo no JSON entregaria de volta exatamente a proteção contra scripts maliciosos que o cookie oferece
 * Sem o identificador interno, que é sequencial e revelaria o tamanho da base
@@ -62,7 +62,7 @@ Email inexistente e senha errada produzem resposta idêntica: mesmo status `401`
 
 * Contrato publicado no OpenAPI, com os três status descritos
 * Request e response tipados e validados por schema Zod
-* Teste do caminho feliz conferindo a criação da sessão, o hash gravado diferente do token do cookie e o corpo contendo apenas o identificador público
+* Teste do caminho feliz conferindo a criação da sessão, o hash gravado diferente do token do cookie e a resposta sem corpo
 * Teste de email inexistente e de senha errada produzindo resposta idêntica
 * Teste garantindo que a verificação Argon2 roda também quando o email não existe
 * Teste de normalização do email, com maiúsculas e espaços chegando à mesma conta
