@@ -63,6 +63,27 @@ export function createDrizzleSessionRepository(
       return { revokedCount: revoked.length };
     },
 
+    async revokeUserSessionByPublicId(input) {
+      // Identification and authorization ride in the same WHERE, so a session
+      // of another user matches no row instead of relying on a check the
+      // caller might forget. The expiry condition keeps "revocable" and
+      // "listed as active" the same definition.
+      const revoked = await db
+        .update(sessions)
+        .set({ revokedAt: input.revokedAt, revokedReason: input.revokedReason })
+        .where(
+          and(
+            eq(sessions.publicId, input.publicId),
+            eq(sessions.userId, input.userId),
+            isNull(sessions.revokedAt),
+            gt(sessions.expiresAt, input.now),
+          ),
+        )
+        .returning({ id: sessions.id });
+
+      return { revoked: revoked.length > 0 };
+    },
+
     async listActiveUserSessions(input) {
       return db
         .select({
