@@ -13,7 +13,9 @@ declare module "fastify" {
 
 const plugin: FastifyPluginAsync = async (fastify) => {
   // Every request carries the property, so a route that forgets the hook reads
-  // null instead of undefined and the type stays honest about it.
+  // null instead of undefined and the type stays honest about it, and because
+  // Fastify asks for the request shape to be declared up front instead of being
+  // grown per request.
   fastify.decorateRequest("user", null);
 
   fastify.decorate("authenticate", async (request, reply) => {

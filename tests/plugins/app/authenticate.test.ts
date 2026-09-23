@@ -54,57 +54,52 @@ describe("authenticate hook", () => {
     await app.close();
   });
 
-  it("returns a generic 401 when the cookie is missing", async () => {
-    const app = buildApp(makeAppOptions());
-    protectedRoute(app, "GET", async () => ({ ok: true }));
+  const REFUSALS: Array<{
+    name: string;
+    cookie?: string;
+    session?: { expiresAt: Date; revokedAt?: Date };
+  }> = [
+    { name: "the cookie is missing" },
+    { name: "the token is unknown", cookie: "not-a-real-token" },
+    {
+      name: "the session is expired",
+      cookie: TOKEN,
+      session: { expiresAt: new Date(Date.now() - 60_000) },
+    },
+    {
+      name: "the session is revoked",
+      cookie: TOKEN,
+      session: {
+        expiresAt: new Date(Date.now() + 60_000),
+        revokedAt: new Date(),
+      },
+    },
+  ];
 
-    const response = await app.inject({ method: "GET", url: "/protected" });
+  it.each(REFUSALS)(
+    "returns a generic 401 and never clears the session cookie when $name",
+    async ({ cookie, session }) => {
+      const authRepository = createInMemoryAuthRepository({
+        authUsers: [{ id: 7, email: "a@b.com" }],
+        sessions: session
+          ? [{ userId: 7, tokenHash: hashSessionToken(TOKEN), ...session }]
+          : [],
+      });
+      const app = buildApp(makeAppOptions({ authRepository }));
+      protectedRoute(app, "GET", async () => ({ ok: true }));
 
-    expect(response.statusCode).toBe(401);
-    expect(response.json()).toEqual({ message: "Unauthorized." });
-    await app.close();
-  });
+      const response = await app.inject({
+        method: "GET",
+        url: "/protected",
+        ...(cookie ? { cookies: { session: cookie } } : {}),
+      });
 
-  it("returns the same generic 401 for an unknown token", async () => {
-    const app = buildApp(makeAppOptions());
-    protectedRoute(app, "GET", async () => ({ ok: true }));
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/protected",
-      cookies: { session: "not-a-real-token" },
-    });
-
-    expect(response.statusCode).toBe(401);
-    expect(response.json()).toEqual({ message: "Unauthorized." });
-    await app.close();
-  });
-
-  it("never clears the session cookie when it refuses a request", async () => {
-    const authRepository = createInMemoryAuthRepository({
-      authUsers: [{ id: 7, email: "a@b.com" }],
-      sessions: [
-        {
-          userId: 7,
-          tokenHash: hashSessionToken(TOKEN),
-          expiresAt: new Date(Date.now() + 60_000),
-          revokedAt: new Date(),
-        },
-      ],
-    });
-    const app = buildApp(makeAppOptions({ authRepository }));
-    protectedRoute(app, "GET", async () => ({ ok: true }));
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/protected",
-      cookies: { session: TOKEN },
-    });
-
-    expect(response.statusCode).toBe(401);
-    expect(response.headers["set-cookie"]).toBeUndefined();
-    await app.close();
-  });
+      expect(response.statusCode).toBe(401);
+      expect(response.json()).toEqual({ message: "Unauthorized." });
+      expect(response.headers["set-cookie"]).toBeUndefined();
+      await app.close();
+    },
+  );
 
   it("rejects before parsing the body of an unauthenticated request", async () => {
     const app = buildApp(makeAppOptions());

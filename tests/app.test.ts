@@ -14,6 +14,18 @@ describe("openapi", () => {
     await app.close();
   });
 
+  it.each(["/auth/login", "/auth/verify-code"])(
+    "documents the 204 of POST %s without a body",
+    async (path) => {
+      const app = buildApp(makeAppOptions());
+      await app.ready();
+      const response = app.swagger().paths?.[path]?.post?.responses?.["204"];
+      expect(response).toBeDefined();
+      expect(response).not.toHaveProperty("content");
+      await app.close();
+    },
+  );
+
   it("serves the docs UI outside production only", async () => {
     const enabled = buildApp(makeAppOptions());
     const disabled = buildApp(
