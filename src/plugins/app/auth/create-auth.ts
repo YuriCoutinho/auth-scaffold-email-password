@@ -3,6 +3,7 @@ import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import type { SessionRepository } from "../sessions/repository.js";
 import { createAuthenticateService } from "./authenticate.js";
+import { createChangePasswordService } from "./change-password.js";
 import { createLoginService } from "./login.js";
 import type { AuthRepository } from "./repository.js";
 import { createResendCodeService } from "./resend-code.js";
@@ -45,6 +46,11 @@ export function createAuth(deps: AuthDeps) {
     ...shared,
     repo: deps.sessionRepository,
   });
+  const { changePassword } = createChangePasswordService({
+    ...shared,
+    emailSender: deps.emailSender,
+    checkPwnedPassword: deps.checkPwnedPassword,
+  });
 
   return {
     signup,
@@ -52,6 +58,7 @@ export function createAuth(deps: AuthDeps) {
     verifyCode,
     login,
     authenticate,
+    changePassword,
     currentUser: (id: number) => deps.repository.findAuthUserById(id),
   };
 }
