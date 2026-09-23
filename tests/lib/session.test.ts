@@ -25,6 +25,7 @@ describe("REVOKED_REASONS", () => {
       "user_logout",
       "logout_all",
       "session_revoked",
+      "password_changed",
     ]);
   });
 
@@ -34,5 +35,9 @@ describe("REVOKED_REASONS", () => {
 
   it("accepts session_revoked as a revocation reason", () => {
     expect(REVOKED_REASONS).toContain("session_revoked");
+  });
+
+  it("accepts password_changed as a revocation reason", () => {
+    expect(REVOKED_REASONS).toContain("password_changed");
   });
 });

@@ -5,6 +5,21 @@ import { createInMemoryAuthRepository } from "./in-memory-repository.js";
 const NOW = new Date("2026-09-20T12:00:00Z");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
+function repoWithTwoUsers() {
+  const expiresAt = new Date(Date.now() + 60_000);
+  return createInMemoryAuthRepository({
+    authUsers: [
+      { id: 1, email: "owner@example.com", passwordHash: "old-hash" },
+      { id: 2, email: "other@example.com", passwordHash: "other-hash" },
+    ],
+    sessions: [
+      { id: 10, userId: 1, tokenHash: "current", expiresAt },
+      { id: 11, userId: 1, tokenHash: "laptop", expiresAt },
+      { id: 12, userId: 2, tokenHash: "stranger", expiresAt },
+    ],
+  });
+}
+
 function pendingInput(overrides: Record<string, unknown> = {}) {
   return {
     email: "user@example.com",
@@ -592,5 +607,70 @@ describe("revokeUserSessionByPublicId", () => {
 
     expect(result).toEqual({ revoked: false });
     expect(repo.sessions[0]?.revokedAt).toBeNull();
+  });
+});
+
+describe("findAuthUserCredentialsById", () => {
+  it("returns the id, email and password hash", async () => {
+    const repo = repoWithTwoUsers();
+
+    await expect(repo.findAuthUserCredentialsById(1)).resolves.toEqual({
+      id: 1,
+      email: "owner@example.com",
+      passwordHash: "old-hash",
+    });
+  });
+
+  it("resolves undefined for an unknown id", async () => {
+    const repo = repoWithTwoUsers();
+
+    await expect(repo.findAuthUserCredentialsById(99)).resolves.toBeUndefined();
+  });
+});
+
+describe("changeUserPassword", () => {
+  const CHANGED_AT = new Date("2026-03-01T12:00:00.000Z");
+
+  const change = {
+    userId: 1,
+    passwordHash: "new-hash",
+    revokedAt: CHANGED_AT,
+    revokedReason: "password_changed",
+    exceptSessionId: 10,
+  } as const;
+
+  it("stores the new hash and revokes the other sessions of that user", async () => {
+    const repo = repoWithTwoUsers();
+
+    await repo.changeUserPassword(change);
+
+    expect(repo.authUsers.get("owner@example.com")?.passwordHash).toBe(
+      "new-hash",
+    );
+    expect(repo.sessions.find((s) => s.id === 11)?.revokedAt).toEqual(
+      CHANGED_AT,
+    );
+    expect(repo.sessions.find((s) => s.id === 11)?.revokedReason).toBe(
+      "password_changed",
+    );
+  });
+
+  it("keeps the session behind the request active", async () => {
+    const repo = repoWithTwoUsers();
+
+    await repo.changeUserPassword(change);
+
+    expect(repo.sessions.find((s) => s.id === 10)?.revokedAt).toBeNull();
+  });
+
+  it("leaves the sessions of another user untouched", async () => {
+    const repo = repoWithTwoUsers();
+
+    await repo.changeUserPassword(change);
+
+    expect(repo.sessions.find((s) => s.id === 12)?.revokedAt).toBeNull();
+    expect(repo.authUsers.get("other@example.com")?.passwordHash).toBe(
+      "other-hash",
+    );
   });
 });

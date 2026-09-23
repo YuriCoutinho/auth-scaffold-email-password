@@ -1,3 +1,5 @@
+import type { RevokedReason } from "../../../lib/session.js";
+
 export interface AuthUserRecord {
   id: number;
   publicId: string;
@@ -49,6 +51,22 @@ export interface AuthUserIdentity {
   email: string;
 }
 
+// The identity read feeds GET /me, so the password hash gets its own read
+// instead of widening a shape that a route with no business holding it uses.
+export interface AuthUserCredentials {
+  id: number;
+  email: string;
+  passwordHash: string;
+}
+
+export interface ChangeUserPasswordInput {
+  userId: number;
+  passwordHash: string;
+  revokedAt: Date;
+  revokedReason: RevokedReason;
+  exceptSessionId: number;
+}
+
 export interface AuthRepository {
   findAuthUserByEmail(email: string): Promise<AuthUserRecord | undefined>;
   findPendingSignupByEmail(
@@ -68,4 +86,8 @@ export interface AuthRepository {
     input: PromotePendingSignupInput,
   ): Promise<{ id: number; publicId: string }>;
   findAuthUserById(id: number): Promise<AuthUserIdentity | undefined>;
+  findAuthUserCredentialsById(
+    id: number,
+  ): Promise<AuthUserCredentials | undefined>;
+  changeUserPassword(input: ChangeUserPasswordInput): Promise<void>;
 }
