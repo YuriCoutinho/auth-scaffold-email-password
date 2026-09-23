@@ -157,7 +157,9 @@ describe("POST /auth/change-password", () => {
     );
 
     expect(response.statusCode).toBe(400);
-    expect(response.json().message).toContain("data breach");
+    expect(response.json().message).toBe(
+      "This password has appeared in a known data breach. Please choose a different one.",
+    );
     await app.close();
   });
 
