@@ -15,6 +15,10 @@ export function generateSignupSessionToken(): string {
 
 // Only an active revocation carries a reason. Expiry is not one: it lives in
 // expires_at and is checked on its own, so it never writes this column.
-export const REVOKED_REASONS = ["user_logout", "logout_all"] as const;
+export const REVOKED_REASONS = [
+  "user_logout",
+  "logout_all",
+  "session_revoked",
+] as const;
 
 export type RevokedReason = (typeof REVOKED_REASONS)[number];
