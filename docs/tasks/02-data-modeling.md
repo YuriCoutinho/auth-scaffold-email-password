@@ -76,16 +76,16 @@ Uma linha por dispositivo logado, o que permite listar sessões ativas e encerra
 | Campo | Tipo | Regra |
 | --- | --- | --- |
 | `id` | `integer` identity | PK interna |
+| `public_id` | `uuid` | `NOT NULL`, `UNIQUE`, default aleatório, é o id que sai em resposta |
 | `user_id` | `integer` | FK para `auth_users.id`, `NOT NULL`, cascade, indexado |
 | `token_hash` | `text` | `UNIQUE`, `NOT NULL` |
 | `device_label` | `text` | nullable, rótulo legível do dispositivo |
 | `created_at` | `timestamptz` | `NOT NULL DEFAULT now()` |
 | `expires_at` | `timestamptz` | `NOT NULL`, indexado |
-| `last_used_at` | `timestamptz` | nullable |
 | `revoked_at` | `timestamptz` | nullable, onde `NULL` significa nunca revogada |
 | `revoked_reason` | `text` | nullable, por exemplo `user_logout` ou `security_event` |
 
-Expirar e revogar são eventos diferentes e por isso ocupam colunas diferentes. Uma sessão expirada apenas envelheceu, enquanto uma revogada foi encerrada por alguém, e saber o motivo depois vale muito numa investigação. A validação de sessão fica sendo `token_hash = ? AND revoked_at IS NULL AND expires_at > now()`.
+Expirar e revogar são eventos diferentes e por isso ocupam colunas diferentes. Uma sessão expirada apenas envelheceu, enquanto uma revogada foi encerrada por alguém, e saber o motivo depois vale muito numa investigação. A validação de sessão fica sendo `token_hash = ? AND revoked_at IS NULL AND expires_at > now()`. A chave primária serial nunca aparece numa resposta, porque id sequencial é enumerável e deixa estimar o volume de registros criados entre dois que alguém conhece, então toda tabela cujo registro aparece num payload carrega um `public_id` em uuid ao lado da chave interna, exatamente como `auth_users` faz.
 
 ### Hash de senha
 

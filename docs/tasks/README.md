@@ -27,3 +27,4 @@ A ordem numérica é a ordem em que as etapas foram implementadas, e é a ordem 
 | 09 | [Session hook and current user endpoint](09-session-hook-and-current-user-endpoint.md) | Hook que valida a sessão em toda rota protegida e o endpoint que devolve o usuário autenticado |
 | 10 | [Logout endpoint](10-logout-endpoint.md) | Encerramento idempotente da sessão do dispositivo atual, com revogação em banco e limpeza do cookie |
 | 11 | [Logout all endpoint](11-logout-all-endpoint.md) | Revogação em lote das sessões do usuário, com a sessão atual preservada por padrão e o hook publicando a sessão do request |
+| 12 | [Sessions list endpoint](12-sessions-list-endpoint.md) | Lista das sessões ativas do usuário, com id público por sessão e a sessão atual sinalizada, para uma tela de dispositivos conectados |
