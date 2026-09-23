@@ -214,6 +214,22 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
         session.revokedReason = revokedReason;
       }
     },
+
+    async revokeAllUserSessions(input) {
+      const targets = sessions.filter(
+        (s) =>
+          s.userId === input.userId &&
+          s.revokedAt === null &&
+          s.id !== input.exceptSessionId,
+      );
+
+      for (const session of targets) {
+        session.revokedAt = input.revokedAt;
+        session.revokedReason = input.revokedReason;
+      }
+
+      return { revokedCount: targets.length };
+    },
   };
 
   return { ...repository, authUsers, pendingSignups, sessions, profiles };
