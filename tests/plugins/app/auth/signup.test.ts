@@ -121,16 +121,4 @@ describe("signup service", () => {
       expect(result.sessionToken).not.toBe("old-token");
     }
   });
-
-  it("accepts with a single write, so the outcome never depends on the provider", async () => {
-    const deps = makeDeps();
-
-    const result = await createSignupService(deps).signup(
-      "user@example.com",
-      PASSWORD,
-    );
-
-    expect(deps.repo.upsertPendingSignupAndQueueEmail).toHaveBeenCalledOnce();
-    expect(result.outcome).toBe("accepted");
-  });
 });

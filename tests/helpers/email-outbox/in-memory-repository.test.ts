@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { EmailProviderError } from "../../../src/plugins/app/email/sender.js";
 import { createInMemoryEmailOutboxRepository } from "./in-memory-repository.js";
 
 const NOW = new Date("2025-01-01T10:00:00.000Z");
@@ -147,26 +146,6 @@ describe("markSent / reschedule / giveUp", () => {
       attempts: 3,
       lastError: "provider unavailable",
     });
-  });
-
-  it("never stores a provider body in lastError", async () => {
-    const repo = createInMemoryEmailOutboxRepository({
-      messages: [{ ...message, id: 1, nextAttemptAt: NOW }],
-    });
-    const error = new EmailProviderError("email provider request failed", {
-      status: 422,
-      body: '{"to":"user@example.com"}',
-    });
-
-    await repo.giveUp({
-      id: 1,
-      attempts: 3,
-      lastError: error.message,
-      at: NOW,
-    });
-
-    expect(repo.messages[0]?.lastError).toBe("email provider request failed");
-    expect(repo.messages[0]?.lastError).not.toContain(message.recipient);
   });
 });
 

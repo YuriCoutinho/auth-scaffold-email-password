@@ -18,6 +18,14 @@ const message = {
   text: "123456",
 };
 
+const BODY_TOKEN = "trace-9f3c1d";
+
+const providerError = () =>
+  new EmailProviderError("resend responded 500", {
+    status: 500,
+    body: `to=${RECIPIENT} trace=${BODY_TOKEN}`,
+  });
+
 function makeLog() {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
@@ -250,11 +258,17 @@ describe("processBatch", () => {
     expect(repo.messages[0]?.status).toBe("pending");
   });
 
-  it("never logs the recipient address or the provider body", async () => {
-    const error = new EmailProviderError("resend responded 500", {
-      status: 500,
-      body: `{"to":"${RECIPIENT}"}`,
-    });
+  it("keeps only the error message in lastError, never the provider body", async () => {
+    const emailSender = { send: vi.fn().mockRejectedValue(providerError()) };
+    const { repo, worker } = makeWorker({ emailSender });
+
+    await worker.processBatch();
+
+    expect(repo.messages[0]?.lastError).toBe("resend responded 500");
+  });
+
+  it("never logs the recipient address, the provider body or the error message", async () => {
+    const error = providerError();
     const emailSender = { send: vi.fn().mockRejectedValue(error) };
     const log = makeLog();
     const { worker } = makeWorker({ emailSender, log });
@@ -267,14 +281,14 @@ describe("processBatch", () => {
       ...log.error.mock.calls,
     ];
     expect(logged.length).toBeGreaterThan(0);
-    for (const [payload, messageText] of logged) {
-      const serialized = JSON.stringify({ payload, messageText });
-      expect(serialized).not.toContain(RECIPIENT);
-      expect(serialized).not.toContain(error.body);
-      expect(Object.values(payload as Record<string, unknown>)).not.toContain(
-        error.message,
-      );
-    }
+    const serialized = JSON.stringify(logged);
+    expect(serialized).not.toContain(RECIPIENT);
+    // A token of the provider body that survives JSON escaping intact.
+    expect(serialized).not.toContain(BODY_TOKEN);
+    expect(serialized).not.toContain(error.message);
+    // What does reach the log, so the assertions above are not vacuous.
+    expect(serialized).toContain("providerStatus");
+    expect(serialized).toContain("outbox email delivery failed, retrying");
   });
 
   it("works without a logger", async () => {
