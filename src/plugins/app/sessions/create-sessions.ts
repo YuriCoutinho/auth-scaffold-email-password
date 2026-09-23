@@ -3,6 +3,7 @@ import { createListSessionsService } from "./list-sessions.js";
 import { createLogoutService } from "./logout.js";
 import { createLogoutAllService } from "./logout-all.js";
 import type { SessionRepository } from "./repository.js";
+import { createRevokeSessionService } from "./revoke-session.js";
 
 export interface SessionsDeps {
   repository: SessionRepository;
@@ -19,8 +20,9 @@ export function createSessions(deps: SessionsDeps) {
   const { logout } = createLogoutService(shared);
   const { logoutAll } = createLogoutAllService(shared);
   const { listSessions } = createListSessionsService(shared);
+  const { revokeSession } = createRevokeSessionService(shared);
 
-  return { logout, logoutAll, listSessions };
+  return { logout, logoutAll, listSessions, revokeSession };
 }
 
 export type Sessions = ReturnType<typeof createSessions>;
