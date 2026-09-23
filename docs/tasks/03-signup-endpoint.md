@@ -6,7 +6,7 @@ O cadastro é o endpoint mais exposto de qualquer aplicação, porque aceita req
 
 A solução para as duas é a mesma linha de raciocínio. Nada é criado em `auth_users` neste momento, apenas um cadastro pendente com um código de 6 dígitos, e a resposta é a mesma independentemente de o email já existir, já estar pendente ou ser novo.
 
-Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que entra logo em seguida através de um ponto de integração injetado.
+Esta etapa entrega `POST /auth/signup` completo, exceto a mensagem em si, que entra logo em seguida, gravada na mesma transação do cadastro e entregue fora da requisição.
 
 ## Requisitos técnicos
 
@@ -58,8 +58,8 @@ Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que 
 * A regra de negócio fica em `src/plugins/app/auth/signup.ts`, numa função `createSignupService(deps)` que recebe repositório e verificador de senha vazada como parâmetro. Ela devolve um resultado discriminado (`accepted`, `pwned-password`) em vez de lançar erro ou conhecer status HTTP, e por isso é testável sem subir Fastify
 * O plugin `src/plugins/app/auth/index.ts` monta esse service junto dos demais fluxos e decora a instância como `fastify.auth`. Ele declara `dependencies` para `database`, `email-outbox` e `pwned-password`, porque lê `fastify.db`, `fastify.emailOutbox` e `fastify.checkPwnedPassword` ao montar o módulo
 * A verificação de senha vazada é o plugin `src/plugins/app/pwned-password/`, cujo `index.ts` decora `fastify.checkPwnedPassword` com o verificador de `checker.ts`. Ela sai de `lib/` porque faz HTTP e precisa de comportamento diferente em teste e em produção, e `lib/` é só para função pura
-* O acesso ao banco passa pela interface `AuthRepository`. O service depende de um `Pick` dos quatro métodos que usa, o adaptador Drizzle em `auth/drizzle-repository.ts` implementa a interface inteira, e o adaptador em memória de `tests/helpers/auth/` substitui o banco nos testes de rota. Testar com um falso do ORM seria testar a implementação do repositório pelo lado errado
-* Tudo isso chega aos testes por `AppOptions`: `buildApp` recebe `authRepository`, `emailSender` e `checkPwnedPassword` opcionais, e cada plugin usa o que veio ou monta a implementação real a partir de `config`
+* O acesso ao banco passa pela interface `AuthRepository`. O service depende de um `Pick` dos três métodos que usa, o adaptador Drizzle em `auth/drizzle-repository.ts` implementa a interface inteira, e o adaptador em memória de `tests/helpers/auth/` substitui o banco nos testes de rota. Testar com um falso do ORM seria testar a implementação do repositório pelo lado errado
+* Tudo isso chega aos testes por `AppOptions`: `buildApp` recebe `authRepository`, `emailSender`, `emailOutboxRepository` e `checkPwnedPassword` opcionais, e cada plugin usa o que veio ou monta a implementação real a partir de `config`
 * O cadastro pendente e o email que o anuncia são gravados na mesma transação, dentro do repositório, então nunca existe código enfileirado sem cadastro nem cadastro cujo código nunca foi enfileirado. A entrega em si acontece fora da requisição, como a etapa 15 detalha
 
 ## Definition of done
