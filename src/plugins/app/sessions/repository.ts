@@ -23,6 +23,14 @@ export interface RevokeAllUserSessionsInput {
   exceptSessionId?: number;
 }
 
+export interface RevokeUserSessionInput {
+  publicId: string;
+  userId: number;
+  revokedAt: Date;
+  revokedReason: RevokedReason;
+  now: Date;
+}
+
 export interface ListActiveUserSessionsInput {
   userId: number;
   now: Date;
@@ -50,6 +58,9 @@ export interface SessionRepository {
   revokeAllUserSessions(
     input: RevokeAllUserSessionsInput,
   ): Promise<{ revokedCount: number }>;
+  revokeUserSessionByPublicId(
+    input: RevokeUserSessionInput,
+  ): Promise<{ revoked: boolean }>;
   listActiveUserSessions(
     input: ListActiveUserSessionsInput,
   ): Promise<ActiveSessionRecord[]>;
