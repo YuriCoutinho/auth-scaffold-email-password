@@ -69,6 +69,22 @@ export interface SessionRecord {
   revokedAt: Date | null;
 }
 
+export interface ListActiveUserSessionsInput {
+  userId: number;
+  now: Date;
+}
+
+// The internal id travels with the record so the service can match it against
+// the id the session hook published, without the public id ever being the key
+// anything is looked up by.
+export interface ActiveSessionRecord {
+  id: number;
+  publicId: string;
+  deviceLabel: string | null;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
 export interface AuthUserIdentity {
   publicId: string;
   email: string;
@@ -103,4 +119,7 @@ export interface AuthRepository {
   revokeAllUserSessions(
     input: RevokeAllUserSessionsInput,
   ): Promise<{ revokedCount: number }>;
+  listActiveUserSessions(
+    input: ListActiveUserSessionsInput,
+  ): Promise<ActiveSessionRecord[]>;
 }

@@ -107,7 +107,7 @@ describe("in-memory auth repository", () => {
       passwordHash: "hash",
     });
     expect(repo.pendingSignups.size).toBe(0);
-    expect(repo.sessions).toEqual([
+    expect(repo.sessions).toMatchObject([
       {
         id: 1,
         userId: 1,
@@ -131,7 +131,7 @@ describe("in-memory auth repository", () => {
       deviceLabel: null,
       expiresAt: NOW,
     });
-    expect(repo.sessions).toEqual([
+    expect(repo.sessions).toMatchObject([
       {
         id: 1,
         userId: 7,
@@ -387,5 +387,86 @@ describe("revokeAllUserSessions", () => {
     });
 
     expect(result).toEqual({ revokedCount: 1 });
+  });
+});
+
+describe("listActiveUserSessions", () => {
+  const NOW = new Date("2026-01-10T00:00:00.000Z");
+  const future = new Date("2026-02-10T00:00:00.000Z");
+
+  it("returns only the active sessions of the given user, newest first", async () => {
+    const repo = createInMemoryAuthRepository({
+      sessions: [
+        {
+          userId: 1,
+          tokenHash: "older",
+          publicId: "11111111-1111-4111-8111-111111111111",
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          expiresAt: future,
+        },
+        {
+          userId: 1,
+          tokenHash: "newer",
+          publicId: "22222222-2222-4222-8222-222222222222",
+          createdAt: new Date("2026-01-05T00:00:00.000Z"),
+          expiresAt: future,
+        },
+        {
+          userId: 1,
+          tokenHash: "revoked",
+          createdAt: new Date("2026-01-06T00:00:00.000Z"),
+          expiresAt: future,
+          revokedAt: NOW,
+        },
+        {
+          userId: 1,
+          tokenHash: "expired",
+          createdAt: new Date("2026-01-07T00:00:00.000Z"),
+          expiresAt: new Date("2026-01-09T00:00:00.000Z"),
+        },
+        {
+          userId: 2,
+          tokenHash: "other-user",
+          createdAt: new Date("2026-01-08T00:00:00.000Z"),
+          expiresAt: future,
+        },
+      ],
+    });
+
+    const result = await repo.listActiveUserSessions({ userId: 1, now: NOW });
+
+    expect(result.map((session) => session.publicId)).toEqual([
+      "22222222-2222-4222-8222-222222222222",
+      "11111111-1111-4111-8111-111111111111",
+    ]);
+  });
+
+  it("treats a session expiring exactly now as expired", async () => {
+    const repo = createInMemoryAuthRepository({
+      sessions: [{ userId: 1, tokenHash: "boundary", expiresAt: NOW }],
+    });
+
+    await expect(
+      repo.listActiveUserSessions({ userId: 1, now: NOW }),
+    ).resolves.toEqual([]);
+  });
+
+  it("gives every created session a public id", async () => {
+    const repo = createInMemoryAuthRepository();
+    await repo.createSession({
+      userId: 1,
+      tokenHash: "fresh",
+      deviceLabel: null,
+      expiresAt: future,
+    });
+
+    const [session] = await repo.listActiveUserSessions({
+      userId: 1,
+      now: NOW,
+    });
+
+    expect(session?.publicId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
   });
 });
