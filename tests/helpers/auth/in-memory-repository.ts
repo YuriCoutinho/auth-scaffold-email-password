@@ -249,7 +249,10 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
             session.revokedAt === null &&
             session.expiresAt.getTime() > input.now.getTime(),
         )
-        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .sort(
+          (a, b) =>
+            b.createdAt.getTime() - a.createdAt.getTime() || b.id - a.id,
+        )
         .map((session) => ({
           id: session.id,
           publicId: session.publicId,

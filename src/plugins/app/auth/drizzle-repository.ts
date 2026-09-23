@@ -214,7 +214,7 @@ export function createDrizzleAuthRepository(db: Database): AuthRepository {
             gt(sessions.expiresAt, input.now),
           ),
         )
-        .orderBy(desc(sessions.createdAt));
+        .orderBy(desc(sessions.createdAt), desc(sessions.id));
     },
   };
 }
