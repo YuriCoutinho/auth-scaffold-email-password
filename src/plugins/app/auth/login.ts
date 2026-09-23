@@ -8,11 +8,7 @@ import { hashSessionToken } from "../../../lib/token-hash.js";
 import type { AuthRepository } from "./repository.js";
 
 export type LoginResult =
-  | {
-      outcome: "authenticated";
-      sessionToken: string;
-      user: { publicId: string };
-    }
+  | { outcome: "authenticated"; sessionToken: string }
   | { outcome: "invalid" };
 
 interface LoginServiceDeps {
@@ -61,11 +57,7 @@ export function createLoginService(deps: LoginServiceDeps) {
       });
       deps.log?.info({ userId: user.id }, "login succeeded");
 
-      return {
-        outcome: "authenticated",
-        sessionToken,
-        user: { publicId: user.publicId },
-      };
+      return { outcome: "authenticated", sessionToken };
     },
   };
 }

@@ -88,8 +88,7 @@ describe("login", () => {
     expect(sessionToken).toMatch(/^[A-Za-z0-9_-]{43}$/); // 32 bytes base64url
     expect(result).toEqual({
       outcome: "authenticated",
-      sessionToken,
-      user: { publicId: USER.publicId },
+      sessionToken: expect.any(String),
     });
     expect(deps.repo.createSession).toHaveBeenCalledWith({
       userId: USER.id,

@@ -1,11 +1,8 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
+import { z } from "zod";
 import { SESSION_COOKIE } from "../../lib/cookies.js";
 import { deviceLabelFromUserAgent } from "../../lib/device-label.js";
-import {
-  loginBodySchema,
-  loginResponseSchema,
-  messageSchema,
-} from "../../schemas/auth.js";
+import { loginBodySchema, messageSchema } from "../../schemas/auth.js";
 
 const routes: FastifyPluginAsyncZod = async (app) => {
   app.post(
@@ -16,12 +13,13 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         summary: "Sign in with email and password",
         description:
           "Verifies the credentials of a confirmed account and starts a new " +
-          "session for this device. The error response is intentionally " +
-          "generic and identical whether the email is unknown or the " +
-          "password is wrong.",
+          "session for this device. The session lives only in the cookie: " +
+          "the signed-in user is read from GET /me. The error response is " +
+          "intentionally generic and identical whether the email is unknown " +
+          "or the password is wrong.",
         body: loginBodySchema,
         response: {
-          200: loginResponseSchema,
+          204: z.null(),
           400: messageSchema,
           401: messageSchema,
         },
@@ -46,7 +44,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         result.sessionToken,
         SESSION_COOKIE.options,
       );
-      return reply.code(200).send({ user: result.user });
+      return reply.code(204).send(null);
     },
   );
 };

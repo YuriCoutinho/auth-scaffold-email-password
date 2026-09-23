@@ -16,10 +16,6 @@ export const loginBodySchema = z.object({
   password: z.string().min(1).max(128),
 });
 
-export const loginResponseSchema = z.object({
-  user: z.object({ publicId: z.uuid() }),
-});
-
 export const currentUserResponseSchema = z.object({
   user: z.object({ publicId: z.uuid(), email: z.email() }),
 });

@@ -21,7 +21,7 @@ function repoWithUser() {
 }
 
 describe("POST /auth/login", () => {
-  it("returns 200 with only public user data and sets the session cookie", async () => {
+  it("returns 204 with only the session cookie", async () => {
     const authRepository = repoWithUser();
     const app = buildApp(makeAppOptions({ authRepository }));
     const response = await app.inject({
@@ -31,8 +31,8 @@ describe("POST /auth/login", () => {
       headers: { "user-agent": "Mozilla/5.0" },
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ user: { publicId: PUBLIC_ID } });
+    expect(response.statusCode).toBe(204);
+    expect(response.body).toBe("");
 
     const cookie = response.cookies.find((c) => c.name === "session");
     expect(cookie).toMatchObject({

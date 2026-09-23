@@ -44,15 +44,13 @@ async function post(options: {
 }
 
 describe("POST /auth/verify-code", () => {
-  it("responds 200, sets the session cookie and clears the signup cookie on the right code", async () => {
+  it("responds 204, sets the session cookie and clears the signup cookie on the right code", async () => {
     const { response, authRepository } = await post({
       pendingRow: makePendingRow(),
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      message: "Email confirmed. You are now signed in.",
-    });
+    expect(response.statusCode).toBe(204);
+    expect(response.body).toBe("");
 
     const sessionCookie = response.cookies.find((c) => c.name === "session");
     expect(sessionCookie).toMatchObject({
