@@ -28,3 +28,4 @@ A ordem numérica é a ordem em que vale a pena ler, e cada documento descreve o
 | 10 | [Logout endpoint](10-logout-endpoint.md) | `DELETE /sessions/current`, encerramento idempotente da sessão do dispositivo atual, com a fatia de sessão ganhando porta, adaptador e o decorator `fastify.sessions` |
 | 11 | [Logout all endpoint](11-logout-all-endpoint.md) | `DELETE /sessions`, revogação em lote das sessões do usuário, com a sessão atual sempre preservada e o hook publicando a sessão do request |
 | 12 | [Sessions list endpoint](12-sessions-list-endpoint.md) | `GET /sessions`, lista das sessões ativas do usuário, com id público por sessão e a sessão atual sinalizada, para uma tela de dispositivos conectados |
+| 13 | [Revoke session endpoint](13-revoke-session-endpoint.md) | `DELETE /sessions/:sessionId`, revogação de uma sessão escolhida pelo id público, com resposta uniforme e autorização dentro da própria consulta |

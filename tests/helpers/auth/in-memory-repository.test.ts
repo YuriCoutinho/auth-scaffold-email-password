@@ -492,3 +492,105 @@ describe("in-memory session repository", () => {
     expect(session).toMatchObject({ userId: 7, revokedAt: null });
   });
 });
+
+describe("revokeUserSessionByPublicId", () => {
+  const REVOKE_NOW = new Date("2026-02-01T00:00:00.000Z");
+  const FUTURE = new Date("2026-03-01T00:00:00.000Z");
+  const PUBLIC_ID = "33333333-3333-4333-8333-333333333333";
+
+  function repoWith(
+    overrides: {
+      userId?: number;
+      revokedAt?: Date | null;
+      expiresAt?: Date;
+    } = {},
+  ) {
+    return createInMemoryAuthRepository({
+      sessions: [
+        {
+          userId: overrides.userId ?? 7,
+          tokenHash: "hash",
+          publicId: PUBLIC_ID,
+          expiresAt: overrides.expiresAt ?? FUTURE,
+          revokedAt: overrides.revokedAt ?? null,
+        },
+      ],
+    });
+  }
+
+  it("revokes the session and reports it", async () => {
+    const repo = repoWith();
+
+    const result = await repo.revokeUserSessionByPublicId({
+      publicId: PUBLIC_ID,
+      userId: 7,
+      revokedAt: REVOKE_NOW,
+      revokedReason: "session_revoked",
+      now: REVOKE_NOW,
+    });
+
+    expect(result).toEqual({ revoked: true });
+    expect(repo.sessions[0]?.revokedAt).toEqual(REVOKE_NOW);
+    expect(repo.sessions[0]?.revokedReason).toBe("session_revoked");
+  });
+
+  it("never revokes a session owned by another user", async () => {
+    const repo = repoWith({ userId: 8 });
+
+    const result = await repo.revokeUserSessionByPublicId({
+      publicId: PUBLIC_ID,
+      userId: 7,
+      revokedAt: REVOKE_NOW,
+      revokedReason: "session_revoked",
+      now: REVOKE_NOW,
+    });
+
+    expect(result).toEqual({ revoked: false });
+    expect(repo.sessions[0]?.revokedAt).toBeNull();
+  });
+
+  it("reports nothing revoked for an unknown public id", async () => {
+    const repo = repoWith();
+
+    const result = await repo.revokeUserSessionByPublicId({
+      publicId: "44444444-4444-4444-8444-444444444444",
+      userId: 7,
+      revokedAt: REVOKE_NOW,
+      revokedReason: "session_revoked",
+      now: REVOKE_NOW,
+    });
+
+    expect(result).toEqual({ revoked: false });
+  });
+
+  it("keeps the first revocation date when the session was already revoked", async () => {
+    const earlier = new Date("2026-01-01T00:00:00.000Z");
+    const repo = repoWith({ revokedAt: earlier });
+
+    const result = await repo.revokeUserSessionByPublicId({
+      publicId: PUBLIC_ID,
+      userId: 7,
+      revokedAt: REVOKE_NOW,
+      revokedReason: "session_revoked",
+      now: REVOKE_NOW,
+    });
+
+    expect(result).toEqual({ revoked: false });
+    expect(repo.sessions[0]?.revokedAt).toEqual(earlier);
+  });
+
+  it("leaves an expired session untouched", async () => {
+    const repo = repoWith({ expiresAt: new Date("2026-01-15T00:00:00.000Z") });
+
+    const result = await repo.revokeUserSessionByPublicId({
+      publicId: PUBLIC_ID,
+      userId: 7,
+      revokedAt: REVOKE_NOW,
+      revokedReason: "session_revoked",
+      now: REVOKE_NOW,
+    });
+
+    expect(result).toEqual({ revoked: false });
+    expect(repo.sessions[0]?.revokedAt).toBeNull();
+  });
+});

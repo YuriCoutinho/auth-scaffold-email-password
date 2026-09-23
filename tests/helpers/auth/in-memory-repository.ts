@@ -244,6 +244,24 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       return { revokedCount: targets.length };
     },
 
+    async revokeUserSessionByPublicId(input) {
+      const session = sessions.find(
+        (s) =>
+          s.publicId === input.publicId &&
+          s.userId === input.userId &&
+          s.revokedAt === null &&
+          s.expiresAt.getTime() > input.now.getTime(),
+      );
+
+      if (!session) {
+        return { revoked: false };
+      }
+
+      session.revokedAt = input.revokedAt;
+      session.revokedReason = input.revokedReason;
+      return { revoked: true };
+    },
+
     async listActiveUserSessions(input) {
       return sessions
         .filter(

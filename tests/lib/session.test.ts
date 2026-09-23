@@ -21,10 +21,18 @@ describe.each([
 
 describe("REVOKED_REASONS", () => {
   it("lists the reasons a session can be actively revoked", () => {
-    expect(REVOKED_REASONS).toEqual(["user_logout", "logout_all"]);
+    expect(REVOKED_REASONS).toEqual([
+      "user_logout",
+      "logout_all",
+      "session_revoked",
+    ]);
   });
 
   it("accepts logout_all as a revocation reason", () => {
     expect(REVOKED_REASONS).toContain("logout_all");
+  });
+
+  it("accepts session_revoked as a revocation reason", () => {
+    expect(REVOKED_REASONS).toContain("session_revoked");
   });
 });
