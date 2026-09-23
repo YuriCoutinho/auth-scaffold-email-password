@@ -23,10 +23,20 @@ function validSession(): SessionRecord {
 }
 
 describe("authenticate", () => {
-  it("returns the user id for an active session", async () => {
+  it("returns the user id and the session id for an active session", async () => {
     const deps = makeDeps(validSession());
     const result = await createAuthenticateService(deps).authenticate(TOKEN);
-    expect(result).toEqual({ outcome: "authenticated", user: { id: 7 } });
+    expect(result).toEqual({
+      outcome: "authenticated",
+      user: { id: 7 },
+      session: { id: 1 },
+    });
+  });
+
+  it("reports the session that the token resolved to, not the first one", async () => {
+    const deps = makeDeps({ ...validSession(), id: 42 });
+    const result = await createAuthenticateService(deps).authenticate(TOKEN);
+    expect(result).toMatchObject({ session: { id: 42 } });
   });
 
   it("looks the session up by the hash of the token, never by the token", async () => {

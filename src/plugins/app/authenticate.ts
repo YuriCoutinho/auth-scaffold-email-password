@@ -8,6 +8,7 @@ declare module "fastify" {
   }
   interface FastifyRequest {
     user: { id: number } | null;
+    session: { id: number } | null;
   }
 }
 
@@ -17,6 +18,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
   // Fastify asks for the request shape to be declared up front instead of being
   // grown per request.
   fastify.decorateRequest("user", null);
+  // The hook already resolves the session row to find the user, so it publishes
+  // both halves instead of discarding one and making routes derive it again.
+  fastify.decorateRequest("session", null);
 
   fastify.decorate("authenticate", async (request, reply) => {
     const result = await fastify.auth.authenticate(
@@ -28,6 +32,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     }
 
     request.user = result.user;
+    request.session = result.session;
   });
 };
 

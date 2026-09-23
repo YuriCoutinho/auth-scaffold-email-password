@@ -2,7 +2,7 @@ import { hashSessionToken } from "../../../lib/token-hash.js";
 import type { AuthRepository } from "./repository.js";
 
 export type AuthenticateResult =
-  | { outcome: "authenticated"; user: { id: number } }
+  | { outcome: "authenticated"; user: { id: number }; session: { id: number } }
   | { outcome: "invalid" };
 
 interface AuthenticateServiceDeps {
@@ -31,7 +31,11 @@ export function createAuthenticateService(deps: AuthenticateServiceDeps) {
         return { outcome: "invalid" };
       }
 
-      return { outcome: "authenticated", user: { id: session.userId } };
+      return {
+        outcome: "authenticated",
+        user: { id: session.userId },
+        session: { id: session.id },
+      };
     },
   };
 }
