@@ -11,3 +11,5 @@ export const sessionListResponseSchema = z.object({
     }),
   ),
 });
+
+export const sessionParamsSchema = z.object({ sessionId: z.uuid() });
