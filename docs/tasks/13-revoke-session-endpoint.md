@@ -46,9 +46,9 @@ Como consequência, o cookie nunca é tocado por esta rota, e um teste prova que
 
 ### O id malformado recebe `400`, e isso não vaza nada
 
-O caminho é validado com `sessionParamsSchema`, que é `z.object({ sessionId: z.uuid() })`, em `src/schemas/sessions.ts`. Um `:sessionId` que não é uuid recebe `400` antes de qualquer consulta ao banco.
+O caminho é validado com `sessionParamsSchema`, que é `z.object({ sessionId: z.uuid() })`, em `src/schemas/sessions.ts`. Um `:sessionId` que não é uuid recebe `400` sem que nenhuma consulta pela sessão alvo aconteça. A validação do Zod roda depois do hook `authenticate`, que é `onRequest` e já consultou o banco pelo hash do cookie para provar quem está chamando, então o que o `400` garante não é que o banco ficou intocado, e sim que o identificador do caminho nunca foi procurado nele.
 
-Isso parece contradizer a resposta uniforme, e não contradiz, porque as duas perguntas são diferentes. O `204` esconde se um identificador bem formado corresponde a alguma sessão, que é informação sobre dados. O `400` diz que a requisição não é sequer uma pergunta válida, que é informação sobre a forma, e vale para qualquer string em qualquer instalação do projeto. Engolir esse caso com um `204` faria um bug de cliente, como enviar `undefined` no lugar do id, passar despercebido para sempre.
+Isso parece contradizer a resposta uniforme, e não contradiz, porque as duas perguntas são diferentes. O `204` esconde se um identificador bem formado corresponde a alguma sessão, que é informação sobre dados. O `400` diz que a requisição não é sequer uma pergunta válida, que é informação sobre a forma da string, e a mesma string recebe a mesma recusa em qualquer instalação do projeto, independentemente do que exista no banco. É por isso que ele não vira oráculo. Engolir esse caso com um `204` faria um bug de cliente, como enviar `undefined` no lugar do id, passar despercebido para sempre.
 
 A validação também é o que garante que `DELETE /sessions/current` e `DELETE /sessions/:sessionId` não colidam. O Fastify casa rota estática antes de paramétrica, então `current` chega sempre ao seu próprio handler, e ainda que a ordem mudasse, a string `current` nunca seria aceita como uuid.
 
@@ -61,7 +61,7 @@ A informação não se perde, ela muda de destino. Quando houve revogação de f
 ## Definition of done
 
 * `DELETE /sessions/:sessionId` respondendo `204` sem corpo, com o contrato publicado no OpenAPI sob a tag `sessions`
-* `:sessionId` validado como uuid por schema Zod, respondendo `400` antes de qualquer consulta ao banco
+* `:sessionId` validado como uuid por schema Zod, respondendo `400` sem que a sessão alvo chegue a ser procurada no banco, com o contrato do erro declarado na rota
 * Rota atrás do hook `authenticate`, respondendo o `401` genérico com `{ "message": "Unauthorized." }` quando o cookie está ausente, desconhecido, revogado ou expirado
 * `revokeUserSessionByPublicId` declarado no `SessionRepository`, implementado no adaptador Drizzle com as quatro condições no mesmo `WHERE` e espelhado no adaptador em memória
 * `session_revoked` acrescentado a `REVOKED_REASONS` e gravado em `revoked_reason` na revogação bem-sucedida, sem migration
