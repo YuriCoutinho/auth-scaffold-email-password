@@ -4,6 +4,9 @@ import { EmailProviderError } from "../../../../src/plugins/app/email/sender.js"
 import {
   createEmailOutboxWorker,
   defaultPolicyFor,
+  FAILED_RETENTION_SECONDS,
+  PURGE_INTERVAL_SECONDS,
+  SENT_RETENTION_SECONDS,
 } from "../../../../src/plugins/app/email-outbox/worker.js";
 import { createInMemoryEmailOutboxRepository } from "../../../helpers/email-outbox/in-memory-repository.js";
 
@@ -373,6 +376,78 @@ describe("retention", () => {
 
     // Row 5 was due, so it was delivered by this very batch, not purged.
     expect(repo.messages.map((row) => row.id)).toEqual([2, 4, 5]);
+  });
+
+  it("keeps the retention windows and the sweep pace explicit", () => {
+    // Policy numbers, like the list of revocation reasons: changing one is a
+    // decision, not a refactor, so the value itself is pinned here.
+    expect(SENT_RETENTION_SECONDS).toBe(60 * 60);
+    expect(FAILED_RETENTION_SECONDS).toBe(30 * 24 * 60 * 60);
+    expect(PURGE_INTERVAL_SECONDS).toBe(5 * 60);
+  });
+
+  it("measures each window from the retention it declares", async () => {
+    const purge = vi.fn().mockResolvedValue({ deleted: 0 });
+    const { repo } = makeWorker({}, []);
+    const worker = createEmailOutboxWorker({
+      repo: { ...repo, purge },
+      emailSender: new FakeEmailSender(),
+      policyFor: defaultPolicyFor,
+      now: () => NOW,
+    });
+
+    await worker.processBatch();
+
+    expect(purge).toHaveBeenCalledWith({
+      sentBefore: new Date(NOW.getTime() - SENT_RETENTION_SECONDS * 1000),
+      failedBefore: new Date(NOW.getTime() - FAILED_RETENTION_SECONDS * 1000),
+    });
+  });
+
+  it("sweeps once per interval instead of once per cycle", async () => {
+    const purge = vi.fn().mockResolvedValue({ deleted: 0 });
+    const { repo } = makeWorker({}, []);
+    let clock = NOW;
+    const worker = createEmailOutboxWorker({
+      repo: { ...repo, purge },
+      emailSender: new FakeEmailSender(),
+      policyFor: defaultPolicyFor,
+      now: () => clock,
+    });
+
+    await worker.processBatch();
+    await worker.processBatch();
+    expect(purge).toHaveBeenCalledOnce();
+
+    clock = new Date(NOW.getTime() + PURGE_INTERVAL_SECONDS * 1000 - 1);
+    await worker.processBatch();
+    expect(purge).toHaveBeenCalledOnce();
+
+    clock = new Date(NOW.getTime() + PURGE_INTERVAL_SECONDS * 1000);
+    await worker.processBatch();
+    expect(purge).toHaveBeenCalledTimes(2);
+  });
+
+  it("logs how many rows went away, and says nothing when none did", async () => {
+    const { repo } = makeWorker({}, []);
+    const log = makeLog();
+    const build = (deleted: number) =>
+      createEmailOutboxWorker({
+        repo: { ...repo, purge: vi.fn().mockResolvedValue({ deleted }) },
+        emailSender: new FakeEmailSender(),
+        policyFor: defaultPolicyFor,
+        log,
+        now: () => NOW,
+      });
+
+    await build(0).processBatch();
+    expect(log.info).not.toHaveBeenCalled();
+
+    await build(3).processBatch();
+    expect(log.info).toHaveBeenCalledExactlyOnceWith(
+      { deleted: 3 },
+      "outbox rows purged",
+    );
   });
 
   it("delivers the batch even when the purge fails", async () => {

@@ -41,12 +41,18 @@ const FALLBACK_SCHEDULE = [30, 120, 600];
 // carries the confirmation code in clear text. The code itself dies in 15
 // minutes, so an hour is already generous room to inspect a recent send in
 // development, and nothing past that window has any use.
-const SENT_RETENTION_SECONDS = 60 * 60;
+export const SENT_RETENTION_SECONDS = 60 * 60;
 
 // An abandoned row keeps no message (giveUp clears it) and is kept only so a
 // delivery failure can be investigated, which is a matter of weeks, not of
 // minutes.
-const FAILED_RETENTION_SECONDS = 30 * 24 * 60 * 60;
+export const FAILED_RETENTION_SECONDS = 30 * 24 * 60 * 60;
+
+// The shortest window this enforces is an hour, so sweeping every five minutes
+// keeps a row past its welcome by at most five extra minutes while running the
+// delete a couple of hundred times a day instead of a couple of hundred
+// thousand. Delivery polls every second and has nothing to do with this pace.
+export const PURGE_INTERVAL_SECONDS = 5 * 60;
 
 export function defaultPolicyFor(type: string): RetryPolicy {
   const schedule = RETRY_SCHEDULES[type] ?? FALLBACK_SCHEDULE;
@@ -148,13 +154,30 @@ export function createEmailOutboxWorker(deps: EmailOutboxWorkerDeps) {
   // Runs on the same schedule as the batch, right after it, so no second timer
   // exists and the delete never competes with a claim. A failure here is
   // bookkeeping like any other: it is logged and the cycle carries on.
+  let lastPurgeAt: Date | undefined;
+
   const purge = async () => {
     const at = now();
+    // Its own pace inside the delivery cycle, so no second scheduler exists and
+    // a sweep that keeps hours of data is not repeated every second.
+    if (
+      lastPurgeAt &&
+      at.getTime() - lastPurgeAt.getTime() < PURGE_INTERVAL_SECONDS * 1000
+    ) {
+      return;
+    }
+    // Moved before the attempt, so a failing delete retries at the sweep pace
+    // instead of on every cycle.
+    lastPurgeAt = at;
+
     try {
-      await deps.repo.purge({
+      const { deleted } = await deps.repo.purge({
         sentBefore: new Date(at.getTime() - SENT_RETENTION_SECONDS * 1000),
         failedBefore: new Date(at.getTime() - FAILED_RETENTION_SECONDS * 1000),
       });
+      if (deleted > 0) {
+        deps.log?.info({ deleted }, "outbox rows purged");
+      }
     } catch (error) {
       deps.log?.error(
         { errorName: error instanceof Error ? error.name : "unknown" },
