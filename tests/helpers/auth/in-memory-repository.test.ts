@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createInMemoryAuthRepository } from "./in-memory-repository.js";
 
 const NOW = new Date("2026-09-20T12:00:00Z");
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function pendingInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -107,12 +108,14 @@ describe("in-memory auth repository", () => {
       passwordHash: "hash",
     });
     expect(repo.pendingSignups.size).toBe(0);
-    expect(repo.sessions).toMatchObject([
+    expect(repo.sessions).toEqual([
       {
         id: 1,
+        publicId: expect.stringMatching(UUID),
         userId: 1,
         tokenHash: "session-hash",
         deviceLabel: "Mozilla/5.0",
+        createdAt: expect.any(Date),
         expiresAt: new Date(NOW.getTime() + 1_000),
         revokedAt: null,
         revokedReason: null,
@@ -131,12 +134,14 @@ describe("in-memory auth repository", () => {
       deviceLabel: null,
       expiresAt: NOW,
     });
-    expect(repo.sessions).toMatchObject([
+    expect(repo.sessions).toEqual([
       {
         id: 1,
+        publicId: expect.stringMatching(UUID),
         userId: 7,
         tokenHash: "t",
         deviceLabel: null,
+        createdAt: expect.any(Date),
         expiresAt: NOW,
         revokedAt: null,
         revokedReason: null,
@@ -465,8 +470,6 @@ describe("listActiveUserSessions", () => {
       now: NOW,
     });
 
-    expect(session?.publicId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-    );
+    expect(session?.publicId).toMatch(UUID);
   });
 });

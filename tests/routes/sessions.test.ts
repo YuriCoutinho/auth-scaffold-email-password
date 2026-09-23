@@ -114,6 +114,21 @@ describe("GET /sessions", () => {
     await app.close();
   });
 
+  it("returns the same generic 401 for an unknown session cookie", async () => {
+    const app = buildApp(
+      makeAppOptions({ authRepository: repoWithTwoSessions() }),
+    );
+    const response = await app.inject({
+      method: "GET",
+      url: "/sessions",
+      cookies: { session: "a-token-no-session-was-ever-created-for" },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ message: "Unauthorized." });
+    await app.close();
+  });
+
   it("returns the same generic 401 for a revoked session", async () => {
     const authRepository = createInMemoryAuthRepository({
       authUsers: [{ id: 7, email: "foo@gmail.com" }],

@@ -35,6 +35,9 @@ describe("createAuth", () => {
         includeCurrentSession: false,
       }),
     ).toEqual({ revokedCount: 0, currentSessionRevoked: false });
+    expect(
+      await auth.listSessions({ userId: 999, currentSessionId: 1 }),
+    ).toEqual([]);
     expect(await auth.currentUser(999)).toBeUndefined();
   });
 
