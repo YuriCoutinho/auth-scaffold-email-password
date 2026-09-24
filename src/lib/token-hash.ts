@@ -16,3 +16,9 @@ export function hashOtpCode(code: string): string {
 export function hashSessionToken(token: string): string {
   return sha256Hex(token);
 }
+
+// The throttle table keys its rows by this rather than by the address, so a
+// table about abuse never holds an email at rest.
+export function hashThrottleKey(value: string): string {
+  return sha256Hex(value);
+}
