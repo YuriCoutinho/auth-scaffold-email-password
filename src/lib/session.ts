@@ -8,6 +8,7 @@ export const PASSWORD_RESET_TTL_SECONDS = 15 * 60;
 // and the password reset, which is its own resend.
 export const RESEND_COOLDOWN_SECONDS = 60;
 export const MAX_CODE_SEND_COUNT = 5;
+export const MAX_CODE_ATTEMPTS = 5;
 
 export function generateSessionToken(): string {
   return randomBytes(32).toString("base64url");

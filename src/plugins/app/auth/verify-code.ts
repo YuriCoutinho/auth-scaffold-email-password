@@ -1,12 +1,11 @@
 import type { FastifyBaseLogger } from "fastify";
 import {
   generateSessionToken,
+  MAX_CODE_ATTEMPTS,
   SESSION_TTL_SECONDS,
 } from "../../../lib/session.js";
 import { hashOtpCode, hashSessionToken } from "../../../lib/token-hash.js";
 import type { AuthRepository } from "./repository.js";
-
-export const MAX_CODE_ATTEMPTS = 5;
 
 export type VerifyCodeResult =
   | { outcome: "verified"; sessionToken: string }

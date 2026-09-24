@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { hashPassword, verifyPassword } from "../../../lib/password.js";
 import {
   generateSessionToken,
+  MAX_CODE_ATTEMPTS,
   SESSION_TTL_SECONDS,
 } from "../../../lib/session.js";
 import { hashOtpCode, hashSessionToken } from "../../../lib/token-hash.js";
@@ -9,7 +10,6 @@ import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import type { AuthRepository } from "./repository.js";
 import { sendPasswordChanged } from "./send-password-changed.js";
-import { MAX_CODE_ATTEMPTS } from "./verify-code.js";
 
 export type ResetPasswordResult =
   | { outcome: "reset"; sessionToken: string }
