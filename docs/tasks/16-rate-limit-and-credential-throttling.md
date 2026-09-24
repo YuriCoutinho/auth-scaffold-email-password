@@ -46,7 +46,7 @@ Em ambos os serviços, a checagem do bloqueio acontece antes da chamada a `verif
 
 No `change-password` a leitura do usuário precisa vir primeiro, porque é dela que sai a chave, mas a checagem se encaixa entre essa leitura e a verificação da senha. A ordem é frágil a refatorações, já que mover a checagem para depois da verificação deixa todos os outros testes passando enquanto remove a proteção em silêncio, e por isso os dois serviços têm um teste que afirma que `verifyPassword` não foi chamado num caminho bloqueado.
 
-Uma autenticação bem-sucedida apaga a linha. O que se está contando é uma rajada de falhas, e um acerto no meio dela encerra a rajada.
+Uma autenticação bem-sucedida apaga a linha. O que se está contando é uma rajada de falhas, e um acerto no meio dela encerra a rajada. Uma recuperação de senha concluída apaga a linha pelo mesmo motivo, e `POST /auth/reset-password` chama o `reset` no caminho de sucesso, logo depois de gravar a senha nova. Provar posse do email vale mais que a contagem de falhas, porque quem recebeu o código na caixa de entrada demonstrou algo mais forte do que acertar a senha. Sem essa limpeza o efeito cairia justamente sobre o usuário legítimo: ele erra a senha quatro vezes, toma o bloqueio, pede a recuperação, define a senha nova e mesmo assim continua trancado do lado de fora por um contador que já perdeu o sentido.
 
 ### O bloqueio responde `429` com `Retry-After`, e não o `401` genérico
 
@@ -87,6 +87,7 @@ A decisão tem o outro lado, e ele importa tanto quanto. Num deploy que já este
 * Adaptador em memória em `tests/helpers/credential-throttle/in-memory-repository.ts` usado por todo teste que toca o bloqueio
 * Serviço coberto por teste em `check`, `registerFailure` e `reset`, incluindo o `Retry-After` nunca abaixo de um segundo, o recomeço da contagem quando a última falha é mais antiga que o teto e a linha chaveada por hash em vez de endereço
 * `login` e `changePassword` devolvendo `{ outcome: "throttled", retryAfterSeconds }`, com teste provando que `verifyPassword` não é chamado no caminho bloqueado e que as duas rotas registram a falha sob a mesma chave
+* `resetPassword` apagando a linha do bloqueio no caminho de sucesso, com a mesma chave que `login` e `changePassword` usam e sem leitura nova ao banco, coberto por teste que prova a limpeza no sucesso e a ausência dela quando o código está errado ou a recuperação expirou
 * `POST /auth/login` e `POST /auth/change-password` respondendo `429` com `{ "message": "Too many attempts. Try again later." }` e cabeçalho `Retry-After` em segundos, com o `429` publicado no OpenAPI das duas rotas
 * Teste de rota provando que um email sem conta é bloqueado do mesmo jeito que um email existente
 * `@fastify/rate-limit` registrado globalmente em `src/plugins/external/rate-limit.ts`, com store em memória e teto geral por minuto
