@@ -36,6 +36,7 @@ function makeDeps(pending: ReturnType<typeof makePending> | undefined) {
         .fn()
         .mockResolvedValue({ id: 7, publicId: "pub-7" }),
     },
+    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     now: () => NOW,
   };
 }
@@ -107,5 +108,23 @@ describe("verifyCode", () => {
     });
     expect(input.sessionTokenHash).not.toBe(sessionToken);
     expect(deps.repo.incrementCodeAttempts).not.toHaveBeenCalled();
+  });
+  it("logs an unrecognized signup session token", async () => {
+    const deps = makeDeps(undefined);
+    await createVerifyCodeService(deps).verifyCode(TOKEN, CODE, null);
+    expect(deps.log.info).toHaveBeenCalledWith(
+      "signup session token not recognized",
+    );
+  });
+
+  it("logs the expired pending signup by id", async () => {
+    const deps = makeDeps(
+      makePending({ expiresAt: new Date("2026-09-21T11:59:59Z") }),
+    );
+    await createVerifyCodeService(deps).verifyCode(TOKEN, CODE, null);
+    expect(deps.log.info).toHaveBeenCalledWith(
+      { pendingSignupId: 1 },
+      "pending signup expired",
+    );
   });
 });

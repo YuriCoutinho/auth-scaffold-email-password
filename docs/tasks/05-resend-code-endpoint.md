@@ -52,6 +52,7 @@ Existe uma exceção ao cooldown que vem da etapa anterior: quando o contador de
 ### Logs
 
 * Apenas identificador do cadastro pendente e identificador da mensagem no provedor
+* Token desconhecido e cadastro expirado respondem o mesmo 401, mas são logados separadamente, um sem identificador nenhum e o outro com o identificador do cadastro. A resposta continua indistinguível para quem chamou, e a investigação deixa de confundir sessão de cadastro morta com abuso
 * O código nunca aparece em log e nunca é gravado em claro
 * Erro de provedor é logado com status e corpo da resposta, que é o suficiente para diagnosticar sem registrar o conteúdo enviado
 

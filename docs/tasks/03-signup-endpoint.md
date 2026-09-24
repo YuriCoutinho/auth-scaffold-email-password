@@ -53,6 +53,12 @@ Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que 
 * A resposta é byte a byte idêntica nos três caminhos possíveis, incluindo a presença do cookie. Quando o email pertence a uma conta já confirmada, nenhum código é gerado e o cookie recebe um token descartável, justamente para que a resposta não se diferencie. A indistinguibilidade cobre também o valor do cookie, e é por isso que nenhum dos três caminhos pode devolver um valor que se repita entre chamadas: um valor estável para um endereço e variável para outro responderia, em duas requisições, quais endereços já têm conta
 * O `Path=/auth` mantém esse cookie restrito ao fluxo de cadastro, sem acompanhar requisições ao resto da API
 
+### Logs
+
+* A criação do cadastro pendente vira log de informação com o identificador da linha, e só com ele. O email não entra, porque log de aplicação não carrega dado pessoal, e o código muito menos, já que ele nem existe em claro fora do instante da geração
+* O identificador é o que costura os eventos seguintes do mesmo cadastro, envio do email, reenvio, tentativa falha e promoção, numa linha do tempo única sem precisar do endereço
+* Os caminhos que não criam nada, conta já confirmada e pendente ainda válido, não produzem log próprio. Registrar que uma conta já existia seria escrever num arquivo justamente a informação que a resposta se recusa a dar
+
 ### Organização do código
 
 * A rota fica em `src/routes/auth/signup.ts` e cuida apenas de HTTP: valida o body com o schema de `src/schemas/auth.ts`, chama `app.auth.signup` e traduz o resultado em status, mensagem e cookie
@@ -70,4 +76,5 @@ Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que 
 * Request e response tipados e validados pelo mesmo schema Zod
 * Testes unitários cobrindo validação de email e senha, normalização, rotação do token no pendente válido sem criar nem reenviar nada, substituição do pendente expirado, resposta genérica nos três caminhos, ordem de gravar antes de enviar e rejeição de senha vazada
 * Teste do verificador de senha vazada cobrindo ocorrência encontrada, ausência e indisponibilidade do serviço com fail open
+* Teste conferindo que a criação do cadastro pendente é logada com o identificador e sem o email, e que os caminhos que nada criam não produzem esse log
 * Teste de service com o repositório em memória e teste de rota com `app.inject`, e nenhum dos dois toca banco ou rede reais, porque os colaboradores chegam por `AppOptions`

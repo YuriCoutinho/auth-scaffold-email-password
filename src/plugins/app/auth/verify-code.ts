@@ -38,7 +38,17 @@ export function createVerifyCodeService(deps: VerifyCodeServiceDeps) {
       const currentTime = now();
       const pending =
         await deps.repo.findPendingSignupBySessionToken(sessionToken);
-      if (!pending || pending.expiresAt <= currentTime) {
+      // The response stays the same 401 for both cases; only the log tells
+      // them apart, so a dead signup session is not read as a wrong code.
+      if (!pending) {
+        deps.log?.info("signup session token not recognized");
+        return { outcome: "invalid" };
+      }
+      if (pending.expiresAt <= currentTime) {
+        deps.log?.info(
+          { pendingSignupId: pending.id },
+          "pending signup expired",
+        );
         return { outcome: "invalid" };
       }
 

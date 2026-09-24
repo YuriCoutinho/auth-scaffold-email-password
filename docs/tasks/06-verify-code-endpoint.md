@@ -22,6 +22,8 @@ A resposta para isso é uma transação só, com a sessão dentro dela. Ou tudo 
 
 Todos os casos de falha respondem o mesmo `401` com a mesma mensagem: cookie ausente, token desconhecido, cadastro expirado, código errado e código invalidado por excesso de tentativas. Mensagens diferentes para cada caso pareceriam mais gentis, mas entregariam um oráculo para descobrir quais cadastros existem e em que estado estão.
 
+A distinção que a resposta não faz fica no log, que é interno e não alimenta oráculo nenhum: token desconhecido e cadastro expirado produzem registros diferentes, o segundo com o identificador do cadastro, de modo que uma sessão de cadastro morta não seja lida depois como tentativa de adivinhar código.
+
 ### Limite de tentativas
 
 * Máximo de 5 tentativas erradas por código
