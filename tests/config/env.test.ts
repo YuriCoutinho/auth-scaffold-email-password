@@ -7,6 +7,12 @@ const baseEnv = {
   EMAIL_DRIVER: "fake",
 };
 
+const productionEnv = {
+  ...baseEnv,
+  NODE_ENV: "production",
+  PORT: "3000",
+};
+
 describe("parseEnv", () => {
   it("accepts a valid development env and defaults PORT to 3000", () => {
     const env = parseEnv({ ...baseEnv });
@@ -43,7 +49,11 @@ describe("parseEnv", () => {
   });
 
   it("accepts production env with a valid PORT", () => {
-    const env = parseEnv({ ...baseEnv, NODE_ENV: "production", PORT: "8080" });
+    const env = parseEnv({
+      ...productionEnv,
+      PORT: "8080",
+      FRONTEND_ORIGIN: "https://app.example.com",
+    });
     expect(env.PORT).toBe(8080);
     expect(env.NODE_ENV).toBe("production");
   });
@@ -118,5 +128,58 @@ describe("parseEnv", () => {
     expect(env.EMAIL_DRIVER).toBe("resend");
     expect(env.EMAIL_FROM).toBe("App <a@b.com>");
     expect(env.RESEND_API_KEY).toBe("re_test");
+  });
+
+  it("accepts an absolute http origin", () => {
+    const env = parseEnv({
+      ...baseEnv,
+      FRONTEND_ORIGIN: "http://localhost:5173",
+    });
+    expect(env.FRONTEND_ORIGIN).toBe("http://localhost:5173");
+  });
+
+  it("leaves the frontend origin optional outside production", () => {
+    const env = parseEnv(baseEnv);
+    expect(env.FRONTEND_ORIGIN).toBeUndefined();
+  });
+
+  it("requires the frontend origin in production", () => {
+    expect(() => parseEnv(productionEnv)).toThrowError(/FRONTEND_ORIGIN/);
+  });
+
+  it("rejects a wildcard origin", () => {
+    expect(() =>
+      parseEnv({ ...productionEnv, FRONTEND_ORIGIN: "*" }),
+    ).toThrowError(/FRONTEND_ORIGIN/);
+  });
+
+  it("rejects a wildcard host", () => {
+    expect(() =>
+      parseEnv({ ...productionEnv, FRONTEND_ORIGIN: "https://*.example.com" }),
+    ).toThrowError(/FRONTEND_ORIGIN/);
+  });
+
+  it("rejects an origin carrying a path", () => {
+    expect(() =>
+      parseEnv({
+        ...productionEnv,
+        FRONTEND_ORIGIN: "https://app.example.com/app",
+      }),
+    ).toThrowError(/FRONTEND_ORIGIN/);
+  });
+
+  it("rejects an origin with a trailing slash", () => {
+    expect(() =>
+      parseEnv({
+        ...productionEnv,
+        FRONTEND_ORIGIN: "https://app.example.com/",
+      }),
+    ).toThrowError(/FRONTEND_ORIGIN/);
+  });
+
+  it("rejects a non-http protocol", () => {
+    expect(() =>
+      parseEnv({ ...productionEnv, FRONTEND_ORIGIN: "ftp://app.example.com" }),
+    ).toThrowError(/FRONTEND_ORIGIN/);
   });
 });

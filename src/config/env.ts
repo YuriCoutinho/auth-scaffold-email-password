@@ -12,7 +12,27 @@ export type Env = {
   EMAIL_DRIVER: z.infer<typeof emailDriverSchema>;
   EMAIL_FROM?: string | undefined;
   RESEND_API_KEY?: string | undefined;
+  FRONTEND_ORIGIN?: string | undefined;
 };
+
+// A positive rule: the value has to *be* an origin. Comparing against
+// URL.origin drops any path, query or trailing slash, and the host check
+// drops the wildcard forms that the URL parser happily accepts.
+function originSchema(base: z.ZodString) {
+  return base.refine((value) => {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      return false;
+    }
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.origin === value &&
+      !url.hostname.includes("*")
+    );
+  }, "must be an absolute http(s) origin, with no path, trailing slash or wildcard");
+}
 
 function envSchemaFor(raw: NodeJS.ProcessEnv) {
   return z.object({
@@ -34,6 +54,10 @@ function envSchemaFor(raw: NodeJS.ProcessEnv) {
       raw.EMAIL_DRIVER === "resend"
         ? z.string("required when EMAIL_DRIVER is resend").min(1)
         : z.string().optional(),
+    FRONTEND_ORIGIN:
+      raw.NODE_ENV === "production"
+        ? originSchema(z.string("required when NODE_ENV is production"))
+        : originSchema(z.string()).optional(),
   });
 }
 
