@@ -142,4 +142,48 @@ describe("POST /auth/resend-code", () => {
       },
     );
   });
+
+  it("accepts the rotated cookie and refuses the one it replaced", async () => {
+    const authRepository = createInMemoryAuthRepository();
+    const app = buildApp(makeAppOptions({ authRepository }));
+    const signup = () =>
+      app.inject({
+        method: "POST",
+        url: "/auth/signup",
+        payload: {
+          email: "user@example.com",
+          password: "a-valid-long-passphrase",
+        },
+      });
+
+    const stale = (await signup()).cookies.find(
+      (c) => c.name === "signup_session",
+    )?.value;
+    const fresh = (await signup()).cookies.find(
+      (c) => c.name === "signup_session",
+    )?.value;
+
+    // Push the first send outside the cooldown, so the refusal under test is
+    // the token and not the rate limit.
+    const pending = authRepository.pendingSignups.get("user@example.com");
+    if (pending) {
+      pending.lastSentAt = new Date(Date.now() - 120_000);
+    }
+
+    const withStale = await app.inject({
+      method: "POST",
+      url: "/auth/resend-code",
+      cookies: { signup_session: stale ?? "" },
+    });
+    const withFresh = await app.inject({
+      method: "POST",
+      url: "/auth/resend-code",
+      cookies: { signup_session: fresh ?? "" },
+    });
+
+    expect(withStale.statusCode).toBe(401);
+    expect(withFresh.statusCode).toBe(202);
+
+    await app.close();
+  });
 });

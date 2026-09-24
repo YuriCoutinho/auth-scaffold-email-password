@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { SESSION_TTL_SECONDS } from "../../../../src/lib/session.js";
+import {
+  MAX_CODE_ATTEMPTS,
+  SESSION_TTL_SECONDS,
+} from "../../../../src/lib/session.js";
 import {
   hashOtpCode,
   hashSessionToken,
 } from "../../../../src/lib/token-hash.js";
-import {
-  createVerifyCodeService,
-  MAX_CODE_ATTEMPTS,
-} from "../../../../src/plugins/app/auth/verify-code.js";
+import { createVerifyCodeService } from "../../../../src/plugins/app/auth/verify-code.js";
 
 const NOW = new Date("2026-09-21T12:00:00Z");
 const TOKEN = "signup-token";
@@ -101,7 +101,6 @@ describe("verifyCode", () => {
     expect(input).toEqual({
       email: "foo@gmail.com",
       passwordHash: "argon2-hash",
-      signupSessionToken: TOKEN,
       sessionTokenHash: hashSessionToken(sessionToken),
       deviceLabel: "Mozilla/5.0",
       sessionExpiresAt: new Date(NOW.getTime() + SESSION_TTL_SECONDS * 1000),

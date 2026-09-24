@@ -68,13 +68,17 @@ export function createChangePasswordService(deps: ChangePasswordServiceDeps) {
       });
       deps.log?.info({ userId: user.id }, "password changed");
 
-      // Awaited, like every other send in this project, but the result never
-      // reaches the response: the password already changed, so failing the
-      // request here would tell the user the opposite of what happened.
-      await sendPasswordChanged(
+      // Detached: the password already changed, so delivery cannot decide the
+      // response, and nothing is gained by making the caller wait for it.
+      void sendPasswordChanged(
         { emailSender: deps.emailSender, log: deps.log },
         { to: user.email, userId: user.id },
-      );
+      ).catch((sendError) => {
+        deps.log?.warn(
+          { err: sendError },
+          "failed to send the password changed email",
+        );
+      });
 
       return { outcome: "changed" };
     },

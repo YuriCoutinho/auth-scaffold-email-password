@@ -40,7 +40,6 @@ export interface PendingSignupResendState {
 export interface PromotePendingSignupInput {
   email: string;
   passwordHash: string;
-  signupSessionToken: string;
   sessionTokenHash: string;
   deviceLabel: string | null;
   sessionExpiresAt: Date;
@@ -67,6 +66,55 @@ export interface ChangeUserPasswordInput {
   exceptSessionId: number;
 }
 
+// The email and the password hash ride along because every caller that reads
+// a reset row needs at least one of them, and joining here keeps the flow at
+// one query instead of two.
+export interface PasswordResetRecord {
+  id: number;
+  userId: number;
+  email: string;
+  passwordHash: string;
+  codeHash: string;
+  resetSessionToken: string;
+  codeAttempts: number;
+  lastSentAt: Date;
+  // Unlike the signup flow, 0 never means "first send": the same endpoint is
+  // both the first request and the resend, so a failed delivery restores the
+  // previous count instead of zeroing it.
+  codeSendCount: number;
+  expiresAt: Date;
+}
+
+export interface UpsertPasswordResetInput {
+  userId: number;
+  codeHash: string;
+  resetSessionToken: string;
+  expiresAt: Date;
+  now: Date;
+}
+
+export interface PasswordResetSendState {
+  // Rotated on every request: the write addresses the row by user and sets
+  // this to the new value.
+  resetSessionToken: string;
+  codeHash: string;
+  expiresAt: Date;
+  codeAttempts: number;
+  lastSentAt: Date;
+  codeSendCount: number;
+}
+
+export interface ResetUserPasswordInput {
+  userId: number;
+  passwordHash: string;
+  resetSessionToken: string;
+  sessionTokenHash: string;
+  deviceLabel: string | null;
+  sessionExpiresAt: Date;
+  revokedAt: Date;
+  revokedReason: RevokedReason;
+}
+
 export interface AuthRepository {
   findAuthUserByEmail(email: string): Promise<AuthUserRecord | undefined>;
   findPendingSignupByEmail(
@@ -81,6 +129,9 @@ export interface AuthRepository {
     token: string,
     state: PendingSignupResendState,
   ): Promise<void>;
+  // Keyed by email, which is unique on the table, so the write always matches
+  // the one row it means.
+  rotatePendingSignupToken(email: string, nextToken: string): Promise<void>;
   incrementCodeAttempts(signupSessionToken: string): Promise<void>;
   promotePendingSignup(
     input: PromotePendingSignupInput,
@@ -90,4 +141,27 @@ export interface AuthRepository {
     id: number,
   ): Promise<AuthUserCredentials | undefined>;
   changeUserPassword(input: ChangeUserPasswordInput): Promise<void>;
+  findPasswordResetByUserId(
+    userId: number,
+  ): Promise<PasswordResetRecord | undefined>;
+  upsertPasswordReset(input: UpsertPasswordResetInput): Promise<{ id: number }>;
+  findPasswordResetBySessionToken(
+    token: string,
+  ): Promise<PasswordResetRecord | undefined>;
+  // Keyed by user, not by token: the token is the column being replaced, and
+  // using it as the key makes a concurrent writer match zero rows and lose its
+  // write without anyone noticing.
+  updatePasswordResetSendState(
+    userId: number,
+    state: PasswordResetSendState,
+  ): Promise<void>;
+  // Compensation for a delivery that failed. Applies only while the row still
+  // carries the token in `state`, so a restore that arrives after a newer
+  // request has rotated past it writes nothing.
+  restorePasswordResetSendState(
+    userId: number,
+    state: PasswordResetSendState,
+  ): Promise<void>;
+  incrementPasswordResetAttempts(token: string): Promise<void>;
+  resetUserPassword(input: ResetUserPasswordInput): Promise<void>;
 }

@@ -29,6 +29,19 @@ describe("createAuth", () => {
       "invalid",
     );
     expect((await auth.authenticate(undefined)).outcome).toBe("invalid");
+    expect(
+      (await auth.forgotPassword("nobody@example.com")).sessionToken,
+    ).toBeTruthy();
+    expect(
+      (
+        await auth.resetPassword({
+          sessionToken: undefined,
+          code: "000000",
+          newPassword: "a perfectly fine passphrase",
+          deviceLabel: null,
+        })
+      ).outcome,
+    ).toBe("invalid");
     expect(await auth.currentUser(999)).toBeUndefined();
   });
 

@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   changePasswordBodySchema,
   currentUserResponseSchema,
+  forgotPasswordBodySchema,
   loginBodySchema,
   messageSchema,
+  resetPasswordBodySchema,
   signupBodySchema,
   verifyCodeBodySchema,
 } from "../../src/schemas/auth.js";
@@ -109,5 +111,50 @@ describe("changePasswordBodySchema", () => {
         newPassword: weak,
       }).success,
     );
+  });
+});
+
+describe("forgotPasswordBodySchema", () => {
+  it("accepts a valid address and rejects a malformed one", () => {
+    expect(
+      forgotPasswordBodySchema.safeParse({ email: "user@example.com" }).success,
+    ).toBe(true);
+    expect(
+      forgotPasswordBodySchema.safeParse({ email: "not-an-email" }).success,
+    ).toBe(false);
+    expect(
+      forgotPasswordBodySchema.safeParse({
+        email: `${"a".repeat(250)}@example.com`,
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("resetPasswordBodySchema", () => {
+  it("requires six digits and a long enough password", () => {
+    expect(
+      resetPasswordBodySchema.safeParse({
+        code: "123456",
+        newPassword: "a perfectly fine passphrase",
+      }).success,
+    ).toBe(true);
+    expect(
+      resetPasswordBodySchema.safeParse({
+        code: "12345",
+        newPassword: "a perfectly fine passphrase",
+      }).success,
+    ).toBe(false);
+    expect(
+      resetPasswordBodySchema.safeParse({
+        code: "12a456",
+        newPassword: "a perfectly fine passphrase",
+      }).success,
+    ).toBe(false);
+    expect(
+      resetPasswordBodySchema.safeParse({
+        code: "123456",
+        newPassword: "a".repeat(14),
+      }).success,
+    ).toBe(false);
   });
 });

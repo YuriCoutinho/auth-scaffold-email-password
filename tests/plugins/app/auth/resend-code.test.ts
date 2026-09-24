@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { SIGNUP_TTL_SECONDS } from "../../../../src/lib/session.js";
-import { hashOtpCode } from "../../../../src/lib/token-hash.js";
 import {
-  createResendCodeService,
   MAX_CODE_SEND_COUNT,
-} from "../../../../src/plugins/app/auth/resend-code.js";
+  SIGNUP_TTL_SECONDS,
+} from "../../../../src/lib/session.js";
+import { hashOtpCode } from "../../../../src/lib/token-hash.js";
+import { createResendCodeService } from "../../../../src/plugins/app/auth/resend-code.js";
 
 const NOW = new Date("2026-09-21T12:00:00Z");
 const TOKEN = "session-token";

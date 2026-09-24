@@ -8,11 +8,12 @@ describe("renderPasswordChangedEmail", () => {
     );
   });
 
-  it("tells the reader what to do when it was not them", () => {
-    const { text, html } = renderPasswordChangedEmail();
+  it("points at the reset flow and carries no link", () => {
+    const content = renderPasswordChangedEmail();
 
-    expect(text).toContain("contact support");
-    expect(html).toContain("contact support");
+    expect(content.text).toContain("reset your password");
+    expect(content.text).not.toContain("contact support");
+    expect(content.html).not.toContain("<a ");
   });
 
   it("says every other device was signed out", () => {

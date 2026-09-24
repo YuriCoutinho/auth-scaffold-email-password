@@ -34,7 +34,8 @@ Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que 
 ### Normalização e idempotência
 
 * Email recebe `trim` e lowercase antes de qualquer consulta ou gravação, de modo que `Foo@Gmail.com` e `foo@gmail.com` sejam a mesma conta
-* Se já existe cadastro pendente não expirado para aquele email, nada é criado nem reenviado, e a resposta devolve o token já armazenado. Reenvio é responsabilidade explícita de outro endpoint
+* Se já existe cadastro pendente não expirado para aquele email, nada é criado nem reenviado, mas o token de sessão rotaciona: a resposta devolve um valor novo, gravado na linha por um `UPDATE` chaveado pelo email, e nenhum outro campo muda, nem código, nem tentativas, nem contagem de envios, nem expiração. O código que já está na caixa de entrada continua valendo, porque a validade dele mora no hash e no `expires_at` da linha, não no token. Reenvio é responsabilidade explícita de outro endpoint
+* A rotação tem um custo aceito de propósito: qualquer anônimo que chame o endpoint com o email de outra pessoa invalida o cookie do cadastro em andamento dela. A troca compensa porque a alternativa é devolver um valor estável, que entrega por enumeração quais endereços já têm conta, e porque a recuperação é barata, já que a chamada seguinte da vítima devolve um cookie válido e o código que ela recebeu continua valendo
 * Se o pendente existe mas expirou, ele é substituído atomicamente por `INSERT ... ON CONFLICT (email) DO UPDATE`, que troca senha, código, token e expiração, zera as tentativas e renova os contadores
 * O upsert resolve dois problemas de uma vez: a constraint `UNIQUE` de email nunca estoura como erro para quem está cadastrando, e duas requisições simultâneas do mesmo email não criam estado inconsistente
 * Uma sutileza do upsert vale registrar: valores `DEFAULT` da tabela só disparam em insert de verdade, então a cláusula de update precisa renovar `created_at`, `last_sent_at` e `code_send_count` explicitamente
@@ -49,23 +50,24 @@ Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que 
 ### Resposta e cookie
 
 * Cookie `signup_session` com `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/auth` e `Max-Age` de 900 segundos
-* A resposta é byte a byte idêntica nos três caminhos possíveis, incluindo a presença do cookie. Quando o email pertence a uma conta já confirmada, nenhum código é gerado e o cookie recebe um token descartável, justamente para que a resposta não se diferencie
+* A resposta é byte a byte idêntica nos três caminhos possíveis, incluindo a presença do cookie. Quando o email pertence a uma conta já confirmada, nenhum código é gerado e o cookie recebe um token descartável, justamente para que a resposta não se diferencie. A indistinguibilidade cobre também o valor do cookie, e é por isso que nenhum dos três caminhos pode devolver um valor que se repita entre chamadas: um valor estável para um endereço e variável para outro responderia, em duas requisições, quais endereços já têm conta
 * O `Path=/auth` mantém esse cookie restrito ao fluxo de cadastro, sem acompanhar requisições ao resto da API
 
 ### Organização do código
 
 * A rota fica em `src/routes/auth/signup.ts` e cuida apenas de HTTP: valida o body com o schema de `src/schemas/auth.ts`, chama `app.auth.signup` e traduz o resultado em status, mensagem e cookie
-* A regra de negócio fica em `src/plugins/app/auth/signup.ts`, numa função `createSignupService(deps)` que recebe repositório, remetente de email e verificador de senha vazada como parâmetro. Ela devolve um resultado discriminado (`accepted`, `pwned-password`, `email-unavailable`) em vez de lançar erro ou conhecer status HTTP, e por isso é testável sem subir Fastify
+* A regra de negócio fica em `src/plugins/app/auth/signup.ts`, numa função `createSignupService(deps)` que recebe repositório, remetente de email e verificador de senha vazada como parâmetro. Ela devolve um resultado discriminado (`accepted`, `pwned-password`) em vez de lançar erro ou conhecer status HTTP, e por isso é testável sem subir Fastify
 * O plugin `src/plugins/app/auth/index.ts` monta esse service junto dos demais fluxos e decora a instância como `fastify.auth`. Ele declara `dependencies` para `database`, `email-sender` e `pwned-password`, porque lê `fastify.db`, `fastify.emailSender` e `fastify.checkPwnedPassword` ao montar o módulo
 * A verificação de senha vazada é o plugin `src/plugins/app/pwned-password/`, cujo `index.ts` decora `fastify.checkPwnedPassword` com o verificador de `checker.ts`. Ela sai de `lib/` porque faz HTTP e precisa de comportamento diferente em teste e em produção, e `lib/` é só para função pura
 * O acesso ao banco passa pela interface `AuthRepository`. O service depende de um `Pick` dos quatro métodos que usa, o adaptador Drizzle em `auth/drizzle-repository.ts` implementa a interface inteira, e o adaptador em memória de `tests/helpers/auth/` substitui o banco nos testes de rota. Testar com um falso do ORM seria testar a implementação do repositório pelo lado errado
 * Tudo isso chega aos testes por `AppOptions`: `buildApp` recebe `authRepository`, `emailSender` e `checkPwnedPassword` opcionais, e cada plugin usa o que veio ou monta a implementação real a partir de `config`
 * O service grava primeiro e envia depois, ordem coberta por teste, para nunca existir código enviado que não esteja registrado
+* O envio sai do caminho da requisição, disparado com `void` depois que a linha está gravada, de modo que o tempo de resposta não separa um endereço novo de um que já tem conta confirmada. O documento 15 traz o raciocínio completo dessa decisão
 
 ## Definition of done
 
 * Contrato publicado no OpenAPI, com os três status possíveis descritos
 * Request e response tipados e validados pelo mesmo schema Zod
-* Testes unitários cobrindo validação de email e senha, normalização, idempotência do pendente válido, substituição do pendente expirado, resposta genérica nos três caminhos, ordem de gravar antes de enviar e rejeição de senha vazada
+* Testes unitários cobrindo validação de email e senha, normalização, rotação do token no pendente válido sem criar nem reenviar nada, substituição do pendente expirado, resposta genérica nos três caminhos, ordem de gravar antes de enviar e rejeição de senha vazada
 * Teste do verificador de senha vazada cobrindo ocorrência encontrada, ausência e indisponibilidade do serviço com fail open
 * Teste de service com o repositório em memória e teste de rota com `app.inject`, e nenhum dos dois toca banco ou rede reais, porque os colaboradores chegam por `AppOptions`

@@ -4,9 +4,11 @@ import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import type { SessionRepository } from "../sessions/repository.js";
 import { createAuthenticateService } from "./authenticate.js";
 import { createChangePasswordService } from "./change-password.js";
+import { createForgotPasswordService } from "./forgot-password.js";
 import { createLoginService } from "./login.js";
 import type { AuthRepository } from "./repository.js";
 import { createResendCodeService } from "./resend-code.js";
+import { createResetPasswordService } from "./reset-password.js";
 import { createSignupService } from "./signup.js";
 import { createVerifyCodeService } from "./verify-code.js";
 
@@ -30,9 +32,18 @@ export function createAuth(deps: AuthDeps) {
     emailSender: deps.emailSender,
     checkPwnedPassword: deps.checkPwnedPassword,
   });
+  const { forgotPassword } = createForgotPasswordService({
+    ...shared,
+    emailSender: deps.emailSender,
+  });
   const { resendCode } = createResendCodeService({
     ...shared,
     emailSender: deps.emailSender,
+  });
+  const { resetPassword } = createResetPasswordService({
+    ...shared,
+    emailSender: deps.emailSender,
+    checkPwnedPassword: deps.checkPwnedPassword,
   });
   const { verifyCode } = createVerifyCodeService(shared);
   const { login } = createLoginService({
@@ -54,6 +65,8 @@ export function createAuth(deps: AuthDeps) {
 
   return {
     signup,
+    forgotPassword,
+    resetPassword,
     resendCode,
     verifyCode,
     login,

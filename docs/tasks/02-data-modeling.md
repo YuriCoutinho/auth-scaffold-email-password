@@ -20,7 +20,7 @@ A separação em quatro tabelas responde a quatro perguntas diferentes: quem est
 
 ### Onde fica
 
-* O schema Drizzle das quatro tabelas vive em `src/db/schema.ts`, e as migrations geradas ficam em `drizzle/`
+* O schema Drizzle das quatro tabelas vive em `src/db/schema.ts`, e `drizzle/` guarda um baseline único com o schema inicial inteiro, e não uma cadeia de migrations. Como o projeto é um scaffold e não existe banco em produção, toda mudança que faça parte desse schema inicial regenera o baseline; migration incremental só começa depois que o scaffold está fechado
 * Os utilitários de hash vivem em `src/lib/`, que guarda apenas funções puras: `password.ts` para Argon2 e `token-hash.ts` para SHA-256. Nenhum dos dois varia entre ambientes, então não há colaborador para injetar e eles não viram plugin
 * Nenhum outro módulo de `src/` fala com o banco diretamente. O acesso passa por duas interfaces, uma por fatia do domínio. `AuthRepository`, definida em `src/plugins/app/auth/repository.ts`, cobre identidade, ou seja usuário e cadastro pendente. `SessionRepository`, definida em `src/plugins/app/sessions/repository.ts`, cobre a sessão. Cada uma ganha um adaptador Drizzle ao lado, em `drizzle-repository.ts` da própria pasta, e as duas são satisfeitas pelo mesmo adaptador em memória em `tests/helpers/auth/in-memory-repository.ts`, que guarda tudo num store só. Interface e adaptador ficam na pasta do domínio, e não em `db/`, porque o repositório é detalhe de quem o usa; `db/` só conhece schema e conexão. Cada interface cresce um endpoint por vez, cada um adicionando só os métodos de que precisa
 

@@ -1,5 +1,10 @@
-import { eq, sql } from "drizzle-orm";
-import { authUsers, pendingSignups, profiles } from "../../../db/schema.js";
+import { and, eq, sql } from "drizzle-orm";
+import {
+  authUsers,
+  passwordResets,
+  pendingSignups,
+  profiles,
+} from "../../../db/schema.js";
 import {
   createDrizzleSessionRepository,
   type DatabaseOrTransaction,
@@ -7,8 +12,11 @@ import {
 import type {
   AuthRepository,
   ChangeUserPasswordInput,
+  PasswordResetSendState,
   PendingSignupResendState,
   PromotePendingSignupInput,
+  ResetUserPasswordInput,
+  UpsertPasswordResetInput,
   UpsertPendingSignupInput,
 } from "./repository.js";
 
@@ -22,6 +30,19 @@ const pendingSignupColumns = {
   lastSentAt: pendingSignups.lastSentAt,
   codeSendCount: pendingSignups.codeSendCount,
   expiresAt: pendingSignups.expiresAt,
+};
+
+const passwordResetColumns = {
+  id: passwordResets.id,
+  userId: passwordResets.userId,
+  email: authUsers.email,
+  passwordHash: authUsers.passwordHash,
+  codeHash: passwordResets.codeHash,
+  resetSessionToken: passwordResets.resetSessionToken,
+  codeAttempts: passwordResets.codeAttempts,
+  lastSentAt: passwordResets.lastSentAt,
+  codeSendCount: passwordResets.codeSendCount,
+  expiresAt: passwordResets.expiresAt,
 };
 
 export function createDrizzleAuthRepository(
@@ -106,6 +127,13 @@ export function createDrizzleAuthRepository(
         .where(eq(pendingSignups.signupSessionToken, token));
     },
 
+    async rotatePendingSignupToken(email, nextToken) {
+      await db
+        .update(pendingSignups)
+        .set({ signupSessionToken: nextToken })
+        .where(eq(pendingSignups.email, email));
+    },
+
     async incrementCodeAttempts(signupSessionToken) {
       await db
         .update(pendingSignups)
@@ -122,11 +150,13 @@ export function createDrizzleAuthRepository(
           .values({ email: input.email, passwordHash: input.passwordHash })
           .returning({ id: authUsers.id, publicId: authUsers.publicId });
         const user = users[0] as { id: number; publicId: string };
+        // Keyed by email, which is unique and never changes. The signup
+        // session token rotates on every request, so a delete keyed by the
+        // token the caller read could match zero rows and leave the pending
+        // row orphaned.
         await tx
           .delete(pendingSignups)
-          .where(
-            eq(pendingSignups.signupSessionToken, input.signupSessionToken),
-          );
+          .where(eq(pendingSignups.email, input.email));
         await createDrizzleSessionRepository(tx).createSession({
           userId: user.id,
           tokenHash: input.sessionTokenHash,
@@ -174,6 +204,107 @@ export function createDrizzleAuthRepository(
           .update(authUsers)
           .set({ passwordHash: input.passwordHash })
           .where(eq(authUsers.id, input.userId));
+      });
+    },
+
+    async findPasswordResetByUserId(userId) {
+      const rows = await db
+        .select(passwordResetColumns)
+        .from(passwordResets)
+        .innerJoin(authUsers, eq(authUsers.id, passwordResets.userId))
+        .where(eq(passwordResets.userId, userId))
+        .limit(1);
+      return rows[0];
+    },
+
+    // Atomic replace, same shape as upsertPendingSignup: defaults only fire on
+    // real inserts, so the update clause renews the counters explicitly.
+    async upsertPasswordReset(input: UpsertPasswordResetInput) {
+      const rows = await db
+        .insert(passwordResets)
+        .values({
+          userId: input.userId,
+          codeHash: input.codeHash,
+          resetSessionToken: input.resetSessionToken,
+          expiresAt: input.expiresAt,
+        })
+        .onConflictDoUpdate({
+          target: passwordResets.userId,
+          set: {
+            codeHash: input.codeHash,
+            resetSessionToken: input.resetSessionToken,
+            expiresAt: input.expiresAt,
+            codeAttempts: 0,
+            createdAt: input.now,
+            lastSentAt: input.now,
+            codeSendCount: 1,
+          },
+        })
+        .returning({ id: passwordResets.id });
+      return rows[0] as { id: number };
+    },
+
+    async findPasswordResetBySessionToken(token) {
+      const rows = await db
+        .select(passwordResetColumns)
+        .from(passwordResets)
+        .innerJoin(authUsers, eq(authUsers.id, passwordResets.userId))
+        .where(eq(passwordResets.resetSessionToken, token))
+        .limit(1);
+      return rows[0];
+    },
+
+    // The state carries the new token while the WHERE matches the row by user,
+    // which is what rotates the identifier in a single write that cannot miss.
+    async updatePasswordResetSendState(userId, state: PasswordResetSendState) {
+      await db
+        .update(passwordResets)
+        .set(state)
+        .where(eq(passwordResets.userId, userId));
+    },
+
+    async restorePasswordResetSendState(userId, state: PasswordResetSendState) {
+      await db
+        .update(passwordResets)
+        .set(state)
+        .where(
+          and(
+            eq(passwordResets.userId, userId),
+            eq(passwordResets.resetSessionToken, state.resetSessionToken),
+          ),
+        );
+    },
+
+    async incrementPasswordResetAttempts(token) {
+      await db
+        .update(passwordResets)
+        .set({ codeAttempts: sql`${passwordResets.codeAttempts} + 1` })
+        .where(eq(passwordResets.resetSessionToken, token));
+    },
+
+    // One transaction, and the revocation runs before the insert so the
+    // session this flow opens is not caught by its own sweep.
+    async resetUserPassword(input: ResetUserPasswordInput) {
+      await db.transaction(async (tx) => {
+        const sessionRepository = createDrizzleSessionRepository(tx);
+        await sessionRepository.revokeAllUserSessions({
+          userId: input.userId,
+          revokedAt: input.revokedAt,
+          revokedReason: input.revokedReason,
+        });
+        await tx
+          .update(authUsers)
+          .set({ passwordHash: input.passwordHash })
+          .where(eq(authUsers.id, input.userId));
+        await tx
+          .delete(passwordResets)
+          .where(eq(passwordResets.resetSessionToken, input.resetSessionToken));
+        await sessionRepository.createSession({
+          userId: input.userId,
+          tokenHash: input.sessionTokenHash,
+          deviceLabel: input.deviceLabel,
+          expiresAt: input.sessionExpiresAt,
+        });
       });
     },
   };

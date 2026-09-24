@@ -13,8 +13,7 @@ import { sendSignupCode } from "./send-signup-code.js";
 
 export type SignupResult =
   | { outcome: "accepted"; sessionToken: string }
-  | { outcome: "pwned-password" }
-  | { outcome: "email-unavailable" };
+  | { outcome: "pwned-password" };
 
 interface SignupServiceDeps {
   repo: Pick<
@@ -23,6 +22,7 @@ interface SignupServiceDeps {
     | "findPendingSignupByEmail"
     | "upsertPendingSignup"
     | "markPendingSignupUndelivered"
+    | "rotatePendingSignupToken"
   >;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
@@ -54,10 +54,14 @@ export function createSignupService(deps: SignupServiceDeps) {
 
       const pending = await deps.repo.findPendingSignupByEmail(email);
       if (pending && pending.expiresAt > currentTime) {
-        return {
-          outcome: "accepted",
-          sessionToken: pending.signupSessionToken,
-        };
+        // Nothing is created or resent, but the token still rotates. A value
+        // that stays the same across calls would answer, in two requests,
+        // whether the address already has an account, which is the question
+        // this response refuses to answer. The code already in the mailbox
+        // keeps working because its validity lives in codeHash, not here.
+        const rotated = generateSignupSessionToken();
+        await deps.repo.rotatePendingSignupToken(email, rotated);
+        return { outcome: "accepted", sessionToken: rotated };
       }
 
       const code = generateOtpCode();
@@ -71,22 +75,27 @@ export function createSignupService(deps: SignupServiceDeps) {
         now: currentTime,
       });
 
-      const delivered = await sendSignupCode(
+      // Detached, like /auth/forgot-password: the response is a fixed 202 that
+      // delivery cannot change, and awaiting the provider would make a new
+      // address slower than an already-confirmed one, which is account
+      // enumeration by stopwatch. Failed delivery must not consume resend
+      // quota, so the mark still runs, just after the response.
+      void sendSignupCode(
         { emailSender: deps.emailSender, log: deps.log },
         { to: email, code, pendingSignupId },
-      );
-      if (!delivered) {
-        // Failed delivery must not consume resend quota; the mark is best-effort.
-        try {
-          await deps.repo.markPendingSignupUndelivered(email);
-        } catch (markError) {
+      )
+        .then((delivered) => {
+          if (delivered) {
+            return;
+          }
+          return deps.repo.markPendingSignupUndelivered(email);
+        })
+        .catch((markError) => {
           deps.log?.warn(
             { err: markError },
             "failed to mark pending signup as undelivered",
           );
-        }
-        return { outcome: "email-unavailable" };
-      }
+        });
 
       return { outcome: "accepted", sessionToken };
     },
