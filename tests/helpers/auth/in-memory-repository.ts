@@ -189,14 +189,14 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       const user: StoredAuthUser = {
         id: nextUserId++,
         email: input.email,
-        publicId: randomUUID(),
+        publicId: input.publicId,
         passwordHash: input.passwordHash,
       };
       authUsers.set(input.email, user);
       pendingSignups.delete(input.email);
       sessions.push({
         id: nextSessionId++,
-        publicId: randomUUID(),
+        publicId: input.sessionPublicId,
         userId: user.id,
         tokenHash: input.sessionTokenHash,
         deviceLabel: input.deviceLabel,
@@ -206,14 +206,13 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
         revokedReason: null,
       });
       profiles.push({ userId: user.id });
-      return { id: user.id, publicId: user.publicId };
+      return { id: user.id };
     },
 
     async createSession(input) {
       sessions.push({
         ...input,
         id: nextSessionId++,
-        publicId: randomUUID(),
         createdAt: new Date(),
         revokedAt: null,
         revokedReason: null,
@@ -336,7 +335,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
 
       sessions.push({
         id: nextSessionId++,
-        publicId: randomUUID(),
+        publicId: input.sessionPublicId,
         userId: input.userId,
         tokenHash: input.sessionTokenHash,
         deviceLabel: input.deviceLabel,

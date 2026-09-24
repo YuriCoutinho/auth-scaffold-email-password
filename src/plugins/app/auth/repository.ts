@@ -38,8 +38,10 @@ export interface PendingSignupResendState {
 }
 
 export interface PromotePendingSignupInput {
+  publicId: string;
   email: string;
   passwordHash: string;
+  sessionPublicId: string;
   sessionTokenHash: string;
   deviceLabel: string | null;
   sessionExpiresAt: Date;
@@ -108,6 +110,7 @@ export interface ResetUserPasswordInput {
   userId: number;
   passwordHash: string;
   resetSessionToken: string;
+  sessionPublicId: string;
   sessionTokenHash: string;
   deviceLabel: string | null;
   sessionExpiresAt: Date;
@@ -135,7 +138,7 @@ export interface AuthRepository {
   incrementCodeAttempts(signupSessionToken: string): Promise<void>;
   promotePendingSignup(
     input: PromotePendingSignupInput,
-  ): Promise<{ id: number; publicId: string }>;
+  ): Promise<{ id: number }>;
   findAuthUserById(id: number): Promise<AuthUserIdentity | undefined>;
   findAuthUserCredentialsById(
     id: number,

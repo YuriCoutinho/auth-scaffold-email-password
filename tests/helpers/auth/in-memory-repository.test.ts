@@ -3,7 +3,6 @@ import type { SessionRepository } from "../../../src/plugins/app/sessions/reposi
 import { createInMemoryAuthRepository } from "./in-memory-repository.js";
 
 const NOW = new Date("2026-09-20T12:00:00Z");
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 function repoWithTwoUsers() {
   const expiresAt = new Date(Date.now() + 60_000);
@@ -111,8 +110,10 @@ describe("in-memory auth repository", () => {
     const repo = createInMemoryAuthRepository();
     await repo.upsertPendingSignup(pendingInput());
     const user = await repo.promotePendingSignup({
+      publicId: "user-public-id",
       email: "user@example.com",
       passwordHash: "hash",
+      sessionPublicId: "session-public-id",
       sessionTokenHash: "session-hash",
       deviceLabel: "Mozilla/5.0",
       sessionExpiresAt: new Date(NOW.getTime() + 1_000),
@@ -120,13 +121,14 @@ describe("in-memory auth repository", () => {
     expect(user.id).toBe(1);
     expect(await repo.findAuthUserByEmail("user@example.com")).toMatchObject({
       id: 1,
+      publicId: "user-public-id",
       passwordHash: "hash",
     });
     expect(repo.pendingSignups.size).toBe(0);
     expect(repo.sessions).toEqual([
       {
         id: 1,
-        publicId: expect.stringMatching(UUID),
+        publicId: "session-public-id",
         userId: 1,
         tokenHash: "session-hash",
         deviceLabel: "Mozilla/5.0",
@@ -144,6 +146,7 @@ describe("in-memory auth repository", () => {
       authUsers: [{ id: 7, email: "a@b.com", passwordHash: "h" }],
     });
     await repo.createSession({
+      publicId: "session-public-id",
       userId: 7,
       tokenHash: "t",
       deviceLabel: null,
@@ -152,7 +155,7 @@ describe("in-memory auth repository", () => {
     expect(repo.sessions).toEqual([
       {
         id: 1,
-        publicId: expect.stringMatching(UUID),
+        publicId: "session-public-id",
         userId: 7,
         tokenHash: "t",
         deviceLabel: null,
@@ -194,6 +197,7 @@ describe("in-memory auth repository", () => {
   it("finds sessions created through createSession", async () => {
     const repo = createInMemoryAuthRepository();
     await repo.createSession({
+      publicId: "session-public-id",
       userId: 3,
       tokenHash: "hash-2",
       deviceLabel: null,
@@ -227,7 +231,9 @@ describe("in-memory auth repository", () => {
     await repo.upsertPendingSignup(pendingInput());
     const input = {
       email: "user@example.com",
+      publicId: "user-public-id",
       passwordHash: "hash",
+      sessionPublicId: "session-public-id",
       sessionTokenHash: "session-hash",
       deviceLabel: null,
       sessionExpiresAt: new Date(NOW.getTime() + 1_000),
@@ -538,9 +544,10 @@ describe("listActiveUserSessions", () => {
     ).resolves.toEqual([]);
   });
 
-  it("gives every created session a public id", async () => {
+  it("stores the public id a created session is given", async () => {
     const repo = createInMemoryAuthRepository();
     await repo.createSession({
+      publicId: "session-public-id",
       userId: 1,
       tokenHash: "fresh",
       deviceLabel: null,
@@ -552,7 +559,7 @@ describe("listActiveUserSessions", () => {
       now: NOW,
     });
 
-    expect(session?.publicId).toMatch(UUID);
+    expect(session?.publicId).toBe("session-public-id");
   });
 });
 
@@ -848,6 +855,7 @@ describe("password resets", () => {
       userId: 1,
       passwordHash: "new",
       resetSessionToken: "tok",
+      sessionPublicId: "session-public-id",
       sessionTokenHash: "fresh-session",
       deviceLabel: null,
       sessionExpiresAt: expiresAt,

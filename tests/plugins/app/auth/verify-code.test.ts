@@ -10,6 +10,8 @@ import {
 import { createVerifyCodeService } from "../../../../src/plugins/app/auth/verify-code.js";
 
 const NOW = new Date("2026-09-21T12:00:00Z");
+const UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const TOKEN = "signup-token";
 const CODE = "123456";
 
@@ -100,8 +102,10 @@ describe("verifyCode", () => {
 
     const input = deps.repo.promotePendingSignup.mock.calls[0]?.[0];
     expect(input).toEqual({
+      publicId: expect.stringMatching(UUID_V4),
       email: "foo@gmail.com",
       passwordHash: "argon2-hash",
+      sessionPublicId: expect.stringMatching(UUID_V4),
       sessionTokenHash: hashSessionToken(sessionToken),
       deviceLabel: "Mozilla/5.0",
       sessionExpiresAt: new Date(NOW.getTime() + SESSION_TTL_SECONDS * 1000),

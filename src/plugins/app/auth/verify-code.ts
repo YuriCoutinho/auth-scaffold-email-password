@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
+import { generatePublicId } from "../../../lib/public-id.js";
 import {
   generateSessionToken,
   MAX_CODE_ATTEMPTS,
@@ -72,8 +73,10 @@ export function createVerifyCodeService(deps: VerifyCodeServiceDeps) {
 
       const newSessionToken = generateSessionToken();
       const user = await deps.repo.promotePendingSignup({
+        publicId: generatePublicId(),
         email: pending.email,
         passwordHash: pending.passwordHash,
+        sessionPublicId: generatePublicId(),
         sessionTokenHash: hashSessionToken(newSessionToken),
         deviceLabel,
         sessionExpiresAt: new Date(

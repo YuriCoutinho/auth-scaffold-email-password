@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { DUMMY_PASSWORD_HASH, verifyPassword } from "../../../lib/password.js";
+import { generatePublicId } from "../../../lib/public-id.js";
 import {
   generateSessionToken,
   SESSION_TTL_SECONDS,
@@ -66,6 +67,7 @@ export function createLoginService(deps: LoginServiceDeps) {
 
       const sessionToken = generateSessionToken();
       await deps.repo.createSession({
+        publicId: generatePublicId(),
         userId: user.id,
         tokenHash: hashSessionToken(sessionToken),
         deviceLabel,
