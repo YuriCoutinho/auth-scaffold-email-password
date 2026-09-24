@@ -143,6 +143,17 @@ describe("parseEnv", () => {
     expect(env.FRONTEND_ORIGIN).toBeUndefined();
   });
 
+  it("treats an empty frontend origin as not configured outside production", () => {
+    const env = parseEnv({ ...baseEnv, FRONTEND_ORIGIN: "" });
+    expect(env.FRONTEND_ORIGIN).toBe("");
+  });
+
+  it("rejects an empty frontend origin in production", () => {
+    expect(() =>
+      parseEnv({ ...productionEnv, FRONTEND_ORIGIN: "" }),
+    ).toThrowError(/FRONTEND_ORIGIN/);
+  });
+
   it("requires the frontend origin in production", () => {
     expect(() => parseEnv(productionEnv)).toThrowError(/FRONTEND_ORIGIN/);
   });

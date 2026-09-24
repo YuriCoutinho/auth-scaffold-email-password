@@ -38,9 +38,9 @@ Falta um detalhe que a comparação não pega. Uma string como `https://*.exampl
 
 ### A origem é obrigatória em produção e opcional fora dela
 
-O campo segue o padrão condicional que `EMAIL_FROM` e `PORT` já usam no mesmo arquivo. Quando `NODE_ENV` é `production`, a variável é exigida e a aplicação não sobe sem ela, porque um deploy sem origem configurada é um deploy em que o frontend não consegue falar com a API, e falhar no boot é melhor do que descobrir isso pelo console do navegador. Fora de produção o campo é opcional, então desenvolvimento e teste continuam subindo sem nenhuma configuração nova.
+O campo segue o padrão condicional que `EMAIL_FROM` e `PORT` já usam no mesmo arquivo. Quando `NODE_ENV` é `production`, a variável é exigida e a aplicação não sobe sem ela, porque um deploy sem origem configurada é um deploy em que o frontend não consegue falar com a API, e falhar no boot é melhor do que descobrir isso pelo console do navegador. Fora de produção o campo é opcional e a string vazia também vale como não configurado, então desenvolvimento e teste continuam subindo sem nenhuma configuração nova.
 
-`.env.sample` recebe a chave com valor vazio, junto das demais chaves de aplicação, para que quem clona o repositório veja que ela existe.
+`.env.sample` recebe a chave com valor vazio, junto das demais chaves de aplicação, para que quem clona o repositório veja que ela existe. Como o README manda copiar esse arquivo para `.env`, a chave chega ao ambiente presente e vazia, e é por isso que a string vazia precisa ser aceita fora de produção em vez de derrubar o boot. Em produção ela continua sendo recusada como qualquer outro valor que não seja uma origem, porque ali a ausência de origem é justamente o erro que se quer ver no boot.
 
 ### O CORS permite credenciais, porque a sessão vive em cookie `httpOnly`
 
@@ -66,9 +66,9 @@ O motivo é que o custo é muito menor do que parece. O navegador guarda a respo
 * `contentSecurityPolicy` desligado quando `NODE_ENV` não é `production`, com teste provando a ausência do cabeçalho fora de produção e a presença dele em produção
 * Teste provando que os cabeçalhos padrão aparecem tanto numa resposta de sucesso quanto numa de erro
 * `FRONTEND_ORIGIN` em `src/config/env.ts`, validado como origem absoluta `http` ou `https`, sem caminho, sem barra final e sem curinga no host
-* Variável obrigatória quando `NODE_ENV` é `production` e opcional fora de produção, seguindo o padrão condicional de `EMAIL_FROM`
-* Casos de teste em `tests/config/env.test.ts` para a origem válida, o curinga puro, o curinga de subdomínio, o caminho, a barra final e o protocolo não HTTP
+* Variável obrigatória quando `NODE_ENV` é `production` e opcional fora de produção, seguindo o padrão condicional de `EMAIL_FROM`, com a string vazia aceita fora de produção e recusada dentro dela
+* Casos de teste em `tests/config/env.test.ts` para a origem válida, o curinga puro, o curinga de subdomínio, o caminho, a barra final, o protocolo não HTTP e a string vazia nos dois ambientes
 * `FRONTEND_ORIGIN=` com valor vazio em `.env.sample`
 * `@fastify/cors` registrado em `src/plugins/external/cors.ts` apenas quando existe origem configurada, com a origem em lista e `credentials: true`
-* Teste provando que a origem configurada recebe `Access-Control-Allow-Origin` e `Access-Control-Allow-Credentials`, que o preflight `OPTIONS` é respondido com sucesso, que uma origem desconhecida não recebe o cabeçalho, que uma requisição sem `Origin` é servida sem ele e que, sem origem configurada, nenhum cabeçalho de CORS é emitido
+* Teste provando que a origem configurada recebe `Access-Control-Allow-Origin` e `Access-Control-Allow-Credentials`, que o preflight `OPTIONS` é respondido com sucesso, que uma origem desconhecida não recebe o cabeçalho, que uma requisição sem `Origin` é servida sem ele e que, com a origem ausente ou vazia, nenhum cabeçalho de CORS é emitido
 * `pnpm typecheck`, `pnpm lint`, `pnpm test` e `pnpm build` verdes

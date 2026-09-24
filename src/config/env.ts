@@ -54,10 +54,13 @@ function envSchemaFor(raw: NodeJS.ProcessEnv) {
       raw.EMAIL_DRIVER === "resend"
         ? z.string("required when EMAIL_DRIVER is resend").min(1)
         : z.string().optional(),
+    // The versioned .env.sample ships the key empty, and the README tells
+    // everyone to copy it, so outside production an empty value has to mean
+    // "not configured" instead of failing the boot.
     FRONTEND_ORIGIN:
       raw.NODE_ENV === "production"
         ? originSchema(z.string("required when NODE_ENV is production"))
-        : originSchema(z.string()).optional(),
+        : z.union([z.literal(""), originSchema(z.string())]).optional(),
   });
 }
 

@@ -67,6 +67,22 @@ describe("cors", () => {
     await app.close();
   });
 
+  it("sends no cors headers when the frontend origin is empty", async () => {
+    const app = buildApp(
+      makeAppOptions({ config: { ...TEST_ENV, FRONTEND_ORIGIN: "" } }),
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/health",
+      headers: { origin: ORIGIN },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["access-control-allow-origin"]).toBeUndefined();
+    await app.close();
+  });
+
   it("sends no cors headers when no frontend origin is configured", async () => {
     const app = buildApp(makeAppOptions());
 
