@@ -136,9 +136,11 @@ export interface AuthRepository {
   // the one row it means.
   rotatePendingSignupToken(email: string, nextToken: string): Promise<void>;
   incrementCodeAttempts(signupSessionToken: string): Promise<void>;
+  // Null when the pending signup is already gone, which is how a second
+  // concurrent verification of the same code learns it lost the race.
   promotePendingSignup(
     input: PromotePendingSignupInput,
-  ): Promise<{ id: number }>;
+  ): Promise<{ id: number } | null>;
   findAuthUserById(id: number): Promise<AuthUserIdentity | undefined>;
   findAuthUserCredentialsById(
     id: number,
