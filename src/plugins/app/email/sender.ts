@@ -11,7 +11,10 @@ export interface EmailSender {
 
 export class EmailProviderError extends Error {
   readonly status?: number;
-  readonly body?: string;
+  // Declared, not emitted as a class field: it is installed below as a
+  // non-enumerable property. The error serializer of pino copies own
+  // enumerable properties, and a provider body can echo the recipient address.
+  declare readonly body?: string;
 
   constructor(
     message: string,
@@ -23,7 +26,11 @@ export class EmailProviderError extends Error {
       this.status = options.status;
     }
     if (options.body !== undefined) {
-      this.body = options.body;
+      Object.defineProperty(this, "body", {
+        value: options.body,
+        enumerable: false,
+        configurable: true,
+      });
     }
   }
 }
