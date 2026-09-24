@@ -40,7 +40,6 @@ export interface PendingSignupResendState {
 export interface PromotePendingSignupInput {
   email: string;
   passwordHash: string;
-  signupSessionToken: string;
   sessionTokenHash: string;
   deviceLabel: string | null;
   sessionExpiresAt: Date;

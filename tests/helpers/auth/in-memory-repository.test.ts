@@ -113,7 +113,6 @@ describe("in-memory auth repository", () => {
     const user = await repo.promotePendingSignup({
       email: "user@example.com",
       passwordHash: "hash",
-      signupSessionToken: "token-1",
       sessionTokenHash: "session-hash",
       deviceLabel: "Mozilla/5.0",
       sessionExpiresAt: new Date(NOW.getTime() + 1_000),
@@ -221,6 +220,26 @@ describe("in-memory auth repository", () => {
       email: "a@b.com",
     });
     expect(await repo.findAuthUserById(999)).toBeUndefined();
+  });
+
+  it("promotes even when the token rotated between the read and the write", async () => {
+    const repo = createInMemoryAuthRepository();
+    await repo.upsertPendingSignup(pendingInput());
+    const input = {
+      email: "user@example.com",
+      passwordHash: "hash",
+      sessionTokenHash: "session-hash",
+      deviceLabel: null,
+      sessionExpiresAt: new Date(NOW.getTime() + 1_000),
+    };
+
+    // A concurrent signup rotates the token after the caller read the row.
+    // Keyed by token the delete would match nothing and leave an orphan row
+    // behind; keyed by email it lands.
+    await repo.rotatePendingSignupToken("user@example.com", "token-2");
+    await repo.promotePendingSignup(input);
+
+    expect(repo.pendingSignups.size).toBe(0);
   });
 
   it("rotates the pending signup token by email, leaving the rest alone", async () => {

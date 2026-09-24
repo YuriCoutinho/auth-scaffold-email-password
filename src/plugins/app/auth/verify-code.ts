@@ -64,7 +64,6 @@ export function createVerifyCodeService(deps: VerifyCodeServiceDeps) {
       const user = await deps.repo.promotePendingSignup({
         email: pending.email,
         passwordHash: pending.passwordHash,
-        signupSessionToken: sessionToken,
         sessionTokenHash: hashSessionToken(newSessionToken),
         deviceLabel,
         sessionExpiresAt: new Date(

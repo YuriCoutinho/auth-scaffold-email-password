@@ -193,10 +193,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
         passwordHash: input.passwordHash,
       };
       authUsers.set(input.email, user);
-      const pending = findByToken(input.signupSessionToken);
-      if (pending) {
-        pendingSignups.delete(pending.email);
-      }
+      pendingSignups.delete(input.email);
       sessions.push({
         id: nextSessionId++,
         publicId: randomUUID(),

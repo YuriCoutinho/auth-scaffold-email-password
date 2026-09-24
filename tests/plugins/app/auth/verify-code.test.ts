@@ -101,7 +101,6 @@ describe("verifyCode", () => {
     expect(input).toEqual({
       email: "foo@gmail.com",
       passwordHash: "argon2-hash",
-      signupSessionToken: TOKEN,
       sessionTokenHash: hashSessionToken(sessionToken),
       deviceLabel: "Mozilla/5.0",
       sessionExpiresAt: new Date(NOW.getTime() + SESSION_TTL_SECONDS * 1000),
