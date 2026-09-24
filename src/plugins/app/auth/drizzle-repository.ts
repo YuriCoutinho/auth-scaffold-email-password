@@ -245,7 +245,9 @@ export function createDrizzleAuthRepository(
       return rows[0];
     },
 
-    // Also used to restore the previous state when delivery fails.
+    // Also used to restore the previous state when delivery fails. The state
+    // carries the new token while the WHERE still matches the old one, which
+    // is what rotates the identifier in a single write.
     async updatePasswordResetSendState(token, state: PasswordResetSendState) {
       await db
         .update(passwordResets)

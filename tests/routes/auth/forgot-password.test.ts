@@ -95,4 +95,31 @@ describe("POST /auth/forgot-password", () => {
 
     await app.close();
   });
+
+  it("hands out a different cookie on every call, with and without an account", async () => {
+    const { app } = await setup();
+
+    const cookieOf = async (email: string) => {
+      const response = await app.inject({
+        method: "POST",
+        url: "/auth/forgot-password",
+        payload: { email },
+      });
+      return response.cookies.find((c) => c.name === "password_reset")?.value;
+    };
+
+    const knownFirst = await cookieOf("reset@example.com");
+    const knownSecond = await cookieOf("reset@example.com");
+    const unknownFirst = await cookieOf("nobody@example.com");
+    const unknownSecond = await cookieOf("nobody@example.com");
+
+    expect(knownFirst).toBeTruthy();
+    expect(unknownFirst).toBeTruthy();
+    // A cookie that repeats for one address and not for the other would tell
+    // the two apart in two requests.
+    expect(knownSecond).not.toBe(knownFirst);
+    expect(unknownSecond).not.toBe(unknownFirst);
+
+    await app.close();
+  });
 });

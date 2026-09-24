@@ -748,6 +748,7 @@ describe("password resets", () => {
     });
 
     await repo.updatePasswordResetSendState("tok", {
+      resetSessionToken: "tok",
       codeHash: "restored",
       expiresAt,
       codeAttempts: 0,

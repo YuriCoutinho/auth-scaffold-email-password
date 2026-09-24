@@ -52,22 +52,39 @@ export function createForgotPasswordService(deps: ForgotPasswordServiceDeps) {
           currentTime.getTime() - live.lastSentAt.getTime() <
             RESEND_COOLDOWN_SECONDS * 1000;
         if (capped || withinCooldown) {
-          // Nothing is sent, and the token of the live row goes back out so
-          // the code already sitting in the mailbox keeps working.
-          return { sessionToken: live.resetSessionToken };
+          // Nothing is sent, but the token still rotates. A value that stays
+          // the same across calls would answer, in two requests, whether the
+          // address has an account, which is the question this whole endpoint
+          // refuses to answer. The code already in the mailbox keeps working
+          // because its validity lives in codeHash, not in the token.
+          const rotated = generatePasswordResetSessionToken();
+          await deps.repo.updatePasswordResetSendState(live.resetSessionToken, {
+            resetSessionToken: rotated,
+            codeHash: live.codeHash,
+            expiresAt: live.expiresAt,
+            codeAttempts: live.codeAttempts,
+            lastSentAt: live.lastSentAt,
+            codeSendCount: live.codeSendCount,
+          });
+          return { sessionToken: rotated };
         }
       }
 
       const code = generateOtpCode();
+      const codeHash = hashOtpCode(code);
       const expiresAt = new Date(
         currentTime.getTime() + PASSWORD_RESET_TTL_SECONDS * 1000,
       );
+      const sessionToken = generatePasswordResetSessionToken();
 
       // Snapshot before writing. A failed delivery restores this, which
       // decrements the send count instead of zeroing it: unlike signup, this
-      // endpoint is also its own resend, so zeroing would refund the cap.
+      // endpoint is also its own resend, so zeroing would refund the cap. The
+      // token is deliberately left at the new value, because reverting it
+      // would kill the cookie the caller has already been handed.
       const previous: PasswordResetSendState = live
         ? {
+            resetSessionToken: sessionToken,
             codeHash: live.codeHash,
             expiresAt: live.expiresAt,
             codeAttempts: live.codeAttempts,
@@ -75,31 +92,30 @@ export function createForgotPasswordService(deps: ForgotPasswordServiceDeps) {
             codeSendCount: live.codeSendCount,
           }
         : {
-            codeHash: hashOtpCode(code),
+            resetSessionToken: sessionToken,
+            codeHash,
             expiresAt,
             codeAttempts: 0,
             lastSentAt: currentTime,
             codeSendCount: 0,
           };
 
-      let sessionToken: string;
       let passwordResetId: number;
 
       if (live) {
-        sessionToken = live.resetSessionToken;
         passwordResetId = live.id;
-        await deps.repo.updatePasswordResetSendState(sessionToken, {
-          codeHash: hashOtpCode(code),
+        await deps.repo.updatePasswordResetSendState(live.resetSessionToken, {
+          resetSessionToken: sessionToken,
+          codeHash,
           expiresAt,
           codeAttempts: 0,
           lastSentAt: currentTime,
           codeSendCount: live.codeSendCount + 1,
         });
       } else {
-        sessionToken = generatePasswordResetSessionToken();
         const { id } = await deps.repo.upsertPasswordReset({
           userId: user.id,
-          codeHash: hashOtpCode(code),
+          codeHash,
           resetSessionToken: sessionToken,
           expiresAt,
           now: currentTime,

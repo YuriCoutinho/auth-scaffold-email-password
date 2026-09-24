@@ -122,6 +122,7 @@ describe("resetPassword", () => {
   it("rejects an expired reset", async () => {
     const { repo, resetPassword } = await setup();
     await repo.updatePasswordResetSendState("tok", {
+      resetSessionToken: "tok",
       codeHash: hashOtpCode(CODE),
       expiresAt: new Date(NOW.getTime() - 1_000),
       codeAttempts: 0,
@@ -144,6 +145,7 @@ describe("resetPassword", () => {
   it("keeps an exhausted code unusable even when the right one arrives", async () => {
     const { repo, resetPassword } = await setup();
     await repo.updatePasswordResetSendState("tok", {
+      resetSessionToken: "tok",
       codeHash: hashOtpCode(CODE),
       expiresAt: new Date(NOW.getTime() + 600_000),
       codeAttempts: 5,

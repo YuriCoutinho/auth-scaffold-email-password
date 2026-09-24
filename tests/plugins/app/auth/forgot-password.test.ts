@@ -102,29 +102,37 @@ describe("forgotPassword", () => {
     expect(stored?.codeSendCount).toBe(2);
     expect(stored?.codeAttempts).toBe(0);
     expect(sessionToken).toBe(stored?.resetSessionToken);
+    expect(sessionToken).not.toBe("tok");
     await vi.waitFor(() => expect(emailSender.sent).toHaveLength(1));
   });
 
-  it("sends nothing inside the cooldown and returns the token already issued", async () => {
+  it("sends nothing inside the cooldown, rotating the token and nothing else", async () => {
     const { repo, emailSender, forgotPassword } = setup();
+    const lastSentAt = new Date(NOW.getTime() - 5_000);
     await repo.upsertPasswordReset({
       userId: 1,
       codeHash: "old-code",
       resetSessionToken: "tok",
       expiresAt: new Date(NOW.getTime() + 60_000),
-      now: new Date(NOW.getTime() - 5_000),
+      now: lastSentAt,
     });
 
     const { sessionToken } = await forgotPassword("reset@example.com");
 
-    expect(sessionToken).toBe("tok");
+    expect(sessionToken).not.toBe("tok");
     expect(emailSender.sent).toHaveLength(0);
-    expect((await repo.findPasswordResetByUserId(1))?.codeHash).toBe(
-      "old-code",
-    );
+    const stored = await repo.findPasswordResetByUserId(1);
+    expect(stored).toMatchObject({
+      resetSessionToken: sessionToken,
+      codeHash: "old-code",
+      codeAttempts: 0,
+      codeSendCount: 1,
+      lastSentAt,
+    });
+    expect(await repo.findPasswordResetBySessionToken("tok")).toBeUndefined();
   });
 
-  it("sends nothing once the send cap is reached and returns the token already issued", async () => {
+  it("sends nothing once the send cap is reached, rotating the token and nothing else", async () => {
     const { repo, emailSender, forgotPassword } = setup();
     await repo.upsertPasswordReset({
       userId: 1,
@@ -134,6 +142,7 @@ describe("forgotPassword", () => {
       now: new Date(NOW.getTime() - 600_000),
     });
     await repo.updatePasswordResetSendState("tok", {
+      resetSessionToken: "tok",
       codeHash: "old-code",
       expiresAt: new Date(NOW.getTime() + 60_000),
       codeAttempts: 0,
@@ -143,8 +152,15 @@ describe("forgotPassword", () => {
 
     const { sessionToken } = await forgotPassword("reset@example.com");
 
-    expect(sessionToken).toBe("tok");
+    expect(sessionToken).not.toBe("tok");
     expect(emailSender.sent).toHaveLength(0);
+    expect(await repo.findPasswordResetByUserId(1)).toMatchObject({
+      resetSessionToken: sessionToken,
+      codeHash: "old-code",
+      codeAttempts: 0,
+      codeSendCount: 5,
+      lastSentAt: new Date(NOW.getTime() - 600_000),
+    });
   });
 
   it("starts a fresh row when the previous reset has expired", async () => {
@@ -174,6 +190,7 @@ describe("forgotPassword", () => {
       now: previousSentAt,
     });
     await repo.updatePasswordResetSendState("tok", {
+      resetSessionToken: "tok",
       codeHash: "third-code",
       expiresAt: new Date(NOW.getTime() + 60_000),
       codeAttempts: 2,
@@ -215,5 +232,21 @@ describe("forgotPassword", () => {
     await vi.waitFor(async () => {
       expect((await repo.findPasswordResetByUserId(1))?.codeSendCount).toBe(0);
     });
+  });
+
+  it("hands out a different token on every call for the same account", async () => {
+    const { repo, forgotPassword } = setup();
+
+    const first = await forgotPassword("reset@example.com");
+    const second = await forgotPassword("reset@example.com");
+
+    expect(second.sessionToken).not.toBe(first.sessionToken);
+    expect(repo.passwordResets.size).toBe(1);
+    expect(
+      await repo.findPasswordResetBySessionToken(first.sessionToken),
+    ).toBeUndefined();
+    expect(
+      await repo.findPasswordResetBySessionToken(second.sessionToken),
+    ).toMatchObject({ userId: 1 });
   });
 });

@@ -95,6 +95,9 @@ export interface UpsertPasswordResetInput {
 }
 
 export interface PasswordResetSendState {
+  // Rotated on every request, so the write addresses the row by the token it
+  // is replacing and hands out a new one.
+  resetSessionToken: string;
   codeHash: string;
   expiresAt: Date;
   codeAttempts: number;

@@ -73,7 +73,12 @@ export function createChangePasswordService(deps: ChangePasswordServiceDeps) {
       void sendPasswordChanged(
         { emailSender: deps.emailSender, log: deps.log },
         { to: user.email, userId: user.id },
-      );
+      ).catch((sendError) => {
+        deps.log?.warn(
+          { err: sendError },
+          "failed to send the password changed email",
+        );
+      });
 
       return { outcome: "changed" };
     },

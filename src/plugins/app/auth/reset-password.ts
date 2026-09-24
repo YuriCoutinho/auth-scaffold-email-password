@@ -109,7 +109,12 @@ export function createResetPasswordService(deps: ResetPasswordServiceDeps) {
       void sendPasswordChanged(
         { emailSender: deps.emailSender, log: deps.log },
         { to: reset.email, userId: reset.userId },
-      );
+      ).catch((sendError) => {
+        deps.log?.warn(
+          { err: sendError },
+          "failed to send the password changed email",
+        );
+      });
 
       return { outcome: "reset", sessionToken };
     },

@@ -112,8 +112,10 @@ describe("changePasswordBodySchema", () => {
       }).success,
     );
   });
+});
 
-  it("accepts a valid address on forgot password and rejects a malformed one", () => {
+describe("forgotPasswordBodySchema", () => {
+  it("accepts a valid address and rejects a malformed one", () => {
     expect(
       forgotPasswordBodySchema.safeParse({ email: "user@example.com" }).success,
     ).toBe(true);
@@ -126,8 +128,10 @@ describe("changePasswordBodySchema", () => {
       }).success,
     ).toBe(false);
   });
+});
 
-  it("requires six digits and a long enough password on reset", () => {
+describe("resetPasswordBodySchema", () => {
+  it("requires six digits and a long enough password", () => {
     expect(
       resetPasswordBodySchema.safeParse({
         code: "123456",
