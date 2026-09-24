@@ -281,6 +281,7 @@ describe("forgotPassword", () => {
     };
 
     const { sessionToken } = await forgotPassword("reset@example.com");
+    repo.findPasswordResetByUserId = read;
 
     const stored = await repo.findPasswordResetByUserId(1);
     expect(stored?.resetSessionToken).toBe(sessionToken);
