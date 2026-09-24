@@ -1,11 +1,14 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
+import type { AppOptions } from "../../app-options.js";
 import { SIGNUP_SESSION_COOKIE } from "../../lib/cookies.js";
+import { rateLimitFor } from "../../lib/rate-limit.js";
 import { messageSchema } from "../../schemas/auth.js";
 
-const routes: FastifyPluginAsyncZod = async (app) => {
+const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
   app.post(
     "/resend-code",
     {
+      config: { rateLimit: rateLimitFor("resendCode", opts.rateLimit) },
       schema: {
         tags: ["auth"],
         summary: "Resend the signup confirmation code",

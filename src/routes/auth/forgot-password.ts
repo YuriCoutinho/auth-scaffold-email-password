@@ -1,11 +1,14 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
+import type { AppOptions } from "../../app-options.js";
 import { PASSWORD_RESET_COOKIE } from "../../lib/cookies.js";
+import { rateLimitFor } from "../../lib/rate-limit.js";
 import { forgotPasswordBodySchema, messageSchema } from "../../schemas/auth.js";
 
-const routes: FastifyPluginAsyncZod = async (app) => {
+const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
   app.post(
     "/forgot-password",
     {
+      config: { rateLimit: rateLimitFor("forgotPassword", opts.rateLimit) },
       schema: {
         tags: ["auth"],
         summary: "Start a password reset",
@@ -20,6 +23,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         response: {
           202: messageSchema,
           400: messageSchema,
+          429: messageSchema,
         },
       },
     },

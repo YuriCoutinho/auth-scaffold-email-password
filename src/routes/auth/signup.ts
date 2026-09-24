@@ -1,11 +1,14 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
+import type { AppOptions } from "../../app-options.js";
 import { SIGNUP_SESSION_COOKIE } from "../../lib/cookies.js";
+import { rateLimitFor } from "../../lib/rate-limit.js";
 import { messageSchema, signupBodySchema } from "../../schemas/auth.js";
 
-const routes: FastifyPluginAsyncZod = async (app) => {
+const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
   app.post(
     "/signup",
     {
+      config: { rateLimit: rateLimitFor("signup", opts.rateLimit) },
       schema: {
         tags: ["auth"],
         summary: "Start an email/password signup",
@@ -19,6 +22,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         response: {
           202: messageSchema,
           400: messageSchema,
+          429: messageSchema,
         },
       },
     },

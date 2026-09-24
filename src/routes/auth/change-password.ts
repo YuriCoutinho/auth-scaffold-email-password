@@ -1,15 +1,18 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
+import type { AppOptions } from "../../app-options.js";
+import { rateLimitFor } from "../../lib/rate-limit.js";
 import {
   changePasswordBodySchema,
   messageSchema,
   noContentSchema,
 } from "../../schemas/auth.js";
 
-const routes: FastifyPluginAsyncZod = async (app) => {
+const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
   app.post(
     "/change-password",
     {
       onRequest: [app.authenticate],
+      config: { rateLimit: rateLimitFor("changePassword", opts.rateLimit) },
       schema: {
         tags: ["auth"],
         summary: "Change the password of the signed-in user",

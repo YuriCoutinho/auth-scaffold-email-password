@@ -1,16 +1,19 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
+import type { AppOptions } from "../../app-options.js";
 import { SESSION_COOKIE, SIGNUP_SESSION_COOKIE } from "../../lib/cookies.js";
 import { deviceLabelFromUserAgent } from "../../lib/device-label.js";
+import { rateLimitFor } from "../../lib/rate-limit.js";
 import {
   messageSchema,
   noContentSchema,
   verifyCodeBodySchema,
 } from "../../schemas/auth.js";
 
-const routes: FastifyPluginAsyncZod = async (app) => {
+const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
   app.post(
     "/verify-code",
     {
+      config: { rateLimit: rateLimitFor("verifyCode", opts.rateLimit) },
       schema: {
         tags: ["auth"],
         summary: "Confirm the signup code and sign in",
@@ -25,6 +28,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
           204: noContentSchema,
           400: messageSchema,
           401: messageSchema,
+          429: messageSchema,
         },
       },
     },
