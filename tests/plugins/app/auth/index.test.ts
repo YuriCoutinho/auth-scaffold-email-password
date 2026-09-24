@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import type { AppOptions } from "../../../../src/app-options.js";
 import authPlugin from "../../../../src/plugins/app/auth/index.js";
+import credentialThrottlePlugin from "../../../../src/plugins/app/credential-throttle/index.js";
 import databasePlugin from "../../../../src/plugins/app/database.js";
 import emailSenderPlugin from "../../../../src/plugins/app/email/index.js";
 import pwnedPasswordPlugin from "../../../../src/plugins/app/pwned-password/index.js";
@@ -14,6 +15,7 @@ describe("auth plugin", () => {
     await app.register(databasePlugin, opts);
     await app.register(emailSenderPlugin, opts);
     await app.register(pwnedPasswordPlugin, opts);
+    await app.register(credentialThrottlePlugin, opts);
     await app.register(authPlugin, opts);
     await app.ready();
 
@@ -30,6 +32,7 @@ describe("auth plugin", () => {
     await app.register(databasePlugin, opts);
     await app.register(emailSenderPlugin, opts);
     await app.register(pwnedPasswordPlugin, opts);
+    await app.register(credentialThrottlePlugin, opts);
     await app.register(authPlugin, opts);
     await app.ready();
 

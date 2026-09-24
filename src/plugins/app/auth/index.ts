@@ -21,6 +21,7 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
         opts.sessionRepository ?? createDrizzleSessionRepository(fastify.db),
       emailSender: fastify.emailSender,
       checkPwnedPassword: fastify.checkPwnedPassword,
+      credentialThrottle: fastify.credentialThrottle,
       log: fastify.log,
     }),
   );
@@ -28,5 +29,10 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
 
 export default fp(plugin, {
   name: "auth",
-  dependencies: ["database", "email-sender", "pwned-password"],
+  dependencies: [
+    "database",
+    "email-sender",
+    "pwned-password",
+    "credential-throttle",
+  ],
 });

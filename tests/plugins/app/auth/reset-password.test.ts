@@ -43,14 +43,27 @@ async function setup(
   const send = vi.spyOn(emailSender, "send");
   const checkPwnedPassword =
     overrides.checkPwnedPassword ?? vi.fn().mockResolvedValue(false);
+  const throttle = {
+    check: vi.fn().mockResolvedValue({ outcome: "allowed" as const }),
+    registerFailure: vi.fn().mockResolvedValue(undefined),
+    reset: vi.fn().mockResolvedValue(undefined),
+  };
   const { resetPassword } = createResetPasswordService({
     repo,
     emailSender,
     checkPwnedPassword,
+    throttle,
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     now: () => NOW,
   });
-  return { repo, emailSender, send, checkPwnedPassword, resetPassword };
+  return {
+    repo,
+    emailSender,
+    send,
+    checkPwnedPassword,
+    throttle,
+    resetPassword,
+  };
 }
 
 const input = {
@@ -210,5 +223,40 @@ describe("resetPassword", () => {
     await resetPassword({ ...input, newPassword: OLD_PASSWORD });
 
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("resetPassword throttling", () => {
+  it("clears the credential throttle for the account it just unlocked", async () => {
+    const { throttle, resetPassword } = await setup();
+
+    await resetPassword(input);
+
+    expect(throttle.reset).toHaveBeenCalledWith("reset@example.com");
+  });
+
+  it("leaves the throttle alone when the code is wrong", async () => {
+    const { throttle, resetPassword } = await setup();
+
+    await expect(resetPassword({ ...input, code: "000000" })).resolves.toEqual({
+      outcome: "invalid",
+    });
+    expect(throttle.reset).not.toHaveBeenCalled();
+  });
+
+  it("leaves the throttle alone when the reset has expired", async () => {
+    const { repo, throttle, resetPassword } = await setup();
+    await repo.upsertPasswordReset({
+      userId: 1,
+      codeHash: hashOtpCode(CODE),
+      resetSessionToken: "expired-tok",
+      expiresAt: new Date(NOW.getTime() - 1_000),
+      now: NOW,
+    });
+
+    await expect(
+      resetPassword({ ...input, sessionToken: "expired-tok" }),
+    ).resolves.toEqual({ outcome: "invalid" });
+    expect(throttle.reset).not.toHaveBeenCalled();
   });
 });

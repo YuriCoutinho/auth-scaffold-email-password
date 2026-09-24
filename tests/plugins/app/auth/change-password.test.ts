@@ -2,6 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hashPassword } from "../../../../src/lib/password.js";
 import { createChangePasswordService } from "../../../../src/plugins/app/auth/change-password.js";
 
+// A spy over the real implementation: the existing tests still hash and verify
+// for real, and a test can still assert the verification was never spent.
+vi.mock("../../../../src/lib/password.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../../src/lib/password.js")>();
+  return { ...actual, verifyPassword: vi.fn(actual.verifyPassword) };
+});
+const { verifyPassword } = await import("../../../../src/lib/password.js");
+const verifyPasswordMock = vi.mocked(verifyPassword);
+
 const NOW = new Date("2026-03-01T12:00:00.000Z");
 const CURRENT = "current-password-here";
 const NEXT = "a-brand-new-long-password";
@@ -9,6 +19,7 @@ const NEXT = "a-brand-new-long-password";
 let currentHash: string;
 
 beforeEach(async () => {
+  verifyPasswordMock.mockClear();
   currentHash = await hashPassword(CURRENT);
 });
 
@@ -26,6 +37,11 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
       send: vi.fn().mockResolvedValue({ providerMessageId: "x" }),
     },
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
+    throttle: {
+      check: vi.fn().mockResolvedValue({ outcome: "allowed" }),
+      registerFailure: vi.fn().mockResolvedValue(undefined),
+      reset: vi.fn().mockResolvedValue(undefined),
+    },
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     now: () => NOW,
     ...overrides,
@@ -213,5 +229,43 @@ describe("changePassword", () => {
     await expect(changePassword(input)).resolves.toEqual({
       outcome: "changed",
     });
+  });
+});
+
+describe("changePassword throttling", () => {
+  it("keys the throttle by the stored email, sharing the count with login", async () => {
+    const deps = makeDeps();
+    deps.repo.findAuthUserCredentialsById.mockResolvedValue({
+      id: 7,
+      email: "foo@gmail.com",
+      passwordHash: currentHash,
+    });
+
+    await createChangePasswordService(deps).changePassword({
+      ...input,
+      currentPassword: "wrong-password-entirely",
+    });
+
+    expect(deps.throttle.registerFailure).toHaveBeenCalledWith("foo@gmail.com");
+  });
+
+  it("clears the throttle once the current password checks out", async () => {
+    const deps = makeDeps();
+    await createChangePasswordService(deps).changePassword(input);
+    expect(deps.throttle.reset).toHaveBeenCalledWith("owner@example.com");
+  });
+
+  it("returns throttled without spending a password verification", async () => {
+    const deps = makeDeps();
+    deps.throttle.check.mockResolvedValue({
+      outcome: "blocked",
+      retryAfterSeconds: 42,
+    });
+
+    await expect(
+      createChangePasswordService(deps).changePassword(input),
+    ).resolves.toEqual({ outcome: "throttled", retryAfterSeconds: 42 });
+    expect(verifyPasswordMock).not.toHaveBeenCalled();
+    expect(deps.repo.changeUserPassword).not.toHaveBeenCalled();
   });
 });

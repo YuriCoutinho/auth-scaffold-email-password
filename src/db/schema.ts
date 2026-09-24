@@ -109,3 +109,21 @@ export const passwordResets = pgTable(
   },
   (table) => [index("password_resets_expires_at_idx").on(table.expiresAt)],
 );
+
+// Keyed by a hash of the email rather than the email itself: the row exists to
+// count abuse, and a table about abuse has no business holding an address.
+export const credentialThrottle = pgTable(
+  "credential_throttle",
+  {
+    id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+    keyHash: text("key_hash").notNull().unique(),
+    failedCount: integer("failed_count").notNull().default(0),
+    lastFailedAt: timestamp("last_failed_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    blockedUntil: timestamp("blocked_until", { withTimezone: true }),
+  },
+  (table) => [
+    index("credential_throttle_last_failed_at_idx").on(table.lastFailedAt),
+  ],
+);

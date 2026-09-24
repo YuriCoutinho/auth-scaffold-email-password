@@ -218,3 +218,29 @@ describe("POST /auth/change-password", () => {
     await app.close();
   });
 });
+
+describe("POST /auth/change-password throttling", () => {
+  it("returns 429 with Retry-After once the free attempts are spent", async () => {
+    const authRepository = await repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ authRepository }));
+    const attempt = () =>
+      app.inject(
+        change({
+          currentPassword: "wrong-password-wrong-password",
+          newPassword: "another-correct-horse-battery",
+        }),
+      );
+
+    for (let i = 0; i < 4; i += 1) {
+      await attempt();
+    }
+    const response = await attempt();
+
+    expect(response.statusCode).toBe(429);
+    expect(response.json()).toEqual({
+      message: "Too many attempts. Try again later.",
+    });
+    expect(Number(response.headers["retry-after"])).toBeGreaterThan(0);
+    await app.close();
+  });
+});

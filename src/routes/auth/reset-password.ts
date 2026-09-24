@@ -1,16 +1,19 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
+import type { AppOptions } from "../../app-options.js";
 import { PASSWORD_RESET_COOKIE, SESSION_COOKIE } from "../../lib/cookies.js";
 import { deviceLabelFromUserAgent } from "../../lib/device-label.js";
+import { rateLimitFor } from "../../lib/rate-limit.js";
 import {
   messageSchema,
   noContentSchema,
   resetPasswordBodySchema,
 } from "../../schemas/auth.js";
 
-const routes: FastifyPluginAsyncZod = async (app) => {
+const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
   app.post(
     "/reset-password",
     {
+      config: { rateLimit: rateLimitFor("resetPassword", opts.rateLimit) },
       schema: {
         tags: ["auth"],
         summary: "Finish a password reset and sign in",
@@ -25,6 +28,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
           204: noContentSchema,
           400: messageSchema,
           401: messageSchema,
+          429: messageSchema,
         },
       },
     },

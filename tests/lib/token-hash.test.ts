@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { hashOtpCode, hashSessionToken } from "../../src/lib/token-hash.js";
+import {
+  hashOtpCode,
+  hashSessionToken,
+  hashThrottleKey,
+} from "../../src/lib/token-hash.js";
 
 // SHA-256 of "123456", from a known vector
 const SHA256_123456 =
@@ -27,5 +31,18 @@ describe("hashSessionToken", () => {
   it("returns 64 lowercase hex chars for high-entropy tokens", () => {
     const digest = hashSessionToken("a".repeat(43));
     expect(digest).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe("hashThrottleKey", () => {
+  it("returns a stable sha-256 hex digest", () => {
+    expect(hashThrottleKey("foo@gmail.com")).toMatch(/^[0-9a-f]{64}$/);
+    expect(hashThrottleKey("foo@gmail.com")).toBe(
+      hashThrottleKey("foo@gmail.com"),
+    );
+  });
+
+  it("does not keep the address recoverable from the digest", () => {
+    expect(hashThrottleKey("foo@gmail.com")).not.toContain("foo");
   });
 });

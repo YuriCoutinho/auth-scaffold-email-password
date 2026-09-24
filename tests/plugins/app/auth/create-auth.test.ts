@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createAuth } from "../../../../src/plugins/app/auth/create-auth.js";
+import { createCredentialThrottle } from "../../../../src/plugins/app/credential-throttle/create-credential-throttle.js";
 import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
+import { createInMemoryCredentialThrottleRepository } from "../../../helpers/credential-throttle/in-memory-repository.js";
 
 describe("createAuth", () => {
   it("exposes every auth flow over one repository", async () => {
@@ -12,6 +14,9 @@ describe("createAuth", () => {
         send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
       },
       checkPwnedPassword: vi.fn().mockResolvedValue(false),
+      credentialThrottle: createCredentialThrottle({
+        repository: createInMemoryCredentialThrottleRepository(),
+      }),
     });
 
     const signup = await auth.signup(
@@ -54,6 +59,9 @@ describe("createAuth", () => {
       sessionRepository: repository,
       emailSender: { send: vi.fn() },
       checkPwnedPassword: vi.fn().mockResolvedValue(false),
+      credentialThrottle: createCredentialThrottle({
+        repository: createInMemoryCredentialThrottleRepository(),
+      }),
     });
 
     expect(await auth.currentUser(7)).toMatchObject({ email: "a@b.com" });
