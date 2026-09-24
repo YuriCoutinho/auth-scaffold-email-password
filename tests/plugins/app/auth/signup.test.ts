@@ -163,6 +163,11 @@ describe("signup service", () => {
     await expect(
       createSignupService(deps).signup("foo@gmail.com", PASSWORD),
     ).resolves.toMatchObject({ outcome: "accepted" });
+    // Waiting for the continuation is what proves the rejected mark is caught:
+    // an uncaught one fails the run instead of passing unnoticed.
+    await vi.waitFor(() =>
+      expect(deps.repo.markPendingSignupUndelivered).toHaveBeenCalled(),
+    );
   });
 
   it("does not wait for the provider before returning", async () => {

@@ -11,6 +11,9 @@ function setup(seed = {}) {
     ...seed,
   });
   const emailSender = new FakeEmailSender();
+  // Spied so the "nothing was sent" cases can assert synchronously, instead of
+  // reading a list that a detached send may not have filled yet.
+  const send = vi.spyOn(emailSender, "send");
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const { forgotPassword } = createForgotPasswordService({
     repo,
@@ -18,7 +21,7 @@ function setup(seed = {}) {
     log,
     now: () => NOW,
   });
-  return { repo, emailSender, log, forgotPassword };
+  return { repo, emailSender, send, log, forgotPassword };
 }
 
 describe("forgotPassword", () => {
@@ -49,7 +52,7 @@ describe("forgotPassword", () => {
   });
 
   it("hands back a throwaway token and writes nothing for an unknown address", async () => {
-    const { repo, emailSender, forgotPassword } = setup();
+    const { repo, send, forgotPassword } = setup();
 
     const { sessionToken } = await forgotPassword("nobody@example.com");
 
@@ -58,7 +61,7 @@ describe("forgotPassword", () => {
       await repo.findPasswordResetBySessionToken(sessionToken),
     ).toBeUndefined();
     expect(repo.passwordResets.size).toBe(0);
-    expect(emailSender.sent).toHaveLength(0);
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("does not wait for the provider before returning", async () => {
@@ -107,7 +110,7 @@ describe("forgotPassword", () => {
   });
 
   it("sends nothing inside the cooldown, rotating the token and nothing else", async () => {
-    const { repo, emailSender, forgotPassword } = setup();
+    const { repo, send, forgotPassword } = setup();
     const lastSentAt = new Date(NOW.getTime() - 5_000);
     await repo.upsertPasswordReset({
       userId: 1,
@@ -120,7 +123,7 @@ describe("forgotPassword", () => {
     const { sessionToken } = await forgotPassword("reset@example.com");
 
     expect(sessionToken).not.toBe("tok");
-    expect(emailSender.sent).toHaveLength(0);
+    expect(send).not.toHaveBeenCalled();
     const stored = await repo.findPasswordResetByUserId(1);
     expect(stored).toMatchObject({
       resetSessionToken: sessionToken,
@@ -133,7 +136,7 @@ describe("forgotPassword", () => {
   });
 
   it("sends nothing once the send cap is reached, rotating the token and nothing else", async () => {
-    const { repo, emailSender, forgotPassword } = setup();
+    const { repo, send, forgotPassword } = setup();
     await repo.upsertPasswordReset({
       userId: 1,
       codeHash: "old-code",
@@ -153,7 +156,7 @@ describe("forgotPassword", () => {
     const { sessionToken } = await forgotPassword("reset@example.com");
 
     expect(sessionToken).not.toBe("tok");
-    expect(emailSender.sent).toHaveLength(0);
+    expect(send).not.toHaveBeenCalled();
     expect(await repo.findPasswordResetByUserId(1)).toMatchObject({
       resetSessionToken: sessionToken,
       codeHash: "old-code",

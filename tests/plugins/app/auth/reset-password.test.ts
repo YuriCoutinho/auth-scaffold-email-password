@@ -38,6 +38,9 @@ async function setup(
     now: NOW,
   });
   const emailSender = new FakeEmailSender();
+  // Spied so the "no notice" case can assert synchronously, instead of reading
+  // a list that a detached send may not have filled yet.
+  const send = vi.spyOn(emailSender, "send");
   const checkPwnedPassword =
     overrides.checkPwnedPassword ?? vi.fn().mockResolvedValue(false);
   const { resetPassword } = createResetPasswordService({
@@ -47,7 +50,7 @@ async function setup(
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     now: () => NOW,
   });
-  return { repo, emailSender, checkPwnedPassword, resetPassword };
+  return { repo, emailSender, send, checkPwnedPassword, resetPassword };
 }
 
 const input = {
@@ -201,11 +204,11 @@ describe("resetPassword", () => {
   });
 
   it("sends no notice on any refusal", async () => {
-    const { emailSender, resetPassword } = await setup();
+    const { send, resetPassword } = await setup();
 
     await resetPassword({ ...input, code: "000000" });
     await resetPassword({ ...input, newPassword: OLD_PASSWORD });
 
-    expect(emailSender.sent).toHaveLength(0);
+    expect(send).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../../src/app.js";
 import { hashPassword } from "../../../src/lib/password.js";
+import { MAX_CODE_ATTEMPTS } from "../../../src/lib/session.js";
 import { hashOtpCode } from "../../../src/lib/token-hash.js";
 import { FakeEmailSender } from "../../../src/plugins/app/email/drivers/fake.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
@@ -170,6 +171,51 @@ describe("POST /auth/reset-password", () => {
     const response = await inject(app, { code: "12345", newPassword: "short" });
 
     expect(response.statusCode).toBe(400);
+    expect(await authRepository.findPasswordResetByUserId(1)).toBeDefined();
+
+    await app.close();
+  });
+
+  it("answers the same 401 once the reset has expired", async () => {
+    const { app, authRepository } = await setup();
+    await authRepository.updatePasswordResetSendState("tok", {
+      resetSessionToken: "tok",
+      codeHash: hashOtpCode(CODE),
+      expiresAt: new Date(Date.now() - 1_000),
+      codeAttempts: 0,
+      lastSentAt: new Date(),
+      codeSendCount: 1,
+    });
+
+    const response = await inject(app, {
+      code: CODE,
+      newPassword: NEW_PASSWORD,
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ message: "Invalid or expired code." });
+
+    await app.close();
+  });
+
+  it("answers the same 401 for an exhausted code, even when it is the right one", async () => {
+    const { app, authRepository } = await setup();
+    await authRepository.updatePasswordResetSendState("tok", {
+      resetSessionToken: "tok",
+      codeHash: hashOtpCode(CODE),
+      expiresAt: new Date(Date.now() + 600_000),
+      codeAttempts: MAX_CODE_ATTEMPTS,
+      lastSentAt: new Date(),
+      codeSendCount: 1,
+    });
+
+    const response = await inject(app, {
+      code: CODE,
+      newPassword: NEW_PASSWORD,
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ message: "Invalid or expired code." });
     expect(await authRepository.findPasswordResetByUserId(1)).toBeDefined();
 
     await app.close();
