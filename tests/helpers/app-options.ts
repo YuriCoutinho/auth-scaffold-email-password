@@ -5,6 +5,7 @@ import type { AuthRepository } from "../../src/plugins/app/auth/repository.js";
 import { FakeEmailSender } from "../../src/plugins/app/email/drivers/fake.js";
 import type { SessionRepository } from "../../src/plugins/app/sessions/repository.js";
 import { createInMemoryAuthRepository } from "./auth/in-memory-repository.js";
+import { createInMemoryCredentialThrottleRepository } from "./credential-throttle/in-memory-repository.js";
 
 // Never reaches a server: postgres.js only connects on the first query.
 export const TEST_ENV: Env = {
@@ -31,6 +32,9 @@ export function makeAppOptions(
     logger: false,
     emailSender: new FakeEmailSender(),
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
+    credentialThrottleRepository:
+      overrides.credentialThrottleRepository ??
+      createInMemoryCredentialThrottleRepository(),
     ...overrides,
     authRepository,
     sessionRepository: overrides.sessionRepository ?? authRepository,
