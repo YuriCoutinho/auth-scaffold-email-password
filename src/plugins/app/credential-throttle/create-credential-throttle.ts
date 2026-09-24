@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import {
-  blockSecondsForFailures,
+  blockedUntil,
   THROTTLE_MAX_BLOCK_SECONDS,
 } from "../../../lib/throttle.js";
 import { hashThrottleKey } from "../../../lib/token-hash.js";
@@ -25,13 +25,16 @@ export function createCredentialThrottle(deps: CredentialThrottleDeps) {
         hashThrottleKey(key),
       );
       const currentTime = now();
-      if (!record?.blockedUntil || record.blockedUntil <= currentTime) {
+      const until = record
+        ? blockedUntil(record.failedCount, record.lastFailedAt)
+        : null;
+      if (!until || until <= currentTime) {
         return { outcome: "allowed" };
       }
       // Ceiling, never floor: a remainder under a second still owes a wait, and
       // Retry-After has to be a whole number of seconds.
       const retryAfterSeconds = Math.ceil(
-        (record.blockedUntil.getTime() - currentTime.getTime()) / 1000,
+        (until.getTime() - currentTime.getTime()) / 1000,
       );
       return { outcome: "blocked", retryAfterSeconds };
     },
@@ -47,24 +50,19 @@ export function createCredentialThrottle(deps: CredentialThrottleDeps) {
         currentTime.getTime() - record.lastFailedAt.getTime() >
           THROTTLE_MAX_BLOCK_SECONDS * 1000;
       const failedCount = stale ? 1 : record.failedCount + 1;
-      const blockSeconds = blockSecondsForFailures(failedCount);
-      const blockedUntil =
-        blockSeconds > 0
-          ? new Date(currentTime.getTime() + blockSeconds * 1000)
-          : null;
 
       await deps.repository.upsertThrottleFailure({
         keyHash,
         failedCount,
         lastFailedAt: currentTime,
-        blockedUntil,
       });
 
-      if (blockedUntil) {
+      const until = blockedUntil(failedCount, currentTime);
+      if (until) {
         // No key and no hash in the log: a stable digest is still a handle to
         // follow one person across events.
         deps.log?.warn(
-          { failedCount, blockedUntil },
+          { failedCount, blockedUntil: until },
           "credential attempts throttled",
         );
       }

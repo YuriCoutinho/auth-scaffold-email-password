@@ -1,151 +1,198 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  MAX_CODE_ATTEMPTS,
-  SESSION_TTL_SECONDS,
-} from "../../../../src/lib/session.js";
-import {
   hashOtpCode,
   hashSessionToken,
+  hashVerificationToken,
 } from "../../../../src/lib/token-hash.js";
+import { DEFAULT_TTL } from "../../../../src/lib/ttl.js";
+import type { VerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
+import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
 import { createVerifyCodeService } from "../../../../src/plugins/app/auth/verify-code.js";
+import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
+import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 
-const NOW = new Date("2026-09-21T12:00:00Z");
-const UUID_V4 =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const NOW = new Date("2026-09-24T12:00:00Z");
+const USER_ID = "11111111-1111-4111-8111-111111111111";
+const EMAIL = "user@example.com";
 const TOKEN = "signup-token";
 const CODE = "123456";
+const UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-function makePending(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 1,
-    email: "foo@gmail.com",
-    passwordHash: "argon2-hash",
-    codeHash: hashOtpCode(CODE),
-    codeAttempts: 0,
-    lastSentAt: new Date("2026-09-21T11:59:00Z"),
-    codeSendCount: 1,
-    expiresAt: new Date("2026-09-21T12:10:00Z"),
-    ...overrides,
-  };
-}
-
-function makeDeps(pending: ReturnType<typeof makePending> | undefined) {
-  return {
-    repo: {
-      findPendingSignupBySessionToken: vi.fn().mockResolvedValue(pending),
-      incrementCodeAttempts: vi.fn().mockResolvedValue(undefined),
-      promotePendingSignup: vi
-        .fn()
-        .mockResolvedValue({ id: 7, publicId: "pub-7" }),
-    },
-    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+function setup(
+  options: {
+    emailVerifiedAt?: Date | null;
+    issuedAt?: Date;
+    codeAttempts?: number;
+    wrapCodes?: (codes: VerificationCodes) => Pick<VerificationCodes, "verify">;
+  } = {},
+) {
+  const repo = createInMemoryAuthRepository({
+    users: [
+      {
+        id: USER_ID,
+        email: EMAIL,
+        emailVerifiedAt:
+          options.emailVerifiedAt === undefined
+            ? null
+            : options.emailVerifiedAt,
+      },
+    ],
+    verificationCodes: [
+      {
+        userId: USER_ID,
+        purpose: "signup",
+        tokenHash: hashVerificationToken(TOKEN),
+        codeHash: hashOtpCode(CODE),
+        codeAttempts: options.codeAttempts ?? 0,
+        issuedAt: options.issuedAt ?? NOW,
+      },
+    ],
+  });
+  const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const codes = createVerificationCodes({
+    repo,
+    emailSender: new FakeEmailSender(),
+    ttl: DEFAULT_TTL,
+    log,
     now: () => NOW,
-  };
+  });
+  const { verifyCode } = createVerifyCodeService({
+    repo,
+    codes: options.wrapCodes ? options.wrapCodes(codes) : codes,
+    log,
+    now: () => NOW,
+  });
+  const code = () => repo.verificationCodes.get(`${USER_ID}:signup`);
+  return { repo, log, codes, verifyCode, code };
 }
 
 describe("verifyCode", () => {
-  it("returns invalid when the cookie token is missing", async () => {
-    const deps = makeDeps(undefined);
-    await expect(
-      createVerifyCodeService(deps).verifyCode(undefined, CODE, null),
-    ).resolves.toEqual({ outcome: "invalid" });
-    expect(deps.repo.findPendingSignupBySessionToken).not.toHaveBeenCalled();
-  });
+  it("confirms the address, consumes the code and opens a session", async () => {
+    const { repo, code, verifyCode } = setup();
 
-  it("returns invalid when no pending signup matches", async () => {
-    const deps = makeDeps(undefined);
-    await expect(
-      createVerifyCodeService(deps).verifyCode(TOKEN, CODE, null),
-    ).resolves.toEqual({ outcome: "invalid" });
-  });
+    const result = await verifyCode(TOKEN, CODE, "Firefox on macOS");
 
-  it("returns invalid when the pending signup is expired", async () => {
-    const deps = makeDeps(
-      makePending({ expiresAt: new Date("2026-09-21T11:59:59Z") }),
-    );
-    await expect(
-      createVerifyCodeService(deps).verifyCode(TOKEN, CODE, null),
-    ).resolves.toEqual({ outcome: "invalid" });
-    expect(deps.repo.promotePendingSignup).not.toHaveBeenCalled();
-  });
-
-  it("returns invalid without comparing or incrementing when attempts are exhausted", async () => {
-    const deps = makeDeps(makePending({ codeAttempts: MAX_CODE_ATTEMPTS }));
-    await expect(
-      createVerifyCodeService(deps).verifyCode(TOKEN, CODE, null),
-    ).resolves.toEqual({ outcome: "invalid" });
-    expect(deps.repo.incrementCodeAttempts).not.toHaveBeenCalled();
-    expect(deps.repo.promotePendingSignup).not.toHaveBeenCalled();
-  });
-
-  it("increments attempts and returns invalid on a wrong code", async () => {
-    const deps = makeDeps(makePending());
-    await expect(
-      createVerifyCodeService(deps).verifyCode(TOKEN, "654321", null),
-    ).resolves.toEqual({ outcome: "invalid" });
-    expect(deps.repo.incrementCodeAttempts).toHaveBeenCalledWith(TOKEN);
-    expect(deps.repo.promotePendingSignup).not.toHaveBeenCalled();
-  });
-
-  it("promotes atomically and returns a fresh session token on the right code", async () => {
-    const deps = makeDeps(makePending());
-    const result = await createVerifyCodeService(deps).verifyCode(
-      TOKEN,
-      CODE,
-      "Mozilla/5.0",
-    );
-
-    expect(result.outcome).toBe("verified");
-    const sessionToken =
-      result.outcome === "verified" ? result.sessionToken : "";
-    expect(sessionToken).toMatch(/^[A-Za-z0-9_-]{43}$/); // 32 bytes base64url
-
-    const input = deps.repo.promotePendingSignup.mock.calls[0]?.[0];
-    expect(input).toEqual({
-      publicId: expect.stringMatching(UUID_V4),
-      email: "foo@gmail.com",
-      passwordHash: "argon2-hash",
-      sessionPublicId: expect.stringMatching(UUID_V4),
-      sessionTokenHash: hashSessionToken(sessionToken),
-      deviceLabel: "Mozilla/5.0",
-      sessionExpiresAt: new Date(NOW.getTime() + SESSION_TTL_SECONDS * 1000),
+    expect(result).toEqual({
+      outcome: "verified",
+      sessionToken: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
     });
-    expect(input.sessionTokenHash).not.toBe(sessionToken);
-    expect(deps.repo.incrementCodeAttempts).not.toHaveBeenCalled();
-  });
-  it("rejects the code when a concurrent request already consumed the signup", async () => {
-    const deps = makeDeps(makePending());
-    deps.repo.promotePendingSignup.mockResolvedValue(null);
-
-    const result = await createVerifyCodeService(deps).verifyCode(
-      TOKEN,
-      CODE,
-      null,
-    );
-
-    expect(result).toEqual({ outcome: "invalid" });
-    expect(deps.log.info).toHaveBeenCalledWith(
-      { pendingSignupId: 1 },
-      "pending signup already promoted by a concurrent request",
-    );
+    if (result.outcome !== "verified") return;
+    expect(repo.users.get(USER_ID)?.emailVerifiedAt).toEqual(NOW);
+    expect(code()).toBeUndefined();
+    expect([...repo.sessions.values()]).toEqual([
+      {
+        id: expect.stringMatching(UUID_V4),
+        userId: USER_ID,
+        tokenHash: hashSessionToken(result.sessionToken),
+        deviceLabel: "Firefox on macOS",
+        createdAt: NOW,
+      },
+    ]);
   });
 
-  it("logs an unrecognized signup session token", async () => {
-    const deps = makeDeps(undefined);
-    await createVerifyCodeService(deps).verifyCode(TOKEN, CODE, null);
-    expect(deps.log.info).toHaveBeenCalledWith(
-      "signup session token not recognized",
+  it("logs the confirmation with the user id and nothing else", async () => {
+    const { log, verifyCode } = setup();
+
+    await verifyCode(TOKEN, CODE, null);
+
+    expect(log.info).toHaveBeenCalledWith(
+      { userId: USER_ID },
+      "email verified",
     );
   });
 
-  it("logs the expired pending signup by id", async () => {
-    const deps = makeDeps(
-      makePending({ expiresAt: new Date("2026-09-21T11:59:59Z") }),
+  it("rejects a missing cookie", async () => {
+    const { repo, code, verifyCode } = setup();
+
+    expect(await verifyCode(undefined, CODE, null)).toEqual({
+      outcome: "invalid",
+    });
+    expect(code()).toBeDefined();
+    expect(repo.sessions.size).toBe(0);
+  });
+
+  it("rejects a token that matches no code", async () => {
+    const { repo, verifyCode } = setup();
+
+    expect(await verifyCode("not-a-real-token", CODE, null)).toEqual({
+      outcome: "invalid",
+    });
+    expect(repo.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
+    expect(repo.sessions.size).toBe(0);
+  });
+
+  it("rejects a wrong code, counts the attempt and confirms nothing", async () => {
+    const { repo, code, verifyCode } = setup();
+
+    expect(await verifyCode(TOKEN, "000000", null)).toEqual({
+      outcome: "invalid",
+    });
+    expect(code()?.codeAttempts).toBe(1);
+    expect(repo.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
+    expect(repo.sessions.size).toBe(0);
+  });
+
+  it("rejects an expired code", async () => {
+    const { repo, verifyCode } = setup({
+      issuedAt: new Date(NOW.getTime() - DEFAULT_TTL.signupCodeSeconds * 1000),
+    });
+
+    expect(await verifyCode(TOKEN, CODE, null)).toEqual({ outcome: "invalid" });
+    expect(repo.sessions.size).toBe(0);
+  });
+
+  it("rejects the right code once the attempts are exhausted", async () => {
+    const { repo, verifyCode } = setup({ codeAttempts: 5 });
+
+    expect(await verifyCode(TOKEN, CODE, null)).toEqual({ outcome: "invalid" });
+    expect(repo.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
+  });
+
+  it("loses when the token is rotated between the check and the confirmation", async () => {
+    const { repo, log, verifyCode } = setup({
+      wrapCodes: (codes) => ({
+        async verify(...args) {
+          const result = await codes.verify(...args);
+          // A signup for the same address lands in between.
+          await repo.rotateVerificationToken(
+            { userId: USER_ID, purpose: "signup" },
+            hashVerificationToken("a-newer-token"),
+          );
+          return result;
+        },
+      }),
+    });
+
+    expect(await verifyCode(TOKEN, CODE, null)).toEqual({ outcome: "invalid" });
+    expect(repo.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
+    expect(repo.sessions.size).toBe(0);
+    expect(log.info).toHaveBeenCalledWith(
+      { userId: USER_ID },
+      "signup code already consumed by a concurrent request",
     );
-    await createVerifyCodeService(deps).verifyCode(TOKEN, CODE, null);
-    expect(deps.log.info).toHaveBeenCalledWith(
-      { pendingSignupId: 1 },
-      "pending signup expired",
-    );
+  });
+
+  it("lets only one of two concurrent confirmations with the same code win", async () => {
+    const { repo, verifyCode } = setup();
+
+    const results = await Promise.all([
+      verifyCode(TOKEN, CODE, null),
+      verifyCode(TOKEN, CODE, null),
+    ]);
+
+    expect(results.map((result) => result.outcome).sort()).toEqual([
+      "invalid",
+      "verified",
+    ]);
+    expect(repo.sessions.size).toBe(1);
+  });
+
+  it("never opens a session from a leftover code of an already confirmed account", async () => {
+    const { repo, verifyCode } = setup({ emailVerifiedAt: new Date(0) });
+
+    expect(await verifyCode(TOKEN, CODE, null)).toEqual({ outcome: "invalid" });
+    expect(repo.users.get(USER_ID)?.emailVerifiedAt).toEqual(new Date(0));
+    expect(repo.sessions.size).toBe(0);
   });
 });

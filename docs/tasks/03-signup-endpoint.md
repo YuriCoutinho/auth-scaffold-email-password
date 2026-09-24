@@ -4,7 +4,7 @@
 
 O cadastro é o endpoint mais exposto de qualquer aplicação, porque aceita requisição de quem ainda não tem conta. Duas preocupações mandam no desenho: ele não pode revelar quais emails já existem, e não pode criar conta antes de provar que a pessoa controla aquele email.
 
-A solução para as duas é a mesma linha de raciocínio. Nada é criado em `auth_users` neste momento, apenas um cadastro pendente com um código de 6 dígitos, e a resposta é a mesma independentemente de o email já existir, já estar pendente ou ser novo.
+A solução para as duas é a mesma linha de raciocínio. A conta nasce não confirmada, com `email_verified_at` nulo e um código de 6 dígitos em `verification_codes`, e nenhum fluxo trata essa conta como real até a confirmação. A resposta é a mesma independentemente de o email já ter conta confirmada, já estar pendente ou ser novo.
 
 Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que entra logo em seguida através de um ponto de integração injetado.
 
@@ -31,42 +31,48 @@ Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que 
 * Qualquer ocorrência rejeita, respondendo 400 com mensagem que fala apenas da senha, sugerindo escolher outra, sem mencionar contas
 * Timeout de 2 segundos e comportamento **fail open**: se o serviço externo cair, o cadastro continua e a falha vira log de aviso. Indisponibilidade de terceiro não pode derrubar o cadastro do seu produto
 
-### Normalização e idempotência
+### Normalização e o último cadastro vence
 
 * Email recebe `trim` e lowercase antes de qualquer consulta ou gravação, de modo que `Foo@Gmail.com` e `foo@gmail.com` sejam a mesma conta
-* Se já existe cadastro pendente não expirado para aquele email, nada é criado nem reenviado, mas o token de sessão rotaciona: a resposta devolve um valor novo, gravado na linha por um `UPDATE` chaveado pelo email, e nenhum outro campo muda, nem código, nem tentativas, nem contagem de envios, nem expiração. O código que já está na caixa de entrada continua valendo, porque a validade dele mora no hash e no `expires_at` da linha, não no token. Reenvio é responsabilidade explícita de outro endpoint
-* A rotação tem um custo aceito de propósito: qualquer anônimo que chame o endpoint com o email de outra pessoa invalida o cookie do cadastro em andamento dela. A troca compensa porque a alternativa é devolver um valor estável, que entrega por enumeração quais endereços já têm conta, e porque a recuperação é barata, já que a chamada seguinte da vítima devolve um cookie válido e o código que ela recebeu continua valendo
-* Se o pendente existe mas expirou, ele é substituído atomicamente por `INSERT ... ON CONFLICT (email) DO UPDATE`, que troca senha, código, token e expiração, zera as tentativas e renova os contadores
-* O upsert resolve dois problemas de uma vez: a constraint `UNIQUE` de email nunca estoura como erro para quem está cadastrando, e duas requisições simultâneas do mesmo email não criam estado inconsistente
-* Uma sutileza do upsert vale registrar: valores `DEFAULT` da tabela só disparam em insert de verdade, então a cláusula de update precisa renovar `created_at`, `last_sent_at` e `code_send_count` explicitamente
+* O hash Argon2 da senha é calculado **antes** de qualquer ramificação, inclusive antes de ler a conta. Assim um endereço novo, um pendente e um confirmado pagam exatamente um Argon2 cada, e o tempo de resposta não conta qual dos três era. Pular o hash no caminho da conta confirmada, que não grava nada, deixaria esse caminho centenas de milissegundos mais rápido que os outros
+* Se o email pertence a uma conta confirmada, nada é gravado nem enviado, e a resposta leva um token descartável
+* Nos outros casos, conta nova ou conta ainda não confirmada, uma única transação faz duas escritas. A primeira é `INSERT ... ON CONFLICT (email) DO UPDATE SET password_hash = ... WHERE email_verified_at IS NULL`, que cria a conta com o id gerado pela aplicação ou troca a senha da conta pendente e devolve o id da linha que ficou. A segunda grava o código de cadastro dessa conta, com um token novo
+* **O último cadastro vence**: todo cadastro de um endereço ainda não confirmado grava a senha nova. Sem isso existiria sequestro de conta antes da verificação. Alguém cadastra o email da vítima com uma senha própria e não confirma; a vítima se cadastra depois, recebe o código na caixa de entrada dela e confirma; e a conta confirmada ficaria com a senha de quem chegou primeiro. Com a senha sempre substituída, quem confirma é quem se cadastrou por último, e essa pessoa precisa ter o código que só chega à caixa de entrada do dono
+* As duas escritas ficam na mesma transação para que uma confirmação concorrente nunca junte a senha nova com o token antigo. A confirmação consome o código comparando o token e o código que ela leu, então quando o cadastro troca o token no meio do caminho, ela perde a corrida em vez de confirmar a senha errada
+* O `WHERE` do ramo de conflito é o que protege a conta confirmada: a linha fica intacta e o `RETURNING` volta vazio. Isso cobre também a corrida em que uma confirmação concorrente conclui entre a leitura e a escrita do cadastro, e nesse caso a resposta é a mesma do caminho confirmado, com token descartável
+* Se a conta pendente já tem um código vivo, ou seja emitido há menos que o tempo de vida do código, ele é mantido: código, tentativas, contagem de envios e `issued_at` não mudam, nada é reenviado, e só o token rotaciona. O código que já está na caixa de entrada continua valendo, porque a validade dele mora no hash e no `issued_at`, não no token. Sem código vivo, um código novo é emitido do zero
+* A rotação do token tem um custo aceito de propósito: qualquer anônimo que chame o endpoint com o email de outra pessoa invalida o cookie do cadastro em andamento dela e troca a senha da conta pendente. A troca compensa porque a alternativa é devolver um valor estável, que entrega por enumeração quais endereços já têm conta, e porque a recuperação é barata: a conta não está confirmada, o atacante não tem o código, e a chamada seguinte da vítima devolve a senha dela e um cookie válido
+* O upsert resolve ainda dois problemas de uma vez: a constraint `UNIQUE` de email nunca estoura como erro para quem está cadastrando, e duas requisições simultâneas do mesmo email não criam estado inconsistente
 
 ### Código e token
 
 * Código de 6 dígitos por `crypto.randomInt`, com padding à esquerda para que `000042` seja um código válido
 * O código em claro existe apenas em memória no instante da geração. No banco fica só o SHA-256, e ele nunca aparece em log nem na resposta
-* Token de sessão de cadastro com 32 bytes aleatórios em base64url, ou seja 256 bits, guardado na coluna própria
-* Tempo de vida do cadastro pendente de 15 minutos, o mesmo valor usado no `Max-Age` do cookie
+* Token de sessão de cadastro com 32 bytes aleatórios em base64url, ou seja 256 bits, gerado por `generateToken` em `src/lib/session.ts`. No banco fica só o SHA-256 dele, em `token_hash`
+* Tempo de vida do código de cadastro de 15 minutos por padrão, `signupCodeSeconds` da política de TTL, o mesmo valor usado no `Max-Age` do cookie
 
 ### Resposta e cookie
 
-* Cookie `signup_session` com `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/auth` e `Max-Age` de 900 segundos
+* Cookie `signup_session` com `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/auth` e `Max-Age` igual ao tempo de vida do código, 900 segundos no padrão
+* A política dos cookies mora em `src/lib/cookies.ts` como `cookiePolicy(ttl)`, uma função e não uma constante, porque o `Max-Age` de cada cookie acompanha o TTL configurado da credencial que ele carrega. A rota monta a política uma vez a partir de `resolveTtl(opts.ttl)`
 * A resposta é byte a byte idêntica nos três caminhos possíveis, incluindo a presença do cookie. Quando o email pertence a uma conta já confirmada, nenhum código é gerado e o cookie recebe um token descartável, justamente para que a resposta não se diferencie. A indistinguibilidade cobre também o valor do cookie, e é por isso que nenhum dos três caminhos pode devolver um valor que se repita entre chamadas: um valor estável para um endereço e variável para outro responderia, em duas requisições, quais endereços já têm conta
 * O `Path=/auth` mantém esse cookie restrito ao fluxo de cadastro, sem acompanhar requisições ao resto da API
 
 ### Logs
 
-* A criação do cadastro pendente vira log de informação com o identificador da linha, e só com ele. O email não entra, porque log de aplicação não carrega dado pessoal, e o código muito menos, já que ele nem existe em claro fora do instante da geração
-* O identificador é o que costura os eventos seguintes do mesmo cadastro, envio do email, reenvio, tentativa falha e promoção, numa linha do tempo única sem precisar do endereço
-* Os caminhos que não criam nada, conta já confirmada e pendente ainda válido, não produzem log próprio. Registrar que uma conta já existia seria escrever num arquivo justamente a informação que a resposta se recusa a dar
+* Todo cadastro que grava, conta nova ou pendente, vira log de informação com o id da conta, e só com ele. O email não entra, porque log de aplicação não carrega dado pessoal, e o código muito menos, já que ele nem existe em claro fora do instante da geração
+* O id é o que costura os eventos seguintes do mesmo cadastro, envio do email, reenvio, tentativa falha e confirmação, numa linha do tempo única sem precisar do endereço. Como a conta pendente e a confirmada são a mesma linha, o id é o mesmo do começo ao fim
+* O caminho que não grava nada, conta já confirmada, não produz log próprio. Registrar que uma conta já existia seria escrever num arquivo justamente a informação que a resposta se recusa a dar
 
 ### Organização do código
 
 * A rota fica em `src/routes/auth/signup.ts` e cuida apenas de HTTP: valida o body com o schema de `src/schemas/auth.ts`, chama `app.auth.signup` e traduz o resultado em status, mensagem e cookie
-* A regra de negócio fica em `src/plugins/app/auth/signup.ts`, numa função `createSignupService(deps)` que recebe repositório, remetente de email e verificador de senha vazada como parâmetro. Ela devolve um resultado discriminado (`accepted`, `pwned-password`) em vez de lançar erro ou conhecer status HTTP, e por isso é testável sem subir Fastify
+* A regra de negócio fica em `src/plugins/app/auth/signup.ts`, numa função `createSignupService(deps)` que recebe repositório, módulo de código e verificador de senha vazada como parâmetro. Ela devolve um resultado discriminado (`accepted`, `pwned-password`) em vez de lançar erro ou conhecer status HTTP, e por isso é testável sem subir Fastify
 * O plugin `src/plugins/app/auth/index.ts` monta esse service junto dos demais fluxos e decora a instância como `fastify.auth`. Ele declara `dependencies` para `database`, `email-sender` e `pwned-password`, porque lê `fastify.db`, `fastify.emailSender` e `fastify.checkPwnedPassword` ao montar o módulo
 * A verificação de senha vazada é o plugin `src/plugins/app/pwned-password/`, cujo `index.ts` decora `fastify.checkPwnedPassword` com o verificador de `checker.ts`. Ela sai de `lib/` porque faz HTTP e precisa de comportamento diferente em teste e em produção, e `lib/` é só para função pura
-* O acesso ao banco passa pela interface `AuthRepository`. O service depende de um `Pick` dos quatro métodos que usa, o adaptador Drizzle em `auth/drizzle-repository.ts` implementa a interface inteira, e o adaptador em memória de `tests/helpers/auth/` substitui o banco nos testes de rota. Testar com um falso do ORM seria testar a implementação do repositório pelo lado errado
-* Tudo isso chega aos testes por `AppOptions`: `buildApp` recebe `authRepository`, `emailSender` e `checkPwnedPassword` opcionais, e cada plugin usa o que veio ou monta a implementação real a partir de `config`
+* O código por email fica em `src/plugins/app/auth/verification-codes.ts`, `createVerificationCodes`, que decide entre manter o código vivo e emitir um novo, gera o token e chama o repositório. Ele nasce aqui com `startSignup` e cresce nas etapas seguintes com o envio, o reenvio e a conferência, porque é o mesmo código com as mesmas regras em todos esses fluxos. O service de cadastro só decide se o endereço pode receber cadastro e o chama
+* O acesso ao banco passa pela interface `AuthRepository`. O service depende de um `Pick` com `findUserByEmail`, e a transação das duas escritas é um método só da porta, `startSignup`, porque só o adaptador que tem banco sabe o que é uma transação. O adaptador Drizzle em `auth/drizzle-repository.ts` implementa a interface inteira, e o adaptador em memória de `tests/helpers/auth/` substitui o banco nos testes de rota. Testar com um falso do ORM seria testar a implementação do repositório pelo lado errado
+* Tudo isso chega aos testes por `AppOptions`: `buildApp` recebe `authRepository`, `emailSender` e `checkPwnedPassword` opcionais, e cada plugin usa o que veio ou monta a implementação real a partir de `config`. `AppOptions` também recebe `ttl`, com sobreposições parciais da política de tempo de vida, que cada plugin resolve com `resolveTtl`
 * O service grava primeiro e envia depois, ordem coberta por teste, para nunca existir código enviado que não esteja registrado
 * O envio sai do caminho da requisição, disparado com `void` depois que a linha está gravada, de modo que o tempo de resposta não separa um endereço novo de um que já tem conta confirmada. O documento 15 traz o raciocínio completo dessa decisão
 
@@ -74,7 +80,9 @@ Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que 
 
 * Contrato publicado no OpenAPI, com os três status possíveis descritos
 * Request e response tipados e validados pelo mesmo schema Zod
-* Testes unitários cobrindo validação de email e senha, normalização, rotação do token no pendente válido sem criar nem reenviar nada, substituição do pendente expirado, resposta genérica nos três caminhos, ordem de gravar antes de enviar e rejeição de senha vazada
+* Testes unitários cobrindo validação de email e senha, normalização, rotação do token com o código vivo mantido, código novo quando o anterior expirou, resposta genérica nos três caminhos, ordem de gravar antes de enviar e rejeição de senha vazada
+* Teste provando que um novo cadastro dentro da janela troca a senha da conta pendente e que o token anterior deixa de confirmar
+* Teste provando que o Argon2 roda também quando o email pertence a uma conta confirmada
 * Teste do verificador de senha vazada cobrindo ocorrência encontrada, ausência e indisponibilidade do serviço com fail open
-* Teste conferindo que a criação do cadastro pendente é logada com o identificador e sem o email, e que os caminhos que nada criam não produzem esse log
+* Teste conferindo que o cadastro é logado com o id da conta e sem o email, e que o caminho da conta confirmada não produz esse log
 * Teste de service com o repositório em memória e teste de rota com `app.inject`, e nenhum dos dois toca banco ou rede reais, porque os colaboradores chegam por `AppOptions`

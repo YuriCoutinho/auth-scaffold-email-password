@@ -1,8 +1,9 @@
+import { expiresAt, issuedAfter } from "../../../lib/ttl.js";
 import type { SessionRepository } from "./repository.js";
 
 export interface ListSessionsInput {
-  userId: number;
-  currentSessionId: number;
+  userId: string;
+  currentSessionId: string;
 }
 
 export interface SessionSummary {
@@ -14,7 +15,8 @@ export interface SessionSummary {
 }
 
 interface ListSessionsServiceDeps {
-  repo: Pick<SessionRepository, "listActiveUserSessions">;
+  repo: Pick<SessionRepository, "listUserSessions">;
+  sessionTtlSeconds: number;
   now?: () => Date;
 }
 
@@ -23,19 +25,16 @@ export function createListSessionsService(deps: ListSessionsServiceDeps) {
 
   return {
     async listSessions(input: ListSessionsInput): Promise<SessionSummary[]> {
-      const records = await deps.repo.listActiveUserSessions({
+      const records = await deps.repo.listUserSessions({
         userId: input.userId,
-        now: now(),
+        createdAfter: issuedAfter(deps.sessionTtlSeconds, now()),
       });
 
-      // The internal id is compared here and dropped here: which session the
-      // request is coming from is one rule with one owner, and the serial id
-      // never reaches a payload.
       return records.map((record) => ({
-        id: record.publicId,
+        id: record.id,
         deviceLabel: record.deviceLabel,
         createdAt: record.createdAt,
-        expiresAt: record.expiresAt,
+        expiresAt: expiresAt(record.createdAt, deps.sessionTtlSeconds),
         isCurrent: record.id === input.currentSessionId,
       }));
     },

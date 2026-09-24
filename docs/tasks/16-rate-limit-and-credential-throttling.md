@@ -24,11 +24,13 @@ Escrever os contadores por IP no Postgres foi considerado e recusado. Seria uma 
 
 O teto existe para que o bloqueio não vire negação de serviço contra o dono da conta. Sem ele, um atacante que conheça o email de alguém erra a senha vinte vezes de propósito e deixa a vítima trancada por semanas. Com o teto de uma hora, o custo para o atacante continua proibitivo, porque uma hora por tentativa inviabiliza qualquer varredura de dicionário, e o prejuízo máximo para quem é alvo é uma espera limitada.
 
+O fim do bloqueio não é guardado, é derivado. `blockedUntil(failedCount, lastFailedAt)`, na mesma função pura, soma a janela da contagem atual ao instante da última falha, e é isso que a checagem compara com o relógio. Guardar esse instante numa coluna só acrescentaria um terceiro valor capaz de discordar dos outros dois.
+
 O mesmo valor do teto governa o descarte por inatividade. Se a última falha registrada é mais antiga que uma hora, a contagem recomeça do um em vez de continuar de onde parou. Sem essa regra, uma linha esquecida com sete falhas de dois dias atrás faria o próximo erro de digitação do usuário cair direto num bloqueio de uma hora, quando na prática não existe rajada nenhuma acontecendo. O que caracteriza a máquina é a sequência, e uma sequência interrompida por uma hora deixou de ser sequência.
 
 ### A linha é chaveada por um hash do email, e conta também endereços sem conta
 
-A tabela `credential_throttle` guarda `key_hash`, e não o endereço. A linha existe para contar abuso, e uma tabela sobre abuso não tem por que carregar um email em repouso. O digest é o mesmo SHA-256 já usado para código de confirmação e token de sessão, exposto como `hashThrottleKey` em `src/lib/token-hash.ts`, porque a proteção aqui não vem do custo do hash e sim do fato de o valor não ser recuperável a olho nu num dump.
+A tabela `credential_throttle` guarda `key_hash`, e não o endereço, ao lado de `failed_count` e `last_failed_at`, este gravado pelo relógio da aplicação. A linha existe para contar abuso, e uma tabela sobre abuso não tem por que carregar um email em repouso. O digest é o mesmo SHA-256 já usado para código de confirmação e token de sessão, exposto como `hashThrottleKey` em `src/lib/token-hash.ts`, porque a proteção aqui não vem do custo do hash e sim do fato de o valor não ser recuperável a olho nu num dump.
 
 O contador incrementa mesmo quando o email não pertence a conta nenhuma. Se só endereços existentes fossem contados, o bloqueio viraria o oráculo de enumeração que o resto do fluxo se esforça para não ser: bastaria errar a senha quatro vezes e observar se o quinto pedido devolve `429` ou o `401` de sempre para descobrir se a conta existe. Contando todo mundo, a resposta é idêntica nos dois casos, e um teste de rota fixa justamente isso com um email que não existe.
 
@@ -74,15 +76,19 @@ O limitador identifica o chamador pelo IP que o Fastify reporta. Com `trustProxy
 
 A decisão tem o outro lado, e ele importa tanto quanto. Num deploy que já esteja atrás de um proxy reverso, manter a opção desligada faz com que toda requisição chegue com o endereço do proxy, então o teto global de cem por minuto passa a valer para o serviço inteiro em vez de valer por cliente, e um único usuário ativo tranca todos os demais. A opção só passa a fazer sentido quando existe de fato um proxy confiável na frente da aplicação, porque é ele que sobrescreve o cabeçalho com o endereço real da conexão, e a partir daí ligá-la deixa de ser opcional. Como o projeto é um scaffold e não tem um ambiente de deploy definido, a configuração fica no padrão da biblioteca, desligada, e entra junto com a infraestrutura que a justificar.
 
-### A tabela entra como migration incremental
+### A tabela entra no baseline, chaveada pelo próprio hash
 
-`credential_throttle` vem depois do baseline, então ela não regenera o schema inicial. `pnpm db:generate` produz uma migration aditiva com o `CREATE TABLE` e o índice sobre `last_failed_at`, sem tocar em nenhuma tabela existente. A chave primária é o `integer` gerado por identidade, no mesmo padrão das demais tabelas, e `key_hash` carrega a restrição de unicidade que sustenta o upsert do adaptador. O índice sobre `last_failed_at` existe porque é por esse campo que uma limpeza futura de linhas frias vai varrer a tabela.
+`credential_throttle` faz parte do schema inicial deste scaffold, então o baseline em `drizzle/` é regenerado em vez de estendido com uma migration incremental, pela mesma regra do documento 02. A chave primária é o próprio `key_hash`. A linha só é endereçada por ele, então uma chave substituta seria um índice que ninguém lê, e a chave natural já é o alvo de conflito que o upsert do adaptador precisa.
+
+O índice sobre `last_failed_at` existe porque é por esse campo que a limpeza periódica varre a tabela. A varredura ganha um corte a mais: trilhas cuja última falha passou de três vezes o teto do bloqueio são apagadas. Nesse ponto a trilha já deixou de contar, porque a próxima falha recomeça do um, e o multiplicador só mantém o rastro disponível por um tempo para diagnóstico, como nos códigos.
 
 ## Definition of done
 
 * `blockSecondsForFailures` em `src/lib/throttle.ts` cobrindo as três tentativas livres, o crescimento de cinco vezes a partir de um minuto e o teto de uma hora, com teste para cada faixa
+* `blockedUntil` derivando o fim do bloqueio de `failed_count` e `last_failed_at`, nulo enquanto a contagem não abre bloqueio
 * `hashThrottleKey` em `src/lib/token-hash.ts` devolvendo digest SHA-256 estável, com teste provando que o endereço não é legível no resultado
-* Tabela `credential_throttle` no schema Drizzle e migration incremental aditiva sob `drizzle/`, sem regeneração do baseline
+* Tabela `credential_throttle` no schema Drizzle, com `key_hash` como chave primária, `failed_count` e `last_failed_at`, e o baseline de `drizzle/` regenerado
+* Corte de retenção das trilhas de bloqueio em três vezes o teto, coberto pelo teste dos cortes
 * Fatia `src/plugins/app/credential-throttle/` com porta, adaptador Drizzle, serviço e o decorator `fastify.credentialThrottle`, mais `AppOptions.credentialThrottleRepository` para a substituição em teste
 * Adaptador em memória em `tests/helpers/credential-throttle/in-memory-repository.ts` usado por todo teste que toca o bloqueio
 * Serviço coberto por teste em `check`, `registerFailure` e `reset`, incluindo o `Retry-After` nunca abaixo de um segundo, o recomeço da contagem quando a última falha é mais antiga que o teto e a linha chaveada por hash em vez de endereço

@@ -1,10 +1,12 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import type { AppOptions } from "../../app-options.js";
-import { SIGNUP_SESSION_COOKIE } from "../../lib/cookies.js";
+import { cookiePolicy } from "../../lib/cookies.js";
 import { rateLimitFor } from "../../lib/rate-limit.js";
+import { resolveTtl } from "../../lib/ttl.js";
 import { messageSchema } from "../../schemas/auth.js";
 
 const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
+  const cookies = cookiePolicy(resolveTtl(opts.ttl));
   app.post(
     "/resend-code",
     {
@@ -13,7 +15,7 @@ const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
         tags: ["auth"],
         summary: "Resend the signup confirmation code",
         description:
-          "Issues a fresh confirmation code for the pending signup identified " +
+          "Issues a fresh confirmation code for the unconfirmed account identified " +
           "by the signup_session cookie. Guarded by a per-signup cooldown and " +
           "a total send cap.",
         response: {
@@ -26,7 +28,7 @@ const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
     },
     async (request, reply) => {
       const result = await app.auth.resendCode(
-        request.cookies[SIGNUP_SESSION_COOKIE.name],
+        request.cookies[cookies.signupSession.name],
       );
 
       switch (result.outcome) {
@@ -50,9 +52,9 @@ const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
           });
         case "sent":
           reply.setCookie(
-            SIGNUP_SESSION_COOKIE.name,
+            cookies.signupSession.name,
             result.sessionToken,
-            SIGNUP_SESSION_COOKIE.options,
+            cookies.signupSession.options,
           );
           return reply.code(202).send({
             message:

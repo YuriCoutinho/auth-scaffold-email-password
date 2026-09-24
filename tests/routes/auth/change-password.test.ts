@@ -9,29 +9,29 @@ const TOKEN = "current-session-token";
 const OTHER_TOKEN = "laptop-session-token";
 const CURRENT = "current-password-here";
 const NEXT = "a-brand-new-long-password";
-const FUTURE = new Date(Date.now() + 60_000);
+const USER_ID = "11111111-1111-4111-8111-111111111111";
+const CURRENT_SESSION_ID = "10101010-1010-4010-8010-101010101010";
+const OTHER_SESSION_ID = "11111111-1111-4111-8111-111111111112";
 
 async function repoWithTwoSessions() {
   return createInMemoryAuthRepository({
-    authUsers: [
+    users: [
       {
-        id: 1,
+        id: USER_ID,
         email: "owner@example.com",
         passwordHash: await hashPassword(CURRENT),
       },
     ],
     sessions: [
       {
-        id: 10,
-        userId: 1,
+        id: CURRENT_SESSION_ID,
+        userId: USER_ID,
         tokenHash: hashSessionToken(TOKEN),
-        expiresAt: FUTURE,
       },
       {
-        id: 11,
-        userId: 1,
+        id: OTHER_SESSION_ID,
+        userId: USER_ID,
         tokenHash: hashSessionToken(OTHER_TOKEN),
-        expiresAt: FUTURE,
       },
     ],
   });
@@ -50,8 +50,7 @@ describe("POST /auth/change-password", () => {
   it("responds 204 and stores a different hash", async () => {
     const authRepository = await repoWithTwoSessions();
     const app = buildApp(makeAppOptions({ authRepository }));
-    const before =
-      authRepository.authUsers.get("owner@example.com")?.passwordHash;
+    const before = authRepository.users.get(USER_ID)?.passwordHash;
 
     const response = await app.inject(
       change({ currentPassword: CURRENT, newPassword: NEXT }),
@@ -59,27 +58,17 @@ describe("POST /auth/change-password", () => {
 
     expect(response.statusCode).toBe(204);
     expect(response.body).toBe("");
-    expect(
-      authRepository.authUsers.get("owner@example.com")?.passwordHash,
-    ).not.toBe(before);
+    expect(authRepository.users.get(USER_ID)?.passwordHash).not.toBe(before);
     await app.close();
   });
 
-  it("revokes the other session and keeps the current one", async () => {
+  it("deletes the other session and keeps the current one", async () => {
     const authRepository = await repoWithTwoSessions();
     const app = buildApp(makeAppOptions({ authRepository }));
 
     await app.inject(change({ currentPassword: CURRENT, newPassword: NEXT }));
 
-    expect(
-      authRepository.sessions.find((s) => s.id === 11)?.revokedAt,
-    ).not.toBeNull();
-    expect(
-      authRepository.sessions.find((s) => s.id === 11)?.revokedReason,
-    ).toBe("password_changed");
-    expect(
-      authRepository.sessions.find((s) => s.id === 10)?.revokedAt,
-    ).toBeNull();
+    expect([...authRepository.sessions.keys()]).toEqual([CURRENT_SESSION_ID]);
     await app.close();
   });
 
@@ -113,8 +102,7 @@ describe("POST /auth/change-password", () => {
   it("responds 400 when the current password is wrong", async () => {
     const authRepository = await repoWithTwoSessions();
     const app = buildApp(makeAppOptions({ authRepository }));
-    const before =
-      authRepository.authUsers.get("owner@example.com")?.passwordHash;
+    const before = authRepository.users.get(USER_ID)?.passwordHash;
 
     const response = await app.inject(
       change({ currentPassword: "not-the-password", newPassword: NEXT }),
@@ -122,9 +110,8 @@ describe("POST /auth/change-password", () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json().message).toBe("The current password is incorrect.");
-    expect(
-      authRepository.authUsers.get("owner@example.com")?.passwordHash,
-    ).toBe(before);
+    expect(authRepository.users.get(USER_ID)?.passwordHash).toBe(before);
+    expect(authRepository.sessions.size).toBe(2);
     await app.close();
   });
 
@@ -190,12 +177,9 @@ describe("POST /auth/change-password", () => {
     await app.close();
   });
 
-  it("responds 401 with a revoked session cookie", async () => {
+  it("responds 401 with the cookie of a session that was signed out", async () => {
     const authRepository = await repoWithTwoSessions();
-    const session = authRepository.sessions.find((s) => s.id === 10);
-    if (session) {
-      session.revokedAt = new Date();
-    }
+    authRepository.sessions.delete(CURRENT_SESSION_ID);
     const app = buildApp(makeAppOptions({ authRepository }));
 
     const response = await app.inject(

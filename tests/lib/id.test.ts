@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { generatePublicId } from "../../src/lib/public-id.js";
+import { generateId } from "../../src/lib/id.js";
 
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-describe("generatePublicId", () => {
+describe("generateId", () => {
   it("returns a version 4 uuid", () => {
-    expect(generatePublicId()).toMatch(UUID_V4);
+    expect(generateId()).toMatch(UUID_V4);
   });
 
   it("never repeats a value", () => {
     const ids = new Set<string>();
     for (let i = 0; i < 1000; i++) {
-      ids.add(generatePublicId());
+      ids.add(generateId());
     }
     expect(ids.size).toBe(1000);
   });

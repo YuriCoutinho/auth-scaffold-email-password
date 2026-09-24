@@ -1,10 +1,7 @@
 import type { FastifyBaseLogger } from "fastify";
+import { generateId } from "../../../lib/id.js";
 import { DUMMY_PASSWORD_HASH, verifyPassword } from "../../../lib/password.js";
-import { generatePublicId } from "../../../lib/public-id.js";
-import {
-  generateSessionToken,
-  SESSION_TTL_SECONDS,
-} from "../../../lib/session.js";
+import { generateToken } from "../../../lib/session.js";
 import { hashSessionToken } from "../../../lib/token-hash.js";
 import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
 import type { SessionRepository } from "../sessions/repository.js";
@@ -16,7 +13,7 @@ export type LoginResult =
   | { outcome: "throttled"; retryAfterSeconds: number };
 
 interface LoginServiceDeps {
-  repo: Pick<AuthRepository, "findAuthUserByEmail"> &
+  repo: Pick<AuthRepository, "findUserByEmail"> &
     Pick<SessionRepository, "createSession">;
   throttle: CredentialThrottle;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
@@ -45,7 +42,10 @@ export function createLoginService(deps: LoginServiceDeps) {
         };
       }
 
-      const user = await deps.repo.findAuthUserByEmail(email);
+      const found = await deps.repo.findUserByEmail(email);
+      // An unconfirmed account cannot sign in, and it answers exactly like an
+      // unknown address.
+      const user = found?.emailVerifiedAt ? found : undefined;
       // No quick exit: always run exactly one argon2 verification so response
       // time does not reveal whether the email is registered.
       const passwordMatches = await verifyPassword(
@@ -65,13 +65,13 @@ export function createLoginService(deps: LoginServiceDeps) {
         return { outcome: "invalid" };
       }
 
-      const sessionToken = generateSessionToken();
+      const sessionToken = generateToken();
       await deps.repo.createSession({
-        publicId: generatePublicId(),
+        id: generateId(),
         userId: user.id,
         tokenHash: hashSessionToken(sessionToken),
         deviceLabel,
-        expiresAt: new Date(currentTime.getTime() + SESSION_TTL_SECONDS * 1000),
+        createdAt: currentTime,
       });
       await deps.throttle.reset(email);
       deps.log?.info({ userId: user.id }, "login succeeded");

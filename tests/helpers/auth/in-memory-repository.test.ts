@@ -1,952 +1,430 @@
 import { describe, expect, it } from "vitest";
-import type { SessionRepository } from "../../../src/plugins/app/sessions/repository.js";
 import { createInMemoryAuthRepository } from "./in-memory-repository.js";
 
-const NOW = new Date("2026-09-20T12:00:00Z");
+const NOW = new Date("2026-09-24T12:00:00Z");
+const OWNER = "11111111-1111-4111-8111-111111111111";
+const OTHER = "22222222-2222-4222-8222-222222222222";
 
-function repoWithTwoUsers() {
-  const expiresAt = new Date(Date.now() + 60_000);
-  return createInMemoryAuthRepository({
-    authUsers: [
-      { id: 1, email: "owner@example.com", passwordHash: "old-hash" },
-      { id: 2, email: "other@example.com", passwordHash: "other-hash" },
-    ],
-    sessions: [
-      { id: 10, userId: 1, tokenHash: "current", expiresAt },
-      { id: 11, userId: 1, tokenHash: "laptop", expiresAt },
-      { id: 12, userId: 2, tokenHash: "stranger", expiresAt },
-    ],
-  });
-}
+const CODE = {
+  tokenHash: "token-hash",
+  codeHash: "code-hash",
+  codeAttempts: 0,
+  codeSendCount: 1,
+  issuedAt: NOW,
+};
 
-function pendingInput(overrides: Record<string, unknown> = {}) {
+function newUser(
+  overrides: Partial<{ id: string; passwordHash: string }> = {},
+) {
   return {
+    id: OWNER,
     email: "user@example.com",
-    passwordHash: "hash",
-    codeHash: "code-hash",
-    signupSessionToken: "token-1",
-    expiresAt: new Date(NOW.getTime() + 900_000),
-    now: NOW,
+    passwordHash: "hash-1",
+    createdAt: NOW,
     ...overrides,
   };
 }
 
-describe("in-memory auth repository", () => {
-  it("seeds auth users and finds them by email", async () => {
-    const repo = createInMemoryAuthRepository({
-      authUsers: [{ email: "a@b.com", passwordHash: "h" }],
-    });
-    const user = await repo.findAuthUserByEmail("a@b.com");
-    expect(user).toMatchObject({ id: 1, passwordHash: "h" });
-    expect(user?.publicId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(await repo.findAuthUserByEmail("zz@b.com")).toBeUndefined();
-  });
+function session(id: string) {
+  return { id, tokenHash: `session-${id}`, deviceLabel: null, createdAt: NOW };
+}
 
-  it("upserts a pending signup and finds it by email and by token", async () => {
-    const repo = createInMemoryAuthRepository();
-    const { id } = await repo.upsertPendingSignup(pendingInput());
-    expect(id).toBe(1);
-    expect(
-      await repo.findPendingSignupByEmail("user@example.com"),
-    ).toMatchObject({
-      id,
-      signupSessionToken: "token-1",
-      codeAttempts: 0,
-      codeSendCount: 1,
-    });
-    expect(await repo.findPendingSignupBySessionToken("token-1")).toMatchObject(
+function repoWithPendingSignup() {
+  return createInMemoryAuthRepository({
+    users: [{ id: OWNER, email: "user@example.com", emailVerifiedAt: null }],
+    verificationCodes: [
       {
-        email: "user@example.com",
-        lastSentAt: NOW,
+        userId: OWNER,
+        purpose: "signup",
+        tokenHash: "token-hash",
+        codeHash: "code-hash",
+        issuedAt: NOW,
       },
-    );
+    ],
   });
+}
 
-  it("upsert on the same email replaces the row and resets counters", async () => {
-    const repo = createInMemoryAuthRepository();
-    const first = await repo.upsertPendingSignup(pendingInput());
-    await repo.incrementCodeAttempts("token-1");
-    const second = await repo.upsertPendingSignup(
-      pendingInput({ signupSessionToken: "token-2" }),
-    );
-    expect(second.id).toBe(first.id);
-    expect(
-      await repo.findPendingSignupBySessionToken("token-1"),
-    ).toBeUndefined();
-    expect(await repo.findPendingSignupBySessionToken("token-2")).toMatchObject(
+function repoWithResetCode() {
+  return createInMemoryAuthRepository({
+    users: [
+      { id: OWNER, email: "user@example.com", passwordHash: "old-hash" },
+      { id: OTHER, email: "other@example.com" },
+    ],
+    verificationCodes: [
       {
-        codeAttempts: 0,
-        codeSendCount: 1,
+        userId: OWNER,
+        purpose: "password_reset",
+        tokenHash: "token-hash",
+        codeHash: "code-hash",
+        issuedAt: NOW,
       },
-    );
+    ],
+    sessions: [
+      { id: "s-1", userId: OWNER, tokenHash: "phone", createdAt: NOW },
+      { id: "s-2", userId: OTHER, tokenHash: "stranger", createdAt: NOW },
+    ],
   });
+}
 
-  it("marks undelivered, updates resend state and increments attempts", async () => {
+describe("startSignup", () => {
+  it("creates an unconfirmed account with its signup code", async () => {
     const repo = createInMemoryAuthRepository();
-    await repo.upsertPendingSignup(pendingInput());
-    await repo.markPendingSignupUndelivered("user@example.com");
-    expect(
-      (await repo.findPendingSignupByEmail("user@example.com"))?.codeSendCount,
-    ).toBe(0);
 
-    await repo.updatePendingSignupResendState("token-1", {
-      codeHash: "new-hash",
-      expiresAt: new Date(NOW.getTime() + 1_000),
-      codeAttempts: 0,
-      lastSentAt: NOW,
-      codeSendCount: 3,
+    await expect(repo.startSignup(newUser(), CODE)).resolves.toEqual({
+      userId: OWNER,
     });
-    await repo.incrementCodeAttempts("token-1");
-    expect(await repo.findPendingSignupBySessionToken("token-1")).toMatchObject(
-      {
-        codeHash: "new-hash",
-        codeAttempts: 1,
-        codeSendCount: 3,
-      },
-    );
-  });
 
-  it("promotes a pending signup into user, session and profile atomically", async () => {
-    const repo = createInMemoryAuthRepository();
-    await repo.upsertPendingSignup(pendingInput());
-    const user = await repo.promotePendingSignup({
-      publicId: "user-public-id",
+    expect(await repo.findUserByEmail("user@example.com")).toEqual({
+      id: OWNER,
       email: "user@example.com",
-      passwordHash: "hash",
-      sessionPublicId: "session-public-id",
-      sessionTokenHash: "session-hash",
-      deviceLabel: "Mozilla/5.0",
-      sessionExpiresAt: new Date(NOW.getTime() + 1_000),
+      passwordHash: "hash-1",
+      emailVerifiedAt: null,
     });
-    expect(user?.id).toBe(1);
-    expect(await repo.findAuthUserByEmail("user@example.com")).toMatchObject({
-      id: 1,
-      publicId: "user-public-id",
-      passwordHash: "hash",
-    });
-    expect(repo.pendingSignups.size).toBe(0);
-    expect(repo.sessions).toEqual([
-      {
-        id: 1,
-        publicId: "session-public-id",
-        userId: 1,
-        tokenHash: "session-hash",
-        deviceLabel: "Mozilla/5.0",
-        createdAt: expect.any(Date),
-        expiresAt: new Date(NOW.getTime() + 1_000),
-        revokedAt: null,
-        revokedReason: null,
-      },
-    ]);
-    expect(repo.profiles).toEqual([{ userId: 1 }]);
-  });
-
-  it("creates sessions for existing users", async () => {
-    const repo = createInMemoryAuthRepository({
-      authUsers: [{ id: 7, email: "a@b.com", passwordHash: "h" }],
-    });
-    await repo.createSession({
-      publicId: "session-public-id",
-      userId: 7,
-      tokenHash: "t",
-      deviceLabel: null,
-      expiresAt: NOW,
-    });
-    expect(repo.sessions).toEqual([
-      {
-        id: 1,
-        publicId: "session-public-id",
-        userId: 7,
-        tokenHash: "t",
-        deviceLabel: null,
-        createdAt: expect.any(Date),
-        expiresAt: NOW,
-        revokedAt: null,
-        revokedReason: null,
-      },
-    ]);
-  });
-
-  it("seeds sessions and finds them by token hash", async () => {
-    const repo = createInMemoryAuthRepository({
-      authUsers: [{ email: "a@b.com", id: 7 }],
-      sessions: [
-        {
-          userId: 7,
-          tokenHash: "hash-1",
-          expiresAt: new Date(NOW.getTime() + 1000),
-        },
-      ],
-    });
-    const session = await repo.findSessionByTokenHash("hash-1");
-    expect(session).toMatchObject({ userId: 7, revokedAt: null });
-    expect(await repo.findSessionByTokenHash("unknown")).toBeUndefined();
-  });
-
-  it("keeps the revoked_at given in the seed", async () => {
-    const revokedAt = new Date(NOW.getTime() - 1000);
-    const repo = createInMemoryAuthRepository({
-      authUsers: [{ email: "a@b.com", id: 7 }],
-      sessions: [{ userId: 7, tokenHash: "hash-1", expiresAt: NOW, revokedAt }],
-    });
-    expect((await repo.findSessionByTokenHash("hash-1"))?.revokedAt).toEqual(
-      revokedAt,
-    );
-  });
-
-  it("finds sessions created through createSession", async () => {
-    const repo = createInMemoryAuthRepository();
-    await repo.createSession({
-      publicId: "session-public-id",
-      userId: 3,
-      tokenHash: "hash-2",
-      deviceLabel: null,
-      expiresAt: new Date(NOW.getTime() + 1000),
-    });
-    expect(await repo.findSessionByTokenHash("hash-2")).toMatchObject({
-      userId: 3,
-      revokedAt: null,
-    });
-  });
-
-  it("finds an auth user by id, without the password hash", async () => {
-    const repo = createInMemoryAuthRepository({
-      authUsers: [
-        {
-          id: 7,
-          email: "a@b.com",
-          publicId: "11111111-1111-4111-8111-111111111111",
-        },
-      ],
-    });
-    expect(await repo.findAuthUserById(7)).toEqual({
-      publicId: "11111111-1111-4111-8111-111111111111",
-      email: "a@b.com",
-    });
-    expect(await repo.findAuthUserById(999)).toBeUndefined();
-  });
-
-  it("promotes even when the token rotated between the read and the write", async () => {
-    const repo = createInMemoryAuthRepository();
-    await repo.upsertPendingSignup(pendingInput());
-    const input = {
-      email: "user@example.com",
-      publicId: "user-public-id",
-      passwordHash: "hash",
-      sessionPublicId: "session-public-id",
-      sessionTokenHash: "session-hash",
-      deviceLabel: null,
-      sessionExpiresAt: new Date(NOW.getTime() + 1_000),
-    };
-
-    // A concurrent signup rotates the token after the caller read the row.
-    // Keyed by token the delete would match nothing and leave an orphan row
-    // behind; keyed by email it lands.
-    await repo.rotatePendingSignupToken("user@example.com", "token-2");
-    await repo.promotePendingSignup(input);
-
-    expect(repo.pendingSignups.size).toBe(0);
-  });
-
-  it("promotes a pending signup once, returning null to whoever comes second", async () => {
-    const repo = createInMemoryAuthRepository();
-    await repo.upsertPendingSignup(pendingInput());
-    const input = {
-      email: "user@example.com",
-      publicId: "user-public-id",
-      passwordHash: "hash",
-      sessionPublicId: "session-public-id",
-      sessionTokenHash: "session-hash",
-      deviceLabel: null,
-      sessionExpiresAt: new Date(NOW.getTime() + 1_000),
-    };
-
-    expect(await repo.promotePendingSignup(input)).toEqual({ id: 1 });
     expect(
-      await repo.promotePendingSignup({ ...input, publicId: "second" }),
-    ).toBeNull();
-
-    expect(repo.authUsers.size).toBe(1);
-    expect(repo.sessions).toHaveLength(1);
-    expect(repo.profiles).toEqual([{ userId: 1 }]);
+      await repo.findVerificationCodeByTokenHash("signup", "token-hash"),
+    ).toMatchObject({ userId: OWNER, codeHash: "code-hash" });
   });
 
-  it("rotates the pending signup token by email, leaving the rest alone", async () => {
+  it("refuses a confirmed account and leaves it untouched", async () => {
     const repo = createInMemoryAuthRepository({
-      pendingSignups: [
-        {
-          email: "new@example.com",
-          expiresAt: new Date("2026-01-01T00:15:00Z"),
-          codeHash: "code",
-          signupSessionToken: "old",
-          codeSendCount: 2,
-        },
+      users: [
+        { id: OWNER, email: "user@example.com", passwordHash: "old-hash" },
       ],
     });
 
-    await repo.rotatePendingSignupToken("new@example.com", "fresh");
-
-    expect(await repo.findPendingSignupBySessionToken("old")).toBeUndefined();
-    expect(await repo.findPendingSignupBySessionToken("fresh")).toMatchObject({
-      codeHash: "code",
-      codeSendCount: 2,
-    });
-  });
-
-  it("does not let a caller see later writes through a value it already read", async () => {
-    const repo = createInMemoryAuthRepository({
-      pendingSignups: [
-        {
-          email: "new@example.com",
-          expiresAt: new Date("2026-01-01T00:15:00Z"),
-          codeAttempts: 0,
-          signupSessionToken: "tok",
-        },
-      ],
-    });
-
-    const readByEmail = await repo.findPendingSignupByEmail("new@example.com");
-    const readByToken = await repo.findPendingSignupBySessionToken("tok");
-    await repo.incrementCodeAttempts("tok");
-
-    // A real query hands back a snapshot, so the values read before the write
-    // keep the numbers they were read with.
-    expect(readByEmail?.codeAttempts).toBe(0);
-    expect(readByToken?.codeAttempts).toBe(0);
-    expect(
-      (await repo.findPendingSignupByEmail("new@example.com"))?.codeAttempts,
-    ).toBe(1);
-  });
-});
-
-describe("revokeSessionByTokenHash", () => {
-  function repoWithTwoSessions() {
-    return createInMemoryAuthRepository({
-      sessions: [
-        {
-          id: 1,
-          userId: 7,
-          tokenHash: "hash-a",
-          expiresAt: new Date(Date.now() + 60_000),
-        },
-        {
-          id: 2,
-          userId: 7,
-          tokenHash: "hash-b",
-          expiresAt: new Date(Date.now() + 60_000),
-        },
-      ],
-    });
-  }
-
-  it("revokes only the session behind the given hash", async () => {
-    const repo = repoWithTwoSessions();
-    const revokedAt = new Date("2026-09-23T12:00:00Z");
-
-    await repo.revokeSessionByTokenHash("hash-a", revokedAt, "user_logout");
-
-    expect(repo.sessions[0]).toMatchObject({
-      revokedAt,
-      revokedReason: "user_logout",
-    });
-    expect(repo.sessions[1]).toMatchObject({
-      revokedAt: null,
-      revokedReason: null,
-    });
-  });
-
-  it("keeps the first revocation when the same session is revoked twice", async () => {
-    const repo = repoWithTwoSessions();
-    const first = new Date("2026-09-23T12:00:00Z");
-    const second = new Date("2026-09-23T13:00:00Z");
-
-    await repo.revokeSessionByTokenHash("hash-a", first, "user_logout");
-    await repo.revokeSessionByTokenHash("hash-a", second, "user_logout");
-
-    expect(repo.sessions[0]).toMatchObject({ revokedAt: first });
-  });
-
-  it("does nothing when no session matches the hash", async () => {
-    const repo = repoWithTwoSessions();
-
-    await repo.revokeSessionByTokenHash(
-      "hash-unknown",
-      new Date(),
-      "user_logout",
+    await expect(repo.startSignup(newUser({ id: OTHER }), CODE)).resolves.toBe(
+      null,
     );
 
-    expect(repo.sessions.every((s) => s.revokedAt === null)).toBe(true);
-  });
-});
-
-describe("revokeAllUserSessions", () => {
-  const REVOKED_AT = new Date("2026-09-23T12:00:00Z");
-
-  function repoWithSessions() {
-    const expiresAt = new Date("2026-10-23T12:00:00Z");
-    return createInMemoryAuthRepository({
-      authUsers: [
-        { id: 7, email: "a@b.com" },
-        { id: 8, email: "c@d.com" },
-      ],
-      sessions: [
-        { id: 1, userId: 7, tokenHash: "hash-1", expiresAt },
-        { id: 2, userId: 7, tokenHash: "hash-2", expiresAt },
-        { id: 3, userId: 7, tokenHash: "hash-3", expiresAt },
-        { id: 4, userId: 8, tokenHash: "hash-4", expiresAt },
-      ],
-    });
-  }
-
-  it("revokes every session of the user when no session is excluded", async () => {
-    const repo = repoWithSessions();
-
-    const result = await repo.revokeAllUserSessions({
-      userId: 7,
-      revokedAt: REVOKED_AT,
-      revokedReason: "logout_all",
-    });
-
-    expect(result).toEqual({ revokedCount: 3 });
-    expect(repo.sessions.filter((s) => s.userId === 7)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          revokedAt: REVOKED_AT,
-          revokedReason: "logout_all",
-        }),
-      ]),
-    );
-  });
-
-  it("keeps the excluded session untouched", async () => {
-    const repo = repoWithSessions();
-
-    const result = await repo.revokeAllUserSessions({
-      userId: 7,
-      revokedAt: REVOKED_AT,
-      revokedReason: "logout_all",
-      exceptSessionId: 2,
-    });
-
-    expect(result).toEqual({ revokedCount: 2 });
-    expect(repo.sessions.find((s) => s.id === 2)).toMatchObject({
-      revokedAt: null,
-      revokedReason: null,
-    });
-  });
-
-  it("never touches a session of another user", async () => {
-    const repo = repoWithSessions();
-
-    await repo.revokeAllUserSessions({
-      userId: 7,
-      revokedAt: REVOKED_AT,
-      revokedReason: "logout_all",
-    });
-
-    expect(repo.sessions.find((s) => s.id === 4)).toMatchObject({
-      revokedAt: null,
-      revokedReason: null,
-    });
-  });
-
-  it("does not count or overwrite a session that was already revoked", async () => {
-    const alreadyRevokedAt = new Date("2026-09-01T00:00:00Z");
-    const repo = createInMemoryAuthRepository({
-      authUsers: [{ id: 7, email: "a@b.com" }],
-      sessions: [
-        {
-          id: 1,
-          userId: 7,
-          tokenHash: "hash-1",
-          expiresAt: new Date("2026-10-23T12:00:00Z"),
-          revokedAt: alreadyRevokedAt,
-        },
-        {
-          id: 2,
-          userId: 7,
-          tokenHash: "hash-2",
-          expiresAt: new Date("2026-10-23T12:00:00Z"),
-        },
-      ],
-    });
-
-    const result = await repo.revokeAllUserSessions({
-      userId: 7,
-      revokedAt: REVOKED_AT,
-      revokedReason: "logout_all",
-    });
-
-    expect(result).toEqual({ revokedCount: 1 });
-    expect(repo.sessions.find((s) => s.id === 1)?.revokedAt).toBe(
-      alreadyRevokedAt,
-    );
-  });
-
-  it("revokes a session that is expired but not yet revoked", async () => {
-    const repo = createInMemoryAuthRepository({
-      authUsers: [{ id: 7, email: "a@b.com" }],
-      sessions: [
-        {
-          id: 1,
-          userId: 7,
-          tokenHash: "hash-1",
-          expiresAt: new Date("2026-01-01T00:00:00Z"),
-        },
-      ],
-    });
-
-    const result = await repo.revokeAllUserSessions({
-      userId: 7,
-      revokedAt: REVOKED_AT,
-      revokedReason: "logout_all",
-    });
-
-    expect(result).toEqual({ revokedCount: 1 });
-  });
-});
-
-describe("listActiveUserSessions", () => {
-  const NOW = new Date("2026-01-10T00:00:00.000Z");
-  const future = new Date("2026-02-10T00:00:00.000Z");
-
-  it("returns only the active sessions of the given user, newest first", async () => {
-    const repo = createInMemoryAuthRepository({
-      sessions: [
-        {
-          userId: 1,
-          tokenHash: "older",
-          publicId: "11111111-1111-4111-8111-111111111111",
-          createdAt: new Date("2026-01-01T00:00:00.000Z"),
-          expiresAt: future,
-        },
-        {
-          userId: 1,
-          tokenHash: "newer",
-          publicId: "22222222-2222-4222-8222-222222222222",
-          createdAt: new Date("2026-01-05T00:00:00.000Z"),
-          expiresAt: future,
-        },
-        {
-          userId: 1,
-          tokenHash: "revoked",
-          createdAt: new Date("2026-01-06T00:00:00.000Z"),
-          expiresAt: future,
-          revokedAt: NOW,
-        },
-        {
-          userId: 1,
-          tokenHash: "expired",
-          createdAt: new Date("2026-01-07T00:00:00.000Z"),
-          expiresAt: new Date("2026-01-09T00:00:00.000Z"),
-        },
-        {
-          userId: 2,
-          tokenHash: "other-user",
-          createdAt: new Date("2026-01-08T00:00:00.000Z"),
-          expiresAt: future,
-        },
-      ],
-    });
-
-    const result = await repo.listActiveUserSessions({ userId: 1, now: NOW });
-
-    expect(result.map((session) => session.publicId)).toEqual([
-      "22222222-2222-4222-8222-222222222222",
-      "11111111-1111-4111-8111-111111111111",
-    ]);
-  });
-
-  it("treats a session expiring exactly now as expired", async () => {
-    const repo = createInMemoryAuthRepository({
-      sessions: [{ userId: 1, tokenHash: "boundary", expiresAt: NOW }],
-    });
-
-    await expect(
-      repo.listActiveUserSessions({ userId: 1, now: NOW }),
-    ).resolves.toEqual([]);
-  });
-
-  it("stores the public id a created session is given", async () => {
-    const repo = createInMemoryAuthRepository();
-    await repo.createSession({
-      publicId: "session-public-id",
-      userId: 1,
-      tokenHash: "fresh",
-      deviceLabel: null,
-      expiresAt: future,
-    });
-
-    const [session] = await repo.listActiveUserSessions({
-      userId: 1,
-      now: NOW,
-    });
-
-    expect(session?.publicId).toBe("session-public-id");
-  });
-});
-
-describe("in-memory session repository", () => {
-  it("satisfies the session port with the same store the auth port uses", async () => {
-    const repo: SessionRepository = createInMemoryAuthRepository({
-      authUsers: [{ id: 7, email: "foo@gmail.com" }],
-      sessions: [
-        {
-          userId: 7,
-          tokenHash: "hash",
-          expiresAt: new Date(Date.now() + 60_000),
-        },
-      ],
-    });
-
-    const session = await repo.findSessionByTokenHash("hash");
-    expect(session).toMatchObject({ userId: 7, revokedAt: null });
-  });
-});
-
-describe("revokeUserSessionByPublicId", () => {
-  const REVOKE_NOW = new Date("2026-02-01T00:00:00.000Z");
-  const FUTURE = new Date("2026-03-01T00:00:00.000Z");
-  const PUBLIC_ID = "33333333-3333-4333-8333-333333333333";
-
-  function repoWith(
-    overrides: {
-      userId?: number;
-      revokedAt?: Date | null;
-      expiresAt?: Date;
-    } = {},
-  ) {
-    return createInMemoryAuthRepository({
-      sessions: [
-        {
-          userId: overrides.userId ?? 7,
-          tokenHash: "hash",
-          publicId: PUBLIC_ID,
-          expiresAt: overrides.expiresAt ?? FUTURE,
-          revokedAt: overrides.revokedAt ?? null,
-        },
-      ],
-    });
-  }
-
-  it("revokes the session and reports it", async () => {
-    const repo = repoWith();
-
-    const result = await repo.revokeUserSessionByPublicId({
-      publicId: PUBLIC_ID,
-      userId: 7,
-      revokedAt: REVOKE_NOW,
-      revokedReason: "session_revoked",
-      now: REVOKE_NOW,
-    });
-
-    expect(result).toEqual({ revoked: true });
-    expect(repo.sessions[0]?.revokedAt).toEqual(REVOKE_NOW);
-    expect(repo.sessions[0]?.revokedReason).toBe("session_revoked");
-  });
-
-  it("never revokes a session owned by another user", async () => {
-    const repo = repoWith({ userId: 8 });
-
-    const result = await repo.revokeUserSessionByPublicId({
-      publicId: PUBLIC_ID,
-      userId: 7,
-      revokedAt: REVOKE_NOW,
-      revokedReason: "session_revoked",
-      now: REVOKE_NOW,
-    });
-
-    expect(result).toEqual({ revoked: false });
-    expect(repo.sessions[0]?.revokedAt).toBeNull();
-  });
-
-  it("reports nothing revoked for an unknown public id", async () => {
-    const repo = repoWith();
-
-    const result = await repo.revokeUserSessionByPublicId({
-      publicId: "44444444-4444-4444-8444-444444444444",
-      userId: 7,
-      revokedAt: REVOKE_NOW,
-      revokedReason: "session_revoked",
-      now: REVOKE_NOW,
-    });
-
-    expect(result).toEqual({ revoked: false });
-  });
-
-  it("keeps the first revocation date when the session was already revoked", async () => {
-    const earlier = new Date("2026-01-01T00:00:00.000Z");
-    const repo = repoWith({ revokedAt: earlier });
-
-    const result = await repo.revokeUserSessionByPublicId({
-      publicId: PUBLIC_ID,
-      userId: 7,
-      revokedAt: REVOKE_NOW,
-      revokedReason: "session_revoked",
-      now: REVOKE_NOW,
-    });
-
-    expect(result).toEqual({ revoked: false });
-    expect(repo.sessions[0]?.revokedAt).toEqual(earlier);
-  });
-
-  it("leaves an expired session untouched", async () => {
-    const repo = repoWith({ expiresAt: new Date("2026-01-15T00:00:00.000Z") });
-
-    const result = await repo.revokeUserSessionByPublicId({
-      publicId: PUBLIC_ID,
-      userId: 7,
-      revokedAt: REVOKE_NOW,
-      revokedReason: "session_revoked",
-      now: REVOKE_NOW,
-    });
-
-    expect(result).toEqual({ revoked: false });
-    expect(repo.sessions[0]?.revokedAt).toBeNull();
-  });
-});
-
-describe("findAuthUserCredentialsById", () => {
-  it("returns the id, email and password hash", async () => {
-    const repo = repoWithTwoUsers();
-
-    await expect(repo.findAuthUserCredentialsById(1)).resolves.toEqual({
-      id: 1,
-      email: "owner@example.com",
+    expect(await repo.findUserById(OWNER)).toMatchObject({
       passwordHash: "old-hash",
     });
+    expect(repo.users.size).toBe(1);
+    expect(repo.verificationCodes.size).toBe(0);
   });
 
-  it("resolves undefined for an unknown id", async () => {
-    const repo = repoWithTwoUsers();
+  it("overwrites the password of an unconfirmed account and replaces its token", async () => {
+    const repo = repoWithPendingSignup();
 
-    await expect(repo.findAuthUserCredentialsById(99)).resolves.toBeUndefined();
+    await expect(
+      repo.startSignup(newUser({ id: OTHER, passwordHash: "hash-2" }), {
+        ...CODE,
+        tokenHash: "token-hash-2",
+      }),
+    ).resolves.toEqual({ userId: OWNER });
+
+    expect(await repo.findUserById(OWNER)).toMatchObject({
+      passwordHash: "hash-2",
+      emailVerifiedAt: null,
+    });
+    expect(repo.users.size).toBe(1);
+    expect(
+      await repo.findVerificationCodeByTokenHash("signup", "token-hash"),
+    ).toBeUndefined();
+    expect(
+      await repo.findVerificationCodeByTokenHash("signup", "token-hash-2"),
+    ).toMatchObject({ userId: OWNER, passwordHash: "hash-2" });
   });
 });
 
-describe("changeUserPassword", () => {
-  const CHANGED_AT = new Date("2026-03-01T12:00:00.000Z");
+describe("findVerificationCodeByTokenHash", () => {
+  it("only matches a code of the given purpose", async () => {
+    const repo = repoWithPendingSignup();
 
-  const change = {
-    userId: 1,
+    expect(
+      await repo.findVerificationCodeByTokenHash(
+        "password_reset",
+        "token-hash",
+      ),
+    ).toBeUndefined();
+    expect(
+      await repo.findVerificationCodeByTokenHash("signup", "token-hash"),
+    ).toMatchObject({ email: "user@example.com" });
+  });
+});
+
+describe("rotateVerificationToken", () => {
+  it("replaces the token and keeps the code", async () => {
+    const repo = repoWithPendingSignup();
+    const key = { userId: OWNER, purpose: "signup" as const };
+
+    await repo.rotateVerificationToken(key, "rotated");
+
+    expect(await repo.findVerificationCode(key)).toMatchObject({
+      tokenHash: "rotated",
+      codeHash: "code-hash",
+    });
+  });
+});
+
+describe("restoreVerificationCode", () => {
+  const key = { userId: OWNER, purpose: "signup" as const };
+  const previous = {
+    codeHash: "previous-code",
+    codeAttempts: 2,
+    codeSendCount: 3,
+    issuedAt: new Date(NOW.getTime() - 60_000),
+  };
+
+  it("restores the previous state while the failed code is still there, and keeps the token", async () => {
+    const repo = repoWithPendingSignup();
+    await repo.rotateVerificationToken(key, "newer-token");
+
+    await repo.restoreVerificationCode(key, "code-hash", previous);
+
+    expect(await repo.findVerificationCode(key)).toMatchObject({
+      ...previous,
+      tokenHash: "newer-token",
+    });
+  });
+
+  it("does nothing once the code was replaced by a newer request", async () => {
+    const repo = repoWithPendingSignup();
+
+    await repo.restoreVerificationCode(key, "some-other-code", previous);
+
+    expect(await repo.findVerificationCode(key)).toMatchObject({
+      codeHash: "code-hash",
+      codeSendCount: 1,
+    });
+  });
+});
+
+describe("incrementVerificationAttempts", () => {
+  it("counts one more attempt", async () => {
+    const repo = repoWithPendingSignup();
+    const key = { userId: OWNER, purpose: "signup" as const };
+
+    await repo.incrementVerificationAttempts(key);
+
+    expect(await repo.findVerificationCode(key)).toMatchObject({
+      codeAttempts: 1,
+    });
+  });
+});
+
+describe("verifyEmail", () => {
+  const input = {
+    userId: OWNER,
+    tokenHash: "token-hash",
+    codeHash: "code-hash",
+    verifiedAt: NOW,
+    session: session("s-new"),
+  };
+
+  it("consumes the code, confirms the account and opens a session", async () => {
+    const repo = repoWithPendingSignup();
+
+    await expect(repo.verifyEmail(input)).resolves.toBe(true);
+
+    expect(await repo.findUserById(OWNER)).toMatchObject({
+      emailVerifiedAt: NOW,
+    });
+    expect(repo.verificationCodes.size).toBe(0);
+    expect(await repo.findSessionByTokenHash("session-s-new")).toEqual({
+      id: "s-new",
+      userId: OWNER,
+      createdAt: NOW,
+    });
+  });
+
+  it.each([
+    ["a rotated token", { tokenHash: "stale-token" }],
+    ["a code that was reissued", { codeHash: "stale-code" }],
+  ])("loses the race against %s", async (_name, override) => {
+    const repo = repoWithPendingSignup();
+
+    await expect(repo.verifyEmail({ ...input, ...override })).resolves.toBe(
+      false,
+    );
+
+    expect(await repo.findUserById(OWNER)).toMatchObject({
+      emailVerifiedAt: null,
+    });
+    expect(repo.verificationCodes.size).toBe(1);
+    expect(repo.sessions.size).toBe(0);
+  });
+
+  it("never opens a session for an account already confirmed", async () => {
+    const repo = createInMemoryAuthRepository({
+      users: [{ id: OWNER, email: "user@example.com" }],
+      verificationCodes: [
+        {
+          userId: OWNER,
+          purpose: "signup",
+          tokenHash: "token-hash",
+          codeHash: "code-hash",
+          issuedAt: NOW,
+        },
+      ],
+    });
+
+    await expect(repo.verifyEmail(input)).resolves.toBe(false);
+
+    expect(repo.sessions.size).toBe(0);
+  });
+});
+
+describe("resetPassword", () => {
+  const input = {
+    userId: OWNER,
+    tokenHash: "token-hash",
+    codeHash: "code-hash",
     passwordHash: "new-hash",
-    revokedAt: CHANGED_AT,
-    revokedReason: "password_changed",
-    exceptSessionId: 10,
-  } as const;
+    session: session("s-new"),
+  };
 
-  it("stores the new hash and revokes the other sessions of that user", async () => {
-    const repo = repoWithTwoUsers();
+  it("consumes the code, swaps the password and replaces every session of the user", async () => {
+    const repo = repoWithResetCode();
 
-    await repo.changeUserPassword(change);
+    await expect(repo.resetPassword(input)).resolves.toBe(true);
 
-    expect(repo.authUsers.get("owner@example.com")?.passwordHash).toBe(
-      "new-hash",
-    );
-    expect(repo.sessions.find((s) => s.id === 11)?.revokedAt).toEqual(
-      CHANGED_AT,
-    );
-    expect(repo.sessions.find((s) => s.id === 11)?.revokedReason).toBe(
-      "password_changed",
-    );
+    expect(await repo.findUserById(OWNER)).toMatchObject({
+      passwordHash: "new-hash",
+    });
+    expect(repo.verificationCodes.size).toBe(0);
+    expect(await repo.findSessionByTokenHash("phone")).toBeUndefined();
+    expect(await repo.findSessionByTokenHash("session-s-new")).toMatchObject({
+      userId: OWNER,
+    });
+    expect(await repo.findSessionByTokenHash("stranger")).toBeDefined();
   });
 
-  it("keeps the session behind the request active", async () => {
-    const repo = repoWithTwoUsers();
+  it.each([
+    ["a rotated token", { tokenHash: "stale-token" }],
+    ["a code that was reissued", { codeHash: "stale-code" }],
+  ])("changes nothing against %s", async (_name, override) => {
+    const repo = repoWithResetCode();
 
-    await repo.changeUserPassword(change);
-
-    expect(repo.sessions.find((s) => s.id === 10)?.revokedAt).toBeNull();
-  });
-
-  it("leaves the sessions of another user untouched", async () => {
-    const repo = repoWithTwoUsers();
-
-    await repo.changeUserPassword(change);
-
-    expect(repo.sessions.find((s) => s.id === 12)?.revokedAt).toBeNull();
-    expect(repo.authUsers.get("other@example.com")?.passwordHash).toBe(
-      "other-hash",
+    await expect(repo.resetPassword({ ...input, ...override })).resolves.toBe(
+      false,
     );
+
+    expect(await repo.findUserById(OWNER)).toMatchObject({
+      passwordHash: "old-hash",
+    });
+    expect(await repo.findSessionByTokenHash("phone")).toBeDefined();
+    expect(repo.verificationCodes.size).toBe(1);
   });
 });
 
-describe("password resets", () => {
-  const expiresAt = new Date("2026-01-01T00:15:00Z");
-  const now = new Date("2026-01-01T00:00:00Z");
+describe("changePassword", () => {
+  it("swaps the password and deletes every other session of the user", async () => {
+    const repo = createInMemoryAuthRepository({
+      users: [{ id: OWNER, email: "user@example.com" }],
+      sessions: [
+        { id: "current", userId: OWNER, tokenHash: "current" },
+        { id: "laptop", userId: OWNER, tokenHash: "laptop" },
+      ],
+    });
 
-  function seeded() {
+    await repo.changePassword({
+      userId: OWNER,
+      passwordHash: "new-hash",
+      exceptSessionId: "current",
+    });
+
+    expect(await repo.findUserById(OWNER)).toMatchObject({
+      passwordHash: "new-hash",
+    });
+    expect([...repo.sessions.keys()]).toEqual(["current"]);
+  });
+});
+
+describe("sessions", () => {
+  function repoWithSessions() {
     return createInMemoryAuthRepository({
-      authUsers: [{ id: 1, email: "reset@example.com", passwordHash: "old" }],
+      sessions: [
+        {
+          id: "old",
+          userId: OWNER,
+          tokenHash: "old",
+          createdAt: new Date(NOW.getTime() - 120_000),
+        },
+        {
+          id: "current",
+          userId: OWNER,
+          tokenHash: "current",
+          deviceLabel: "Chrome",
+          createdAt: NOW,
+        },
+        {
+          id: "laptop",
+          userId: OWNER,
+          tokenHash: "laptop",
+          createdAt: new Date(NOW.getTime() - 30_000),
+        },
+        {
+          id: "stranger",
+          userId: OTHER,
+          tokenHash: "stranger",
+          createdAt: NOW,
+        },
+      ],
     });
   }
 
-  it("upserts a reset and reads it back by user and by token", async () => {
-    const repo = seeded();
-    await repo.upsertPasswordReset({
-      userId: 1,
-      codeHash: "hash",
-      resetSessionToken: "tok",
-      expiresAt,
-      now,
-    });
+  it("deletes the session behind a token hash and ignores an unknown one", async () => {
+    const repo = repoWithSessions();
 
-    const byUser = await repo.findPasswordResetByUserId(1);
-    expect(byUser).toMatchObject({
-      userId: 1,
-      email: "reset@example.com",
-      passwordHash: "old",
-      codeHash: "hash",
-      codeAttempts: 0,
-      codeSendCount: 1,
-      lastSentAt: now,
-    });
-    expect(await repo.findPasswordResetBySessionToken("tok")).toEqual(byUser);
+    await repo.deleteSessionByTokenHash("laptop");
+    await repo.deleteSessionByTokenHash("unknown");
+
+    expect(await repo.findSessionByTokenHash("laptop")).toBeUndefined();
+    expect(repo.sessions.size).toBe(3);
   });
 
-  it("replaces the row on a second upsert, keeping one per user", async () => {
-    const repo = seeded();
-    await repo.upsertPasswordReset({
-      userId: 1,
-      codeHash: "first",
-      resetSessionToken: "tok-1",
-      expiresAt,
-      now,
-    });
-    await repo.upsertPasswordReset({
-      userId: 1,
-      codeHash: "second",
-      resetSessionToken: "tok-2",
-      expiresAt,
-      now,
-    });
+  it("deletes every session of the user except the one named", async () => {
+    const repo = repoWithSessions();
 
-    expect(await repo.findPasswordResetBySessionToken("tok-1")).toBeUndefined();
-    expect(await repo.findPasswordResetByUserId(1)).toMatchObject({
-      codeHash: "second",
-      resetSessionToken: "tok-2",
-    });
+    await expect(
+      repo.deleteUserSessions({ userId: OWNER, exceptSessionId: "current" }),
+    ).resolves.toEqual({ deletedCount: 2 });
+
+    expect([...repo.sessions.keys()].sort()).toEqual(["current", "stranger"]);
   });
 
-  it("increments attempts by token and writes send state by user", async () => {
-    const repo = seeded();
-    await repo.upsertPasswordReset({
-      userId: 1,
-      codeHash: "hash",
-      resetSessionToken: "tok",
-      expiresAt,
-      now,
+  it("deletes literally every session of the user without an exception", async () => {
+    const repo = repoWithSessions();
+
+    await expect(repo.deleteUserSessions({ userId: OWNER })).resolves.toEqual({
+      deletedCount: 3,
     });
 
-    await repo.incrementPasswordResetAttempts("tok");
-    expect(await repo.findPasswordResetByUserId(1)).toMatchObject({
-      codeAttempts: 1,
-    });
-
-    await repo.updatePasswordResetSendState(1, {
-      resetSessionToken: "tok",
-      codeHash: "restored",
-      expiresAt,
-      codeAttempts: 0,
-      lastSentAt: now,
-      codeSendCount: 3,
-    });
-    expect(await repo.findPasswordResetByUserId(1)).toMatchObject({
-      codeHash: "restored",
-      codeAttempts: 0,
-      codeSendCount: 3,
-    });
+    expect([...repo.sessions.keys()]).toEqual(["stranger"]);
   });
 
-  it("resets the password, revokes every session, drops the row and opens a new session", async () => {
-    const repo = createInMemoryAuthRepository({
-      authUsers: [{ id: 1, email: "reset@example.com", passwordHash: "old" }],
-      sessions: [
-        { id: 10, userId: 1, tokenHash: "old-session", expiresAt },
-        { id: 11, userId: 1, tokenHash: "other-session", expiresAt },
-      ],
-    });
-    await repo.upsertPasswordReset({
-      userId: 1,
-      codeHash: "hash",
-      resetSessionToken: "tok",
-      expiresAt,
-      now,
-    });
+  it("deletes one session only for its owner", async () => {
+    const repo = repoWithSessions();
 
-    await repo.resetUserPassword({
-      userId: 1,
-      passwordHash: "new",
-      resetSessionToken: "tok",
-      sessionPublicId: "session-public-id",
-      sessionTokenHash: "fresh-session",
-      deviceLabel: null,
-      sessionExpiresAt: expiresAt,
-      revokedAt: now,
-      revokedReason: "password_reset",
-    });
+    await expect(
+      repo.deleteUserSession({ id: "stranger", userId: OWNER }),
+    ).resolves.toEqual({ deleted: false });
+    await expect(
+      repo.deleteUserSession({ id: "laptop", userId: OWNER }),
+    ).resolves.toEqual({ deleted: true });
+    await expect(
+      repo.deleteUserSession({ id: "laptop", userId: OWNER }),
+    ).resolves.toEqual({ deleted: false });
 
-    expect(await repo.findAuthUserCredentialsById(1)).toMatchObject({
-      passwordHash: "new",
-    });
-    expect(await repo.findPasswordResetBySessionToken("tok")).toBeUndefined();
-    expect(repo.sessions.filter((s) => s.revokedAt !== null)).toHaveLength(2);
-    expect(
-      repo.sessions.filter((s) => s.revokedReason === "password_reset"),
-    ).toHaveLength(2);
-    const fresh = repo.sessions.find((s) => s.tokenHash === "fresh-session");
-    expect(fresh?.revokedAt).toBeNull();
+    expect(repo.sessions.has("stranger")).toBe(true);
   });
 
-  it("writes send state by user, and restores only while the token still matches", async () => {
-    const repo = seeded();
-    await repo.upsertPasswordReset({
-      userId: 1,
-      codeHash: "first",
-      resetSessionToken: "tok-1",
-      expiresAt,
-      now,
+  it("lists the user's sessions created after the cutoff, newest first", async () => {
+    const repo = repoWithSessions();
+
+    const listed = await repo.listUserSessions({
+      userId: OWNER,
+      createdAfter: new Date(NOW.getTime() - 60_000),
     });
 
-    await repo.updatePasswordResetSendState(1, {
-      resetSessionToken: "tok-2",
-      codeHash: "second",
-      expiresAt,
-      codeAttempts: 0,
-      lastSentAt: now,
-      codeSendCount: 2,
-    });
-    expect(await repo.findPasswordResetByUserId(1)).toMatchObject({
-      resetSessionToken: "tok-2",
-      codeHash: "second",
-    });
-
-    // Guard matches: the restore applies.
-    await repo.restorePasswordResetSendState(1, {
-      resetSessionToken: "tok-2",
-      codeHash: "first",
-      expiresAt,
-      codeAttempts: 0,
-      lastSentAt: now,
-      codeSendCount: 1,
-    });
-    expect(await repo.findPasswordResetByUserId(1)).toMatchObject({
-      codeHash: "first",
-      codeSendCount: 1,
-    });
-
-    // Guard does not match: the restore is a no-op.
-    await repo.restorePasswordResetSendState(1, {
-      resetSessionToken: "stale-token",
-      codeHash: "clobbered",
-      expiresAt,
-      codeAttempts: 0,
-      lastSentAt: now,
-      codeSendCount: 0,
-    });
-    expect(await repo.findPasswordResetByUserId(1)).toMatchObject({
-      codeHash: "first",
-      codeSendCount: 1,
-    });
+    expect(listed).toEqual([
+      { id: "current", deviceLabel: "Chrome", createdAt: NOW },
+      {
+        id: "laptop",
+        deviceLabel: null,
+        createdAt: new Date(NOW.getTime() - 30_000),
+      },
+    ]);
   });
 });

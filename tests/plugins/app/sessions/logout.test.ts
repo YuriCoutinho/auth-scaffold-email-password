@@ -2,38 +2,22 @@ import { describe, expect, it, vi } from "vitest";
 import { hashSessionToken } from "../../../../src/lib/token-hash.js";
 import { createLogoutService } from "../../../../src/plugins/app/sessions/logout.js";
 
-const NOW = new Date("2026-09-23T12:00:00Z");
 const TOKEN = "a-session-token";
 
 function makeDeps() {
   return {
-    repo: { revokeSessionByTokenHash: vi.fn().mockResolvedValue(undefined) },
-    now: () => NOW,
+    repo: { deleteSessionByTokenHash: vi.fn().mockResolvedValue(undefined) },
   };
 }
 
 describe("logout", () => {
-  it("revokes the session behind the token, stamped with the current time", async () => {
+  it("deletes the session behind the hash of the token, never the token", async () => {
     const deps = makeDeps();
 
     await createLogoutService(deps).logout(TOKEN);
 
-    expect(deps.repo.revokeSessionByTokenHash).toHaveBeenCalledWith(
+    expect(deps.repo.deleteSessionByTokenHash).toHaveBeenCalledExactlyOnceWith(
       hashSessionToken(TOKEN),
-      NOW,
-      "user_logout",
-    );
-  });
-
-  it("sends the hash of the token, never the token", async () => {
-    const deps = makeDeps();
-
-    await createLogoutService(deps).logout(TOKEN);
-
-    expect(deps.repo.revokeSessionByTokenHash).not.toHaveBeenCalledWith(
-      TOKEN,
-      expect.anything(),
-      expect.anything(),
     );
   });
 
@@ -42,7 +26,7 @@ describe("logout", () => {
 
     await createLogoutService(deps).logout(undefined);
 
-    expect(deps.repo.revokeSessionByTokenHash).not.toHaveBeenCalled();
+    expect(deps.repo.deleteSessionByTokenHash).not.toHaveBeenCalled();
   });
 
   it("does nothing for an empty cookie", async () => {
@@ -50,14 +34,12 @@ describe("logout", () => {
 
     await createLogoutService(deps).logout("");
 
-    expect(deps.repo.revokeSessionByTokenHash).not.toHaveBeenCalled();
+    expect(deps.repo.deleteSessionByTokenHash).not.toHaveBeenCalled();
   });
 
   it("resolves for a token with no matching session", async () => {
-    const deps = makeDeps();
-
     await expect(
-      createLogoutService(deps).logout("unknown-token"),
+      createLogoutService(makeDeps()).logout("unknown-token"),
     ).resolves.toBeUndefined();
   });
 });

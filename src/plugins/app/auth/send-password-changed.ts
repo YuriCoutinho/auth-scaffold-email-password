@@ -9,7 +9,7 @@ interface SendPasswordChangedDeps {
 
 interface SendPasswordChangedInput {
   to: string;
-  userId: number;
+  userId: string;
 }
 
 // The password is already changed when this runs, so delivery never decides

@@ -3,6 +3,7 @@ import {
   hashOtpCode,
   hashSessionToken,
   hashThrottleKey,
+  hashVerificationToken,
 } from "../../src/lib/token-hash.js";
 
 // SHA-256 of "123456", from a known vector
@@ -44,5 +45,17 @@ describe("hashThrottleKey", () => {
 
   it("does not keep the address recoverable from the digest", () => {
     expect(hashThrottleKey("foo@gmail.com")).not.toContain("foo");
+  });
+});
+
+describe("hashVerificationToken", () => {
+  it("returns the SHA-256 hex digest of the token", () => {
+    expect(hashVerificationToken("123456")).toBe(SHA256_123456);
+  });
+
+  it("never returns the token itself", () => {
+    const token = "a".repeat(43);
+    expect(hashVerificationToken(token)).not.toBe(token);
+    expect(hashVerificationToken(token)).toMatch(/^[0-9a-f]{64}$/);
   });
 });

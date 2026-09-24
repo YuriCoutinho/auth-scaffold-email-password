@@ -1,12 +1,14 @@
 import { hashSessionToken } from "../../../lib/token-hash.js";
+import { isExpired } from "../../../lib/ttl.js";
 import type { SessionRepository } from "../sessions/repository.js";
 
 export type AuthenticateResult =
-  | { outcome: "authenticated"; user: { id: number }; session: { id: number } }
+  | { outcome: "authenticated"; user: { id: string }; session: { id: string } }
   | { outcome: "invalid" };
 
 interface AuthenticateServiceDeps {
   repo: Pick<SessionRepository, "findSessionByTokenHash">;
+  sessionTtlSeconds: number;
   now?: () => Date;
 }
 
@@ -23,11 +25,10 @@ export function createAuthenticateService(deps: AuthenticateServiceDeps) {
         hashSessionToken(token),
       );
 
-      if (!session || session.revokedAt !== null) {
-        return { outcome: "invalid" };
-      }
-
-      if (session.expiresAt.getTime() <= now().getTime()) {
+      if (
+        !session ||
+        isExpired(session.createdAt, deps.sessionTtlSeconds, now())
+      ) {
         return { outcome: "invalid" };
       }
 

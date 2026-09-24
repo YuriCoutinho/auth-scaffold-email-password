@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
+import type { TtlPolicy } from "../../../lib/ttl.js";
 import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
 import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
@@ -11,6 +12,7 @@ import type { AuthRepository } from "./repository.js";
 import { createResendCodeService } from "./resend-code.js";
 import { createResetPasswordService } from "./reset-password.js";
 import { createSignupService } from "./signup.js";
+import { createVerificationCodes } from "./verification-codes.js";
 import { createVerifyCodeService } from "./verify-code.js";
 
 export interface AuthDeps {
@@ -19,6 +21,7 @@ export interface AuthDeps {
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
   credentialThrottle: CredentialThrottle;
+  ttl: TtlPolicy;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }
@@ -29,37 +32,38 @@ export function createAuth(deps: AuthDeps) {
     ...(deps.log ? { log: deps.log } : {}),
     ...(deps.now ? { now: deps.now } : {}),
   };
+  const codes = createVerificationCodes({
+    ...shared,
+    emailSender: deps.emailSender,
+    ttl: deps.ttl,
+  });
   const { signup } = createSignupService({
     ...shared,
-    emailSender: deps.emailSender,
+    codes,
     checkPwnedPassword: deps.checkPwnedPassword,
   });
-  const { forgotPassword } = createForgotPasswordService({
-    ...shared,
-    emailSender: deps.emailSender,
-  });
-  const { resendCode } = createResendCodeService({
-    ...shared,
-    emailSender: deps.emailSender,
-  });
+  const { forgotPassword } = createForgotPasswordService({ ...shared, codes });
+  const { resendCode } = createResendCodeService({ codes });
   const { resetPassword } = createResetPasswordService({
     ...shared,
+    codes,
     emailSender: deps.emailSender,
     checkPwnedPassword: deps.checkPwnedPassword,
     throttle: deps.credentialThrottle,
   });
-  const { verifyCode } = createVerifyCodeService(shared);
+  const { verifyCode } = createVerifyCodeService({ ...shared, codes });
   const { login } = createLoginService({
     ...shared,
     throttle: deps.credentialThrottle,
     repo: {
-      findAuthUserByEmail: deps.repository.findAuthUserByEmail,
+      findUserByEmail: deps.repository.findUserByEmail,
       createSession: deps.sessionRepository.createSession,
     },
   });
   const { authenticate } = createAuthenticateService({
     ...shared,
     repo: deps.sessionRepository,
+    sessionTtlSeconds: deps.ttl.sessionSeconds,
   });
   const { changePassword } = createChangePasswordService({
     ...shared,
@@ -77,7 +81,11 @@ export function createAuth(deps: AuthDeps) {
     login,
     authenticate,
     changePassword,
-    currentUser: (id: number) => deps.repository.findAuthUserById(id),
+    // Only the public half of the record: the password hash stops here.
+    async currentUser(id: string) {
+      const user = await deps.repository.findUserById(id);
+      return user && { id: user.id, email: user.email };
+    },
   };
 }
 

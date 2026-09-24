@@ -4,7 +4,7 @@
 
 O logout da etapa anterior resolve o dispositivo que está na mão de quem clica, e só ele. Falta a ação que alguém procura quando desconfia que a conta foi alcançada por outra pessoa, que é derrubar tudo de uma vez, sem saber onde a sessão intrusa está nem em que aparelho ela foi criada.
 
-Esta etapa entrega `DELETE /sessions`, que revoga todas as sessões do usuário autenticado menos a que está fazendo a requisição. A sessão atual é sempre preservada, sem sinalizador nenhum para negociar isso, e quem quiser derrubar tudo inclusive a própria chama `DELETE /sessions` e em seguida `DELETE /sessions/current`.
+Esta etapa entrega `DELETE /sessions`, que encerra todas as sessões do usuário autenticado menos a que está fazendo a requisição, apagando as linhas delas. A sessão atual é sempre preservada, sem sinalizador nenhum para negociar isso, e quem quiser derrubar tudo inclusive a própria chama `DELETE /sessions` e em seguida `DELETE /sessions/current`.
 
 O endereço é a coleção inteira, e o verbo diz o que acontece com ela. `DELETE /sessions` apaga as sessões do usuário, `DELETE /sessions/current` apaga só a deste dispositivo, e as duas convivem na mesma coleção sem que nenhuma precise de parâmetro para decidir qual das duas coisas está fazendo.
 
@@ -16,7 +16,7 @@ Diferente do logout simples, aqui a autenticação é obrigatória. A operação
 
 ### Onde o código fica
 
-A rota é `src/routes/sessions/all.ts`, o service é `src/plugins/app/sessions/logout-all.ts` e a fatia expõe os dois por `fastify.sessions.logoutAll`, montado em `create-sessions.ts`. O acesso ao banco é `revokeAllUserSessions`, declarado na porta `SessionRepository` ao lado dos outros métodos de sessão, nunca em `AuthRepository`.
+A rota é `src/routes/sessions/all.ts`, o service é `src/plugins/app/sessions/logout-all.ts` e a fatia expõe os dois por `fastify.sessions.logoutAll`, montado em `create-sessions.ts`. O acesso ao banco é `deleteUserSessions`, declarado na porta `SessionRepository` ao lado dos outros métodos de sessão, nunca em `AuthRepository`.
 
 ### O hook publica `request.session` ao lado de `request.user`
 
@@ -48,7 +48,7 @@ Isso também elimina uma classe inteira de detalhe que um corpo opcional arrasta
 
 ### A resposta é `204`, sem contagem
 
-O service conta quantas sessões foram revogadas, e a rota não devolve esse número. Ninguém consome a contagem hoje: a interface que mostra dispositivos conectados, em que esse dado teria uso, é outra etapa, e quando ela chegar vai precisar da lista, não de um total solto.
+O service conta quantas sessões foram encerradas, e a rota não devolve esse número. Ninguém consome a contagem hoje: a interface que mostra dispositivos conectados, em que esse dado teria uso, é outra etapa, e quando ela chegar vai precisar da lista, não de um total solto.
 
 Devolver um corpo agora significaria fixar um contrato antes de existir um leitor para ele. A contagem existe onde ela tem valor imediato, que é no log, ao lado do `userId`.
 
@@ -56,21 +56,15 @@ Devolver um corpo agora significaria fixar um contrato antes de existir um leito
 
 Como a sessão atual sempre sobrevive, o cookie que chegou continua valendo depois da resposta, e mandar um `Set-Cookie` de expiração aqui apagaria uma sessão que o próprio servidor acabou de preservar. `LogoutAllResult` carrega só `revokedCount`, a rota não tem decisão de cookie para tomar, e quem apaga cookie no projeto é `DELETE /sessions/current`, que existe justamente para isso.
 
-### A revogação em lote guarda `revoked_at IS NULL`
+### O encerramento em lote é um `DELETE` só
 
-`revokeAllUserSessions`, na porta `SessionRepository`, faz um `UPDATE` filtrando por `user_id`, por `revoked_at IS NULL` e, quando há exclusão, por `id <>`. A guarda do nulo é a mesma do logout simples e entrega as mesmas duas propriedades.
+`deleteUserSessions`, na porta `SessionRepository`, faz um `DELETE` filtrando por `user_id` e, quando há exclusão, por `id <>`. A contagem vem do `returning`, então `revokedCount` conta só o que esta chamada de fato apagou.
 
-A primeira é a idempotência: uma segunda chamada seguida casa zero linhas, então ela não sobrescreve o carimbo que a primeira deixou. A segunda é a honestidade da contagem, porque `revokedCount` vem do `returning` e conta só o que esta chamada de fato revogou, em vez de somar de novo o que já estava revogado antes.
+A idempotência vem de graça: uma segunda chamada seguida não encontra mais nada para apagar e devolve contagem zero, sem efeito nenhum sobre o que a primeira fez.
 
-A guarda não olha `expires_at`, de propósito. Uma sessão vencida mas nunca revogada entra no lote e recebe `revoked_reason` igual a `logout_all`, porque expiração e revogação são colunas independentes e o que o registro conta é que o usuário mandou derrubar tudo.
+O filtro não olha a validade, de propósito. Uma sessão vencida do mesmo usuário entra no lote e é apagada junto, o que é inofensivo, porque ela já não abria nada, e só adianta o trabalho da limpeza periódica.
 
-A exclusão da sessão atual é opcional na assinatura da porta, e o adaptador traduz a ausência num argumento `undefined` dentro do `and()`, que o Drizzle ignora, de modo que a cláusula fica condicional sem precisar montar duas queries. A rota sempre passa a exclusão, porque preservar a sessão atual é a regra, e a opcionalidade fica na porta apenas como a forma de montar uma query só.
-
-### Nenhuma migration foi necessária
-
-A união `RevokedReason` ganhou `logout_all` ao lado de `user_logout`, e o banco não mudou. `revoked_reason` é `text` no Postgres, conforme a decisão tomada na etapa do logout, e a restrição de valores vive em `REVOKED_REASONS`, no TypeScript.
-
-Esse é o retorno concreto daquela escolha. Com um `pgEnum`, acrescentar um motivo seria uma migration, e migration de enum é a operação que envelhece pior justamente enquanto a lista ainda cresce. Aqui a lista cresceu com uma linha de código, e o compilador continua sendo o único caminho até aquela coluna.
+A exclusão da sessão atual é opcional na assinatura da porta, e o adaptador traduz a ausência num argumento `undefined` dentro do `and()`, que o Drizzle ignora, de modo que a cláusula fica condicional sem precisar montar duas queries. A rota sempre passa a exclusão, porque preservar a sessão atual é a regra, e a opcionalidade fica na porta porque outros fluxos que precisam apagar literalmente todas as sessões de um usuário reaproveitam o mesmo método.
 
 ### O endpoint não pede a senha
 
@@ -78,18 +72,18 @@ Uma reautenticação antes de derrubar tudo parece prudente, e neste caso trabal
 
 Além disso, quem já está autenticado passou pelo hook, então a identidade está provada na medida em que o resto do sistema exige. Pedir a senha de novo só adiciona atrito, e um atrito que também atrapalha quem esqueceu a senha e está justamente tentando se proteger.
 
-O log registra o evento com `userId` e `revokedCount`, porque derrubar todos os dispositivos é sinal de segurança e não rotina. Nenhum token, email ou hash aparece nessa linha.
+O log registra o evento com `userId` e `revokedCount`, porque derrubar todos os dispositivos é sinal de segurança e não rotina, e como a tabela não guarda histórico, é essa linha que conta depois que o encerramento aconteceu. Nenhum token, email ou hash aparece nessa linha.
 
 ## Definition of done
 
 * `DELETE /sessions` respondendo `204` sem corpo e sem declarar `body`, com o contrato publicado no OpenAPI
-* Rota atrás do hook `authenticate`, respondendo `401` genérico quando o cookie está ausente, desconhecido, revogado ou expirado
+* Rota atrás do hook `authenticate`, respondendo `401` genérico quando o cookie está ausente, desconhecido ou expirado
 * Requisição sem header de tipo e sem payload tratada como válida, porque a rota não lê corpo
-* Demais sessões do usuário marcadas com `revoked_at` e `revoked_reason` igual a `logout_all`
+* Demais sessões do usuário apagadas
 * Sessão atual sempre intacta e cookie nunca limpo, com teste provando que nenhum `Set-Cookie` sai na resposta
 * Sessões de outros usuários intactas, com teste provando o isolamento
 * Usuário sem nenhuma outra sessão recebendo `204`, com contagem zero
-* Segunda chamada seguida preservando o carimbo da primeira revogação
-* Sessão expirada e ainda não revogada entrando no lote
+* Segunda chamada seguida respondendo `204` com contagem zero
+* Sessão expirada do mesmo usuário entrando no lote
 * `request.user` e `request.session` disponíveis em rota protegida e nulos em rota que não usa o hook
 * `pnpm test`, `pnpm typecheck`, `pnpm lint` e `pnpm build` verdes

@@ -21,7 +21,6 @@ export function createInMemoryCredentialThrottleRepository(
       rows.set(input.keyHash, {
         failedCount: input.failedCount,
         lastFailedAt: input.lastFailedAt,
-        blockedUntil: input.blockedUntil,
       });
     },
     async clearThrottle(keyHash) {

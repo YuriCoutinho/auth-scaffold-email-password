@@ -1,10 +1,12 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import type { AppOptions } from "../../app-options.js";
-import { PASSWORD_RESET_COOKIE } from "../../lib/cookies.js";
+import { cookiePolicy } from "../../lib/cookies.js";
 import { rateLimitFor } from "../../lib/rate-limit.js";
+import { resolveTtl } from "../../lib/ttl.js";
 import { forgotPasswordBodySchema, messageSchema } from "../../schemas/auth.js";
 
 const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
+  const cookies = cookiePolicy(resolveTtl(opts.ttl));
   app.post(
     "/forgot-password",
     {
@@ -33,9 +35,9 @@ const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
       );
 
       reply.setCookie(
-        PASSWORD_RESET_COOKIE.name,
+        cookies.passwordReset.name,
         sessionToken,
-        PASSWORD_RESET_COOKIE.options,
+        cookies.passwordReset.options,
       );
       return reply.code(202).send({
         message: "If the email is valid, we sent a reset code.",

@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../../src/app.js";
 import { hashPassword } from "../../../src/lib/password.js";
 import { MAX_CODE_ATTEMPTS } from "../../../src/lib/session.js";
-import { hashOtpCode } from "../../../src/lib/token-hash.js";
+import {
+  hashOtpCode,
+  hashSessionToken,
+  hashVerificationToken,
+} from "../../../src/lib/token-hash.js";
 import { FakeEmailSender } from "../../../src/plugins/app/email/drivers/fake.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
@@ -10,23 +14,34 @@ import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repos
 const CODE = "123456";
 const NEW_PASSWORD = "a-brand-new-passphrase";
 const OLD_PASSWORD = "the-previous-passphrase";
+const USER_ID = "11111111-1111-4111-8111-111111111111";
+const OTHER_SESSION_TOKEN = "other-device-token";
 
-async function setup(overrides: Record<string, unknown> = {}) {
+async function setup(
+  overrides: Record<string, unknown> = {},
+  code: { issuedAt?: Date; codeAttempts?: number } = {},
+) {
   const authRepository = createInMemoryAuthRepository({
-    authUsers: [
+    users: [
       {
-        id: 1,
+        id: USER_ID,
         email: "reset@example.com",
         passwordHash: await hashPassword(OLD_PASSWORD),
       },
     ],
-  });
-  await authRepository.upsertPasswordReset({
-    userId: 1,
-    codeHash: hashOtpCode(CODE),
-    resetSessionToken: "tok",
-    expiresAt: new Date(Date.now() + 600_000),
-    now: new Date(),
+    verificationCodes: [
+      {
+        userId: USER_ID,
+        purpose: "password_reset",
+        tokenHash: hashVerificationToken("tok"),
+        codeHash: hashOtpCode(CODE),
+        codeAttempts: code.codeAttempts ?? 0,
+        issuedAt: code.issuedAt ?? new Date(),
+      },
+    ],
+    sessions: [
+      { userId: USER_ID, tokenHash: hashSessionToken(OTHER_SESSION_TOKEN) },
+    ],
   });
   const emailSender = new FakeEmailSender();
   const app = await buildApp(
@@ -51,7 +66,7 @@ function inject(
 
 describe("POST /auth/reset-password", () => {
   it("answers 204, clears the reset cookie and sets the session cookie", async () => {
-    const { app } = await setup();
+    const { app, authRepository } = await setup();
 
     const response = await inject(app, {
       code: CODE,
@@ -67,6 +82,15 @@ describe("POST /auth/reset-password", () => {
 
     const cleared = response.cookies.find((c) => c.name === "password_reset");
     expect(cleared?.value).toBe("");
+
+    // Every older session is gone and only the one just handed out remains.
+    expect([...authRepository.sessions.values()]).toEqual([
+      expect.objectContaining({
+        userId: USER_ID,
+        tokenHash: hashSessionToken(session?.value ?? ""),
+      }),
+    ]);
+    expect(authRepository.verificationCodes.size).toBe(0);
 
     await app.close();
   });
@@ -90,7 +114,7 @@ describe("POST /auth/reset-password", () => {
   });
 
   it("answers 401 with one generic message for a wrong code", async () => {
-    const { app } = await setup();
+    const { app, authRepository } = await setup();
 
     const response = await inject(app, {
       code: "000000",
@@ -99,6 +123,10 @@ describe("POST /auth/reset-password", () => {
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid or expired code." });
+    expect(
+      [...authRepository.verificationCodes.values()][0]?.codeAttempts,
+    ).toBe(1);
+    expect(authRepository.sessions.size).toBe(1);
 
     await app.close();
   });
@@ -171,21 +199,16 @@ describe("POST /auth/reset-password", () => {
     const response = await inject(app, { code: "12345", newPassword: "short" });
 
     expect(response.statusCode).toBe(400);
-    expect(await authRepository.findPasswordResetByUserId(1)).toBeDefined();
+    expect(authRepository.verificationCodes.size).toBe(1);
 
     await app.close();
   });
 
   it("answers the same 401 once the reset has expired", async () => {
-    const { app, authRepository } = await setup();
-    await authRepository.updatePasswordResetSendState(1, {
-      resetSessionToken: "tok",
-      codeHash: hashOtpCode(CODE),
-      expiresAt: new Date(Date.now() - 1_000),
-      codeAttempts: 0,
-      lastSentAt: new Date(),
-      codeSendCount: 1,
-    });
+    const { app, authRepository } = await setup(
+      {},
+      { issuedAt: new Date(Date.now() - 16 * 60 * 1000) },
+    );
 
     const response = await inject(app, {
       code: CODE,
@@ -194,20 +217,16 @@ describe("POST /auth/reset-password", () => {
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid or expired code." });
+    expect(authRepository.sessions.size).toBe(1);
 
     await app.close();
   });
 
   it("answers the same 401 for an exhausted code, even when it is the right one", async () => {
-    const { app, authRepository } = await setup();
-    await authRepository.updatePasswordResetSendState(1, {
-      resetSessionToken: "tok",
-      codeHash: hashOtpCode(CODE),
-      expiresAt: new Date(Date.now() + 600_000),
-      codeAttempts: MAX_CODE_ATTEMPTS,
-      lastSentAt: new Date(),
-      codeSendCount: 1,
-    });
+    const { app, authRepository } = await setup(
+      {},
+      { codeAttempts: MAX_CODE_ATTEMPTS },
+    );
 
     const response = await inject(app, {
       code: CODE,
@@ -216,7 +235,7 @@ describe("POST /auth/reset-password", () => {
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid or expired code." });
-    expect(await authRepository.findPasswordResetByUserId(1)).toBeDefined();
+    expect(authRepository.verificationCodes.size).toBe(1);
 
     await app.close();
   });

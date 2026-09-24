@@ -1,172 +1,111 @@
-import type { RevokedReason } from "../../../lib/session.js";
+import type { CreateSessionInput } from "../sessions/repository.js";
 
-export interface AuthUserRecord {
-  id: number;
-  publicId: string;
-  passwordHash: string;
-}
+export type VerificationPurpose = "signup" | "password_reset";
 
-export interface PendingSignupRecord {
-  id: number;
+// A null emailVerifiedAt is an account whose signup was never confirmed.
+export interface UserRecord {
+  id: string;
   email: string;
   passwordHash: string;
+  emailVerifiedAt: Date | null;
+}
+
+export interface UpsertUnverifiedUserInput {
+  id: string;
+  email: string;
+  passwordHash: string;
+  createdAt: Date;
+}
+
+export interface VerificationCodeState {
   codeHash: string;
-  signupSessionToken: string;
   codeAttempts: number;
-  lastSentAt: Date;
-  // 0 means the current code was never delivered: the next resend owes no
+  // 0 means the current code was never delivered: the next send owes no
   // cooldown and does not count against the send cap.
   codeSendCount: number;
-  expiresAt: Date;
+  issuedAt: Date;
 }
 
-export interface UpsertPendingSignupInput {
-  email: string;
-  passwordHash: string;
-  codeHash: string;
-  signupSessionToken: string;
-  expiresAt: Date;
-  now: Date;
+export interface VerificationCodeKey {
+  userId: string;
+  purpose: VerificationPurpose;
 }
 
-export interface PendingSignupResendState {
-  codeHash: string;
-  expiresAt: Date;
-  codeAttempts: number;
-  lastSentAt: Date;
-  codeSendCount: number;
+export interface SaveVerificationCodeInput
+  extends VerificationCodeKey,
+    VerificationCodeState {
+  tokenHash: string;
 }
 
-export interface PromotePendingSignupInput {
-  publicId: string;
-  email: string;
-  passwordHash: string;
-  sessionPublicId: string;
-  sessionTokenHash: string;
-  deviceLabel: string | null;
-  sessionExpiresAt: Date;
-}
-
-export interface AuthUserIdentity {
-  publicId: string;
-  email: string;
-}
-
-// The identity read feeds GET /me, so the password hash gets its own read
-// instead of widening a shape that a route with no business holding it uses.
-export interface AuthUserCredentials {
-  id: number;
+// The owner's email and password hash ride along because every caller that
+// resolves a code by token needs one of them next.
+export interface VerificationCodeRecord extends SaveVerificationCodeInput {
   email: string;
   passwordHash: string;
 }
 
-export interface ChangeUserPasswordInput {
-  userId: number;
-  passwordHash: string;
-  revokedAt: Date;
-  revokedReason: RevokedReason;
-  exceptSessionId: number;
-}
-
-// The email and the password hash ride along because every caller that reads
-// a reset row needs at least one of them, and joining here keeps the flow at
-// one query instead of two.
-export interface PasswordResetRecord {
-  id: number;
-  userId: number;
-  email: string;
-  passwordHash: string;
+// The hashes the caller read travel with the write, so a code that was
+// rotated or reissued in between matches no row instead of being consumed.
+export interface ConsumeVerificationCodeInput {
+  userId: string;
+  tokenHash: string;
   codeHash: string;
-  resetSessionToken: string;
-  codeAttempts: number;
-  lastSentAt: Date;
-  // Unlike the signup flow, 0 never means "first send": the same endpoint is
-  // both the first request and the resend, so a failed delivery restores the
-  // previous count instead of zeroing it.
-  codeSendCount: number;
-  expiresAt: Date;
 }
 
-export interface UpsertPasswordResetInput {
-  userId: number;
-  codeHash: string;
-  resetSessionToken: string;
-  expiresAt: Date;
-  now: Date;
+export type NewSessionInput = Omit<CreateSessionInput, "userId">;
+
+export interface VerifyEmailInput extends ConsumeVerificationCodeInput {
+  verifiedAt: Date;
+  session: NewSessionInput;
 }
 
-export interface PasswordResetSendState {
-  // Rotated on every request: the write addresses the row by user and sets
-  // this to the new value.
-  resetSessionToken: string;
-  codeHash: string;
-  expiresAt: Date;
-  codeAttempts: number;
-  lastSentAt: Date;
-  codeSendCount: number;
-}
-
-export interface ResetUserPasswordInput {
-  userId: number;
+export interface ChangePasswordInput {
+  userId: string;
   passwordHash: string;
-  resetSessionToken: string;
-  sessionPublicId: string;
-  sessionTokenHash: string;
-  deviceLabel: string | null;
-  sessionExpiresAt: Date;
-  revokedAt: Date;
-  revokedReason: RevokedReason;
+  exceptSessionId: string;
+}
+
+export interface ResetPasswordInput extends ConsumeVerificationCodeInput {
+  passwordHash: string;
+  session: NewSessionInput;
 }
 
 export interface AuthRepository {
-  findAuthUserByEmail(email: string): Promise<AuthUserRecord | undefined>;
-  findPendingSignupByEmail(
-    email: string,
-  ): Promise<PendingSignupRecord | undefined>;
-  upsertPendingSignup(input: UpsertPendingSignupInput): Promise<{ id: number }>;
-  markPendingSignupUndelivered(email: string): Promise<void>;
-  findPendingSignupBySessionToken(
-    token: string,
-  ): Promise<PendingSignupRecord | undefined>;
-  updatePendingSignupResendState(
-    token: string,
-    state: PendingSignupResendState,
-  ): Promise<void>;
-  // Keyed by email, which is unique on the table, so the write always matches
-  // the one row it means.
-  rotatePendingSignupToken(email: string, nextToken: string): Promise<void>;
-  incrementCodeAttempts(signupSessionToken: string): Promise<void>;
-  // Null when the pending signup is already gone, which is how a second
-  // concurrent verification of the same code learns it lost the race.
-  promotePendingSignup(
-    input: PromotePendingSignupInput,
-  ): Promise<{ id: number } | null>;
-  findAuthUserById(id: number): Promise<AuthUserIdentity | undefined>;
-  findAuthUserCredentialsById(
-    id: number,
-  ): Promise<AuthUserCredentials | undefined>;
-  changeUserPassword(input: ChangeUserPasswordInput): Promise<void>;
-  findPasswordResetByUserId(
-    userId: number,
-  ): Promise<PasswordResetRecord | undefined>;
-  upsertPasswordReset(input: UpsertPasswordResetInput): Promise<{ id: number }>;
-  findPasswordResetBySessionToken(
-    token: string,
-  ): Promise<PasswordResetRecord | undefined>;
-  // Keyed by user, not by token: the token is the column being replaced, and
-  // using it as the key makes a concurrent writer match zero rows and lose its
-  // write without anyone noticing.
-  updatePasswordResetSendState(
-    userId: number,
-    state: PasswordResetSendState,
+  findUserByEmail(email: string): Promise<UserRecord | undefined>;
+  findUserById(id: string): Promise<UserRecord | undefined>;
+  // Creates the account unconfirmed, or replaces the password of one still
+  // unconfirmed, and saves its signup code in the same transaction so a
+  // concurrent verification never pairs the new password with an old token.
+  // Null when the address belongs to a confirmed account.
+  startSignup(
+    user: UpsertUnverifiedUserInput,
+    code: Omit<SaveVerificationCodeInput, "userId" | "purpose">,
+  ): Promise<{ userId: string } | null>;
+  findVerificationCode(
+    key: VerificationCodeKey,
+  ): Promise<VerificationCodeRecord | undefined>;
+  findVerificationCodeByTokenHash(
+    purpose: VerificationPurpose,
+    tokenHash: string,
+  ): Promise<VerificationCodeRecord | undefined>;
+  saveVerificationCode(input: SaveVerificationCodeInput): Promise<void>;
+  rotateVerificationToken(
+    key: VerificationCodeKey,
+    tokenHash: string,
   ): Promise<void>;
   // Compensation for a delivery that failed. Applies only while the row still
-  // carries the token in `state`, so a restore that arrives after a newer
-  // request has rotated past it writes nothing.
-  restorePasswordResetSendState(
-    userId: number,
-    state: PasswordResetSendState,
+  // holds the code that failed to go out, and never touches the token, so it
+  // cannot undo a newer request nor kill a cookie already handed out.
+  restoreVerificationCode(
+    key: VerificationCodeKey,
+    failedCodeHash: string,
+    previous: VerificationCodeState,
   ): Promise<void>;
-  incrementPasswordResetAttempts(token: string): Promise<void>;
-  resetUserPassword(input: ResetUserPasswordInput): Promise<void>;
+  incrementVerificationAttempts(key: VerificationCodeKey): Promise<void>;
+  // False when the code was already consumed or rotated, or the account was
+  // already confirmed, which is how a concurrent verification learns it lost.
+  verifyEmail(input: VerifyEmailInput): Promise<boolean>;
+  changePassword(input: ChangePasswordInput): Promise<void>;
+  // False when the code was already consumed or rotated.
+  resetPassword(input: ResetPasswordInput): Promise<boolean>;
 }

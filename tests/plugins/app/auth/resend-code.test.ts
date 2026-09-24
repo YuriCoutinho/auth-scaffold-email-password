@@ -1,194 +1,119 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   MAX_CODE_SEND_COUNT,
-  SIGNUP_TTL_SECONDS,
+  RESEND_COOLDOWN_SECONDS,
 } from "../../../../src/lib/session.js";
-import { hashOtpCode } from "../../../../src/lib/token-hash.js";
+import {
+  hashOtpCode,
+  hashVerificationToken,
+} from "../../../../src/lib/token-hash.js";
+import { DEFAULT_TTL } from "../../../../src/lib/ttl.js";
 import { createResendCodeService } from "../../../../src/plugins/app/auth/resend-code.js";
+import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
+import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
+import type { EmailSender } from "../../../../src/plugins/app/email/sender.js";
+import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 
-const NOW = new Date("2026-09-21T12:00:00Z");
-const TOKEN = "session-token";
+const NOW = new Date("2026-09-24T12:00:00Z");
+const USER_ID = "11111111-1111-4111-8111-111111111111";
+const EMAIL = "user@example.com";
+const TOKEN = "signup-token";
 
-function makePending(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 1,
-    email: "foo@gmail.com",
-    codeHash: "old-hash",
-    codeAttempts: 3,
-    lastSentAt: new Date("2026-09-21T11:00:00Z"), // 1h ago: outside cooldown
-    codeSendCount: 1,
-    expiresAt: new Date("2026-09-21T12:10:00Z"), // not expired
-    ...overrides,
-  };
-}
-
-function makeDeps(pending: ReturnType<typeof makePending> | undefined) {
-  return {
-    repo: {
-      findPendingSignupBySessionToken: vi.fn().mockResolvedValue(pending),
-      updatePendingSignupResendState: vi.fn().mockResolvedValue(undefined),
-    },
-    emailSender: {
-      send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
-    },
-    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+function setup(
+  code: { codeSendCount?: number; issuedAt?: Date } = {},
+  emailSender: EmailSender = new FakeEmailSender(),
+) {
+  const repo = createInMemoryAuthRepository({
+    users: [{ id: USER_ID, email: EMAIL, emailVerifiedAt: null }],
+    verificationCodes: [
+      {
+        userId: USER_ID,
+        purpose: "signup",
+        tokenHash: hashVerificationToken(TOKEN),
+        codeHash: hashOtpCode("123456"),
+        codeSendCount: code.codeSendCount ?? 1,
+        issuedAt:
+          code.issuedAt ??
+          new Date(NOW.getTime() - RESEND_COOLDOWN_SECONDS * 1000),
+      },
+    ],
+  });
+  const send = vi.spyOn(emailSender, "send");
+  const codes = createVerificationCodes({
+    repo,
+    emailSender,
+    ttl: DEFAULT_TTL,
     now: () => NOW,
-  };
+  });
+  const { resendCode } = createResendCodeService({ codes });
+  const stored = () => repo.verificationCodes.get(`${USER_ID}:signup`);
+  return { repo, send, resendCode, stored };
 }
 
 describe("resendCode", () => {
-  it("returns invalid-session when the token is missing", async () => {
-    const deps = makeDeps(undefined);
-    const service = createResendCodeService(deps);
-    await expect(service.resendCode(undefined)).resolves.toEqual({
+  it("rejects a missing cookie without sending anything", async () => {
+    const { send, resendCode } = setup();
+
+    expect(await resendCode(undefined)).toEqual({ outcome: "invalid-session" });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("rejects a token that matches no signup", async () => {
+    const { send, resendCode } = setup();
+
+    expect(await resendCode("not-a-real-token")).toEqual({
       outcome: "invalid-session",
     });
-    expect(deps.repo.findPendingSignupBySessionToken).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
   });
 
-  it("returns invalid-session when no pending signup matches", async () => {
-    const deps = makeDeps(undefined);
-    await expect(
-      createResendCodeService(deps).resendCode(TOKEN),
-    ).resolves.toEqual({
-      outcome: "invalid-session",
+  it("rejects an expired signup", async () => {
+    const { resendCode } = setup({
+      issuedAt: new Date(NOW.getTime() - DEFAULT_TTL.signupCodeSeconds * 1000),
     });
+
+    expect(await resendCode(TOKEN)).toEqual({ outcome: "invalid-session" });
   });
 
-  it("returns invalid-session when the pending signup is expired", async () => {
-    const deps = makeDeps(
-      makePending({ expiresAt: new Date("2026-09-21T11:59:59Z") }),
-    );
-    await expect(
-      createResendCodeService(deps).resendCode(TOKEN),
-    ).resolves.toEqual({
-      outcome: "invalid-session",
-    });
-    expect(deps.repo.updatePendingSignupResendState).not.toHaveBeenCalled();
-  });
+  it("sends a new code and hands back the same token", async () => {
+    const { send, resendCode, stored } = setup();
 
-  it("returns limit-reached at the send cap without touching state or provider", async () => {
-    const deps = makeDeps(makePending({ codeSendCount: MAX_CODE_SEND_COUNT }));
-    await expect(
-      createResendCodeService(deps).resendCode(TOKEN),
-    ).resolves.toEqual({
-      outcome: "limit-reached",
-    });
-    expect(deps.repo.updatePendingSignupResendState).not.toHaveBeenCalled();
-    expect(deps.emailSender.send).not.toHaveBeenCalled();
-  });
-
-  it("returns cooldown within 60s of the last send", async () => {
-    const deps = makeDeps(
-      makePending({ lastSentAt: new Date("2026-09-21T11:59:30Z") }),
-    );
-    await expect(
-      createResendCodeService(deps).resendCode(TOKEN),
-    ).resolves.toEqual({
-      outcome: "cooldown",
-    });
-    expect(deps.repo.updatePendingSignupResendState).not.toHaveBeenCalled();
-    expect(deps.emailSender.send).not.toHaveBeenCalled();
-  });
-
-  it("skips the cooldown when code_send_count is 0 (no email delivered for the current code)", async () => {
-    const deps = makeDeps(
-      makePending({
-        codeSendCount: 0,
-        lastSentAt: new Date("2026-09-21T11:59:59Z"),
-      }),
-    );
-    await expect(
-      createResendCodeService(deps).resendCode(TOKEN),
-    ).resolves.toEqual({
+    expect(await resendCode(TOKEN)).toEqual({
       outcome: "sent",
       sessionToken: TOKEN,
     });
-  });
-
-  it("writes the new state before sending, with reset attempts and renewed expiry", async () => {
-    const deps = makeDeps(makePending());
-    await expect(
-      createResendCodeService(deps).resendCode(TOKEN),
-    ).resolves.toEqual({
-      outcome: "sent",
-      sessionToken: TOKEN,
-    });
-
-    const [token, state] =
-      deps.repo.updatePendingSignupResendState.mock.calls[0] ?? [];
-    expect(token).toBe(TOKEN);
-    expect(state.codeAttempts).toBe(0);
-    expect(state.codeSendCount).toBe(2);
-    expect(state.lastSentAt).toEqual(NOW);
-    expect(state.expiresAt).toEqual(
-      new Date(NOW.getTime() + SIGNUP_TTL_SECONDS * 1000),
-    );
-
-    const message = deps.emailSender.send.mock.calls[0]?.[0];
-    expect(message.to).toBe("foo@gmail.com");
-    const code = message.subject.match(/\d{6}/)?.[0] ?? "";
-    expect(state.codeHash).toBe(hashOtpCode(code));
-    expect(state.codeHash).not.toBe("old-hash");
-
-    const updateOrder =
-      deps.repo.updatePendingSignupResendState.mock.invocationCallOrder[0] ?? 0;
-    const sendOrder = deps.emailSender.send.mock.invocationCallOrder[0] ?? 0;
-    expect(updateOrder).toBeLessThan(sendOrder);
-  });
-
-  it("restores the previous state and returns email-unavailable when delivery fails", async () => {
-    const pending = makePending();
-    const deps = makeDeps(pending);
-    deps.emailSender.send.mockRejectedValueOnce(new Error("provider down"));
-
-    await expect(
-      createResendCodeService(deps).resendCode(TOKEN),
-    ).resolves.toEqual({
-      outcome: "email-unavailable",
-    });
-
-    expect(deps.repo.updatePendingSignupResendState).toHaveBeenCalledTimes(2);
-    const [, restored] =
-      deps.repo.updatePendingSignupResendState.mock.calls[1] ?? [];
-    expect(restored).toEqual({
-      codeHash: pending.codeHash,
-      expiresAt: pending.expiresAt,
-      codeAttempts: pending.codeAttempts,
-      lastSentAt: pending.lastSentAt,
-      codeSendCount: pending.codeSendCount,
+    expect(send).toHaveBeenCalledOnce();
+    expect(stored()).toMatchObject({
+      tokenHash: hashVerificationToken(TOKEN),
+      codeSendCount: 2,
+      issuedAt: NOW,
     });
   });
 
-  it("still returns email-unavailable when the restore itself fails", async () => {
-    const deps = makeDeps(makePending());
-    deps.emailSender.send.mockRejectedValueOnce(new Error("provider down"));
-    deps.repo.updatePendingSignupResendState
-      .mockResolvedValueOnce(undefined)
-      .mockRejectedValueOnce(new Error("db down"));
+  it("reports the cooldown", async () => {
+    const { send, resendCode } = setup({ issuedAt: NOW });
 
-    await expect(
-      createResendCodeService(deps).resendCode(TOKEN),
-    ).resolves.toEqual({
-      outcome: "email-unavailable",
+    expect(await resendCode(TOKEN)).toEqual({ outcome: "cooldown" });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("reports the send cap", async () => {
+    const { send, resendCode } = setup({ codeSendCount: MAX_CODE_SEND_COUNT });
+
+    expect(await resendCode(TOKEN)).toEqual({ outcome: "limit-reached" });
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("reports an unavailable email and keeps the previous code", async () => {
+    const { resendCode, stored } = setup(
+      {},
+      { send: vi.fn().mockRejectedValue(new Error("down")) },
+    );
+
+    expect(await resendCode(TOKEN)).toEqual({ outcome: "email-unavailable" });
+    expect(stored()).toMatchObject({
+      codeHash: hashOtpCode("123456"),
+      codeSendCount: 1,
     });
-  });
-  it("logs an unrecognized signup session token", async () => {
-    const deps = makeDeps(undefined);
-    await createResendCodeService(deps).resendCode(TOKEN);
-    expect(deps.log.info).toHaveBeenCalledWith(
-      "signup session token not recognized",
-    );
-  });
-
-  it("logs the expired pending signup by id", async () => {
-    const deps = makeDeps(
-      makePending({ expiresAt: new Date("2026-09-21T11:59:59Z") }),
-    );
-    await createResendCodeService(deps).resendCode(TOKEN);
-    expect(deps.log.info).toHaveBeenCalledWith(
-      { pendingSignupId: 1 },
-      "pending signup expired",
-    );
   });
 });

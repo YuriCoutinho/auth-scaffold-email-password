@@ -2,33 +2,30 @@
 
 ## Introdução
 
-Um scaffold de autenticação só serve de base para o próximo projeto enquanto não souber nada sobre o produto atual. Basta uma coluna de domínio na tabela de perfil, um registro profissional ou um código de área, para que reaproveitar isso signifique primeiro apagar coisas.
+Um scaffold de autenticação só serve de base para o próximo projeto enquanto não souber nada sobre o produto atual. Basta uma coluna de domínio na tabela de usuários, um registro profissional ou um código de área, para que reaproveitar isso signifique primeiro apagar coisas.
 
-Esta etapa fixa essa fronteira. A tabela de perfil existe, tem relação um para um com o usuário, e guarda apenas o que qualquer produto teria. Tudo que for específico entra depois, no projeto que consumir o scaffold.
+Esta etapa fixa essa fronteira. Os dados de perfil que qualquer produto teria entram como colunas de `users`, e só eles. Tudo que for específico entra depois, no projeto que consumir o scaffold.
 
-A fronteira é também conceitual e vale para quem for estender isto: a tabela de autenticação responde "esta pessoa consegue provar quem é", e a de perfil responde "quem é esta pessoa dentro do produto". Misturar as duas é o começo de uma tabela de usuário com quarenta colunas que todo mundo tem medo de alterar.
+A fronteira é também conceitual e vale para quem for estender isto: uma parte da linha responde "esta pessoa consegue provar quem é", e outra responde "quem é esta pessoa dentro do produto". Deixar a segunda crescer sem critério é o começo de uma tabela de usuário com quarenta colunas que todo mundo tem medo de alterar.
 
 ## Requisitos técnicos
 
-### O que fica em cada lado
+### O que fica em `users`
 
-| Tabela | Responsabilidade | Exemplos |
+| Grupo | Responsabilidade | Colunas |
 | --- | --- | --- |
-| `auth_users` | Provar identidade | email, hash de senha, identificador público |
-| `profiles` | Representar a pessoa no produto | nome, papel de acesso, e o que o produto precisar |
+| Identidade | Provar quem é | `email`, `password_hash`, `email_verified_at` |
+| Perfil genérico | Representar a pessoa no produto | `full_name`, `role` |
 
-* `auth_users` não ganha colunas novas conforme o produto cresce, porque toda coluna ali passa a ser carregada em todo fluxo de autenticação
-* `profiles` mantém apenas `full_name`, que é nullable, e `role` com os valores genéricos `user` e `admin`
-* Um produto específico estende criando colunas próprias em `profiles`, ou tabelas novas referenciando `auth_users.id`, sem alterar o núcleo
+* `full_name` é nullable, porque o cadastro não pede nome e nenhum produto deveria ser obrigado a inventar um
+* `role` é o enum `user_role`, com os valores genéricos `user` e `admin` e `NOT NULL DEFAULT 'user'`
+* Nenhuma outra coluna de produto entra aqui. Um produto específico estende criando tabelas próprias que referenciam `users.id`, uma para um ou uma para muitos, sem alterar o núcleo
 
-### Criação junto do usuário
+### Colunas da mesma linha, e não uma tabela de perfil
 
-* A linha de perfil nasce dentro da mesma transação que cria o usuário, com apenas a referência preenchida e o resto nos valores padrão
-* Isso estabelece o invariante de que todo usuário tem perfil, e é o que permite todo o resto do sistema apenas ler o perfil, sem verificar existência e sem criar nada
-* Nenhum outro ponto do código cria perfil. Login lê, endpoints futuros leem, e só a promoção do cadastro escreve
-* Em código, isso é o `INSERT` em `profiles` dentro de `promotePendingSignup` no adaptador Drizzle, e o adaptador em memória dos testes espelha o mesmo passo. Nenhum service conhece a tabela de perfil
+Uma tabela `profiles` separada, um para um com o usuário, parece a forma mais limpa de manter a fronteira, e custa mais do que entrega. Ela obriga a criar o perfil na mesma transação que cria o usuário para garantir que todo usuário tenha perfil, e na prática o que sobra é um `INSERT` a mais em todo cadastro para uma linha que nenhum fluxo lê. Dados um para um sem ciclo de vida próprio são a mesma linha, e com as colunas em `users` o invariante de que todo usuário tem perfil sai de graça: as colunas nascem com a linha, nos valores padrão.
 
-A alternativa seria criar o perfil sob demanda, na primeira vez que alguém precisasse dele. Ela parece mais econômica e não é: espalha verificação de nulo por todo lugar que toca perfil, e abre a possibilidade de dois caminhos concorrentes criarem dois perfis para o mesmo usuário.
+A preocupação que motivava a separação, a de que toda coluna de perfil passasse a ser carregada em todo fluxo de autenticação, é resolvida na consulta e não no schema. Os métodos do adaptador Drizzle projetam explicitamente as colunas que o fluxo usa, e nenhum deles faz `SELECT *`, então acrescentar uma coluna de perfil não muda o que o login ou a confirmação leem.
 
 ### Migration antes do primeiro deploy
 
@@ -38,7 +35,6 @@ A alternativa seria criar o perfil sob demanda, na primeira vez que alguém prec
 
 ## Definition of done
 
-* Tabela de perfil sem nenhum campo específico de domínio, com papel de acesso em valores genéricos
-* Migration inicial gerada a partir do schema atual e aplicável num banco limpo
-* Promoção do cadastro criando o perfil na mesma transação do usuário, coberta por teste
-* Nenhum outro caminho do código criando perfil
+* `full_name` nullable e `role` com valores genéricos em `users`, sem nenhum campo específico de domínio
+* Baseline gerado a partir do schema atual e aplicável num banco limpo
+* Nenhum fluxo de autenticação lendo colunas de perfil, com as consultas do adaptador Drizzle projetando colunas explícitas

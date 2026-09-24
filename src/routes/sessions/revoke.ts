@@ -11,11 +11,11 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         tags: ["sessions"],
         summary: "Revoke one session of the signed-in user",
         description:
-          "Revokes the session named in the path, which is the id the " +
+          "Deletes the session named in the path, which is the id the " +
           "session listing returns. Only a session of the signed-in user is " +
-          "ever revoked. The response is 204 whether the session was " +
-          "revoked, never existed, belongs to someone else, was already " +
-          "revoked or had expired, so the endpoint never reports whose " +
+          "ever deleted. The response is 204 whether the session was " +
+          "deleted, never existed, belongs to someone else, was already " +
+          "signed out or had expired, so the endpoint never reports whose " +
           "sessions exist. Signing this device out is DELETE " +
           "/sessions/current, and the session listing marks which row that " +
           "is with isCurrent.",
@@ -36,7 +36,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
 
       await app.sessions.revokeSession({
         userId: request.user.id,
-        publicId: request.params.sessionId,
+        sessionId: request.params.sessionId,
       });
 
       return reply.code(204).send();

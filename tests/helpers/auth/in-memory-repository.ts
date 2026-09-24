@@ -1,427 +1,299 @@
 import { randomUUID } from "node:crypto";
-import type { RevokedReason } from "../../../src/lib/session.js";
 import type {
   AuthRepository,
-  AuthUserRecord,
-  ChangeUserPasswordInput,
-  PasswordResetRecord,
-  PasswordResetSendState,
-  PendingSignupRecord,
-  PendingSignupResendState,
-  PromotePendingSignupInput,
-  ResetUserPasswordInput,
-  UpsertPasswordResetInput,
-  UpsertPendingSignupInput,
+  ConsumeVerificationCodeInput,
+  SaveVerificationCodeInput,
+  UserRecord,
+  VerificationCodeKey,
+  VerificationPurpose,
 } from "../../../src/plugins/app/auth/repository.js";
 import type {
-  SessionRecord,
+  CreateSessionInput,
   SessionRepository,
 } from "../../../src/plugins/app/sessions/repository.js";
 
 export interface InMemorySeed {
-  authUsers?: Array<{
+  users?: Array<{
     email: string;
-    id?: number;
-    publicId?: string;
+    id?: string;
     passwordHash?: string;
-  }>;
-  pendingSignups?: Array<
-    Partial<PendingSignupRecord> & { email: string; expiresAt: Date }
-  >;
-  sessions?: Array<{
-    userId: number;
-    tokenHash: string;
-    expiresAt: Date;
-    id?: number;
-    publicId?: string;
+    emailVerifiedAt?: Date | null;
     createdAt?: Date;
-    deviceLabel?: string | null;
-    revokedAt?: Date | null;
   }>;
+  verificationCodes?: Array<
+    Partial<SaveVerificationCodeInput> & {
+      userId: string;
+      purpose: VerificationPurpose;
+      issuedAt: Date;
+    }
+  >;
+  sessions?: Array<
+    Partial<CreateSessionInput> & { userId: string; tokenHash: string }
+  >;
 }
 
-interface StoredAuthUser extends AuthUserRecord {
-  email: string;
-}
-
-interface StoredSession extends SessionRecord {
-  publicId: string;
-  tokenHash: string;
-  deviceLabel: string | null;
+export interface StoredUser extends UserRecord {
   createdAt: Date;
-  revokedReason: RevokedReason | null;
 }
+
+const codeKey = (key: VerificationCodeKey) => `${key.userId}:${key.purpose}`;
 
 export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
-  const authUsers = new Map<string, StoredAuthUser>();
-  const pendingSignups = new Map<string, PendingSignupRecord>();
-  const passwordResets = new Map<number, PasswordResetRecord>();
-  const sessions: StoredSession[] = [];
-  const profiles: Array<{ userId: number }> = [];
-  let nextUserId = 1;
-  let nextPendingId = 1;
-  let nextPasswordResetId = 1;
-  let nextSessionId = 1;
+  const users = new Map<string, StoredUser>();
+  const verificationCodes = new Map<string, SaveVerificationCodeInput>();
+  const sessions = new Map<string, CreateSessionInput>();
 
-  for (const user of seed.authUsers ?? []) {
-    const id = user.id ?? nextUserId;
-    nextUserId = Math.max(nextUserId, id + 1);
-    authUsers.set(user.email, {
+  for (const user of seed.users ?? []) {
+    const id = user.id ?? randomUUID();
+    users.set(id, {
       id,
       email: user.email,
-      publicId: user.publicId ?? randomUUID(),
       passwordHash: user.passwordHash ?? "seeded-hash",
+      // Seeded accounts are confirmed unless a test says otherwise, because
+      // that is what almost every flow needs to start from.
+      emailVerifiedAt:
+        user.emailVerifiedAt === undefined ? new Date(0) : user.emailVerifiedAt,
+      createdAt: user.createdAt ?? new Date(0),
     });
   }
 
-  for (const pending of seed.pendingSignups ?? []) {
-    const id = pending.id ?? nextPendingId;
-    nextPendingId = Math.max(nextPendingId, id + 1);
-    pendingSignups.set(pending.email, {
-      id,
-      email: pending.email,
-      passwordHash: pending.passwordHash ?? "seeded-hash",
-      codeHash: pending.codeHash ?? "seeded-code-hash",
-      signupSessionToken: pending.signupSessionToken ?? `token-${id}`,
-      codeAttempts: pending.codeAttempts ?? 0,
-      lastSentAt: pending.lastSentAt ?? new Date(),
-      codeSendCount: pending.codeSendCount ?? 1,
-      expiresAt: pending.expiresAt,
+  for (const code of seed.verificationCodes ?? []) {
+    verificationCodes.set(codeKey(code), {
+      userId: code.userId,
+      purpose: code.purpose,
+      tokenHash: code.tokenHash ?? `token-hash-${code.userId}-${code.purpose}`,
+      codeHash: code.codeHash ?? "seeded-code-hash",
+      codeAttempts: code.codeAttempts ?? 0,
+      codeSendCount: code.codeSendCount ?? 1,
+      issuedAt: code.issuedAt,
     });
   }
 
   for (const session of seed.sessions ?? []) {
-    const id = session.id ?? nextSessionId;
-    nextSessionId = Math.max(nextSessionId, id + 1);
-    sessions.push({
+    const id = session.id ?? randomUUID();
+    sessions.set(id, {
       id,
-      publicId: session.publicId ?? randomUUID(),
       userId: session.userId,
       tokenHash: session.tokenHash,
       deviceLabel: session.deviceLabel ?? null,
       createdAt: session.createdAt ?? new Date(),
-      expiresAt: session.expiresAt,
-      revokedAt: session.revokedAt ?? null,
-      revokedReason: null,
     });
   }
 
-  const findByToken = (token: string) =>
-    [...pendingSignups.values()].find((p) => p.signupSessionToken === token);
-
-  const findResetByToken = (token: string) =>
-    [...passwordResets.values()].find((r) => r.resetSessionToken === token);
+  const findUserByEmail = (email: string) =>
+    [...users.values()].find((user) => user.email === email);
 
   // Reads hand out a copy, like a real query does. Returning the stored object
   // would let a caller see its own later writes through the value it read.
-  const snapshot = <T>(record: T | undefined) =>
-    record ? { ...record } : undefined;
+  const toUserRecord = (user: StoredUser | undefined): UserRecord | undefined =>
+    user && {
+      id: user.id,
+      email: user.email,
+      passwordHash: user.passwordHash,
+      emailVerifiedAt: user.emailVerifiedAt,
+    };
+
+  const withOwner = (code: SaveVerificationCodeInput | undefined) => {
+    const owner = code && users.get(code.userId);
+    return code && owner
+      ? { ...code, email: owner.email, passwordHash: owner.passwordHash }
+      : undefined;
+  };
+
+  const consumeCode = (
+    purpose: VerificationPurpose,
+    input: ConsumeVerificationCodeInput,
+  ) => {
+    const key = codeKey({ userId: input.userId, purpose });
+    const code = verificationCodes.get(key);
+    if (
+      !code ||
+      code.tokenHash !== input.tokenHash ||
+      code.codeHash !== input.codeHash
+    ) {
+      return false;
+    }
+    verificationCodes.delete(key);
+    return true;
+  };
+
+  const deleteUserSessions = (userId: string, exceptSessionId?: string) => {
+    let deletedCount = 0;
+    for (const [id, session] of sessions) {
+      if (session.userId === userId && id !== exceptSessionId) {
+        sessions.delete(id);
+        deletedCount++;
+      }
+    }
+    return deletedCount;
+  };
 
   const repository: AuthRepository & SessionRepository = {
-    async findAuthUserByEmail(email) {
-      const user = authUsers.get(email);
-      return user
-        ? {
-            id: user.id,
-            publicId: user.publicId,
-            passwordHash: user.passwordHash,
-          }
-        : undefined;
+    async findUserByEmail(email) {
+      return toUserRecord(findUserByEmail(email));
     },
 
-    async findPendingSignupByEmail(email) {
-      return snapshot(pendingSignups.get(email));
+    async findUserById(id) {
+      return toUserRecord(users.get(id));
     },
 
-    async upsertPendingSignup(input: UpsertPendingSignupInput) {
-      const existing = pendingSignups.get(input.email);
-      const id = existing?.id ?? nextPendingId++;
-      pendingSignups.set(input.email, {
-        id,
-        email: input.email,
-        passwordHash: input.passwordHash,
-        codeHash: input.codeHash,
-        signupSessionToken: input.signupSessionToken,
-        expiresAt: input.expiresAt,
-        codeAttempts: 0,
-        lastSentAt: input.now,
-        codeSendCount: 1,
-      });
-      return { id };
-    },
-
-    async markPendingSignupUndelivered(email) {
-      const pending = pendingSignups.get(email);
-      if (pending) {
-        pending.codeSendCount = 0;
-      }
-    },
-
-    async findPendingSignupBySessionToken(token) {
-      return snapshot(findByToken(token));
-    },
-
-    async updatePendingSignupResendState(
-      token,
-      state: PendingSignupResendState,
-    ) {
-      const pending = findByToken(token);
-      if (pending) {
-        Object.assign(pending, state);
-      }
-    },
-
-    async rotatePendingSignupToken(email, nextToken) {
-      const pending = pendingSignups.get(email);
-      if (pending) {
-        pending.signupSessionToken = nextToken;
-      }
-    },
-
-    async incrementCodeAttempts(token) {
-      const pending = findByToken(token);
-      if (pending) {
-        pending.codeAttempts += 1;
-      }
-    },
-
-    async promotePendingSignup(input: PromotePendingSignupInput) {
-      if (!pendingSignups.delete(input.email)) {
+    async startSignup(user, code) {
+      const existing = findUserByEmail(user.email);
+      if (existing?.emailVerifiedAt) {
         return null;
       }
-      const user: StoredAuthUser = {
-        id: nextUserId++,
-        email: input.email,
-        publicId: input.publicId,
-        passwordHash: input.passwordHash,
-      };
-      authUsers.set(input.email, user);
-      sessions.push({
-        id: nextSessionId++,
-        publicId: input.sessionPublicId,
-        userId: user.id,
-        tokenHash: input.sessionTokenHash,
-        deviceLabel: input.deviceLabel,
-        createdAt: new Date(),
-        expiresAt: input.sessionExpiresAt,
-        revokedAt: null,
-        revokedReason: null,
+      const userId = existing?.id ?? user.id;
+      if (existing) {
+        existing.passwordHash = user.passwordHash;
+      } else {
+        users.set(userId, { ...user, emailVerifiedAt: null });
+      }
+      verificationCodes.set(codeKey({ userId, purpose: "signup" }), {
+        userId,
+        purpose: "signup",
+        ...code,
       });
-      profiles.push({ userId: user.id });
-      return { id: user.id };
+      return { userId };
+    },
+
+    async findVerificationCode(key) {
+      return withOwner(verificationCodes.get(codeKey(key)));
+    },
+
+    async findVerificationCodeByTokenHash(purpose, tokenHash) {
+      return withOwner(
+        [...verificationCodes.values()].find(
+          (code) => code.purpose === purpose && code.tokenHash === tokenHash,
+        ),
+      );
+    },
+
+    async saveVerificationCode(input) {
+      verificationCodes.set(codeKey(input), { ...input });
+    },
+
+    async rotateVerificationToken(key, tokenHash) {
+      const code = verificationCodes.get(codeKey(key));
+      if (code) {
+        code.tokenHash = tokenHash;
+      }
+    },
+
+    async restoreVerificationCode(key, failedCodeHash, previous) {
+      const code = verificationCodes.get(codeKey(key));
+      if (code && code.codeHash === failedCodeHash) {
+        Object.assign(code, previous);
+      }
+    },
+
+    async incrementVerificationAttempts(key) {
+      const code = verificationCodes.get(codeKey(key));
+      if (code) {
+        code.codeAttempts++;
+      }
+    },
+
+    async verifyEmail(input) {
+      const user = users.get(input.userId);
+      if (!user || user.emailVerifiedAt) {
+        return false;
+      }
+      if (!consumeCode("signup", input)) {
+        return false;
+      }
+      user.emailVerifiedAt = input.verifiedAt;
+      sessions.set(input.session.id, {
+        ...input.session,
+        userId: input.userId,
+      });
+      return true;
+    },
+
+    async changePassword(input) {
+      deleteUserSessions(input.userId, input.exceptSessionId);
+      const user = users.get(input.userId);
+      if (user) {
+        user.passwordHash = input.passwordHash;
+      }
+    },
+
+    async resetPassword(input) {
+      if (!consumeCode("password_reset", input)) {
+        return false;
+      }
+      deleteUserSessions(input.userId);
+      const user = users.get(input.userId);
+      if (user) {
+        user.passwordHash = input.passwordHash;
+      }
+      sessions.set(input.session.id, {
+        ...input.session,
+        userId: input.userId,
+      });
+      return true;
     },
 
     async createSession(input) {
-      sessions.push({
-        ...input,
-        id: nextSessionId++,
-        createdAt: new Date(),
-        revokedAt: null,
-        revokedReason: null,
-      });
+      sessions.set(input.id, { ...input });
     },
 
     async findSessionByTokenHash(tokenHash) {
-      const session = sessions.find((s) => s.tokenHash === tokenHash);
-      return session
-        ? {
-            id: session.id,
-            userId: session.userId,
-            expiresAt: session.expiresAt,
-            revokedAt: session.revokedAt,
-          }
-        : undefined;
+      const session = [...sessions.values()].find(
+        (candidate) => candidate.tokenHash === tokenHash,
+      );
+      return (
+        session && {
+          id: session.id,
+          userId: session.userId,
+          createdAt: session.createdAt,
+        }
+      );
     },
 
-    async findAuthUserById(id) {
-      const user = [...authUsers.values()].find((u) => u.id === id);
-      return user ? { publicId: user.publicId, email: user.email } : undefined;
-    },
-
-    async findAuthUserCredentialsById(id) {
-      const user = [...authUsers.values()].find((u) => u.id === id);
-      return user
-        ? { id: user.id, email: user.email, passwordHash: user.passwordHash }
-        : undefined;
-    },
-
-    async changeUserPassword(input: ChangeUserPasswordInput) {
-      for (const session of sessions) {
-        if (
-          session.userId === input.userId &&
-          session.id !== input.exceptSessionId &&
-          session.revokedAt === null
-        ) {
-          session.revokedAt = input.revokedAt;
-          session.revokedReason = input.revokedReason;
+    async deleteSessionByTokenHash(tokenHash) {
+      for (const [id, session] of sessions) {
+        if (session.tokenHash === tokenHash) {
+          sessions.delete(id);
         }
       }
+    },
 
-      const user = [...authUsers.values()].find((u) => u.id === input.userId);
-      if (user) {
-        user.passwordHash = input.passwordHash;
+    async deleteUserSessions(input) {
+      return {
+        deletedCount: deleteUserSessions(input.userId, input.exceptSessionId),
+      };
+    },
+
+    async deleteUserSession(input) {
+      const session = sessions.get(input.id);
+      if (!session || session.userId !== input.userId) {
+        return { deleted: false };
       }
+      sessions.delete(input.id);
+      return { deleted: true };
     },
 
-    async findPasswordResetByUserId(userId) {
-      return snapshot(passwordResets.get(userId));
-    },
-
-    async upsertPasswordReset(input: UpsertPasswordResetInput) {
-      const existing = passwordResets.get(input.userId);
-      const id = existing?.id ?? nextPasswordResetId++;
-      const user = [...authUsers.values()].find((u) => u.id === input.userId);
-      passwordResets.set(input.userId, {
-        id,
-        userId: input.userId,
-        email: user?.email ?? "",
-        passwordHash: user?.passwordHash ?? "",
-        codeHash: input.codeHash,
-        resetSessionToken: input.resetSessionToken,
-        codeAttempts: 0,
-        lastSentAt: input.now,
-        codeSendCount: 1,
-        expiresAt: input.expiresAt,
-      });
-      return { id };
-    },
-
-    async findPasswordResetBySessionToken(token) {
-      return snapshot(findResetByToken(token));
-    },
-
-    async updatePasswordResetSendState(
-      userId: number,
-      state: PasswordResetSendState,
-    ) {
-      const reset = passwordResets.get(userId);
-      if (reset) {
-        Object.assign(reset, state);
-      }
-    },
-
-    async restorePasswordResetSendState(
-      userId: number,
-      state: PasswordResetSendState,
-    ) {
-      const reset = passwordResets.get(userId);
-      if (reset && reset.resetSessionToken === state.resetSessionToken) {
-        Object.assign(reset, state);
-      }
-    },
-
-    async incrementPasswordResetAttempts(token) {
-      const reset = findResetByToken(token);
-      if (reset) {
-        reset.codeAttempts += 1;
-      }
-    },
-
-    async resetUserPassword(input: ResetUserPasswordInput) {
-      for (const session of sessions) {
-        if (session.userId === input.userId && session.revokedAt === null) {
-          session.revokedAt = input.revokedAt;
-          session.revokedReason = input.revokedReason;
-        }
-      }
-
-      const user = [...authUsers.values()].find((u) => u.id === input.userId);
-      if (user) {
-        user.passwordHash = input.passwordHash;
-      }
-
-      const reset = findResetByToken(input.resetSessionToken);
-      if (reset) {
-        passwordResets.delete(reset.userId);
-      }
-
-      sessions.push({
-        id: nextSessionId++,
-        publicId: input.sessionPublicId,
-        userId: input.userId,
-        tokenHash: input.sessionTokenHash,
-        deviceLabel: input.deviceLabel,
-        createdAt: new Date(),
-        expiresAt: input.sessionExpiresAt,
-        revokedAt: null,
-        revokedReason: null,
-      });
-    },
-
-    async revokeSessionByTokenHash(tokenHash, revokedAt, revokedReason) {
-      const session = sessions.find(
-        (s) => s.tokenHash === tokenHash && s.revokedAt === null,
-      );
-      if (session) {
-        session.revokedAt = revokedAt;
-        session.revokedReason = revokedReason;
-      }
-    },
-
-    async revokeAllUserSessions(input) {
-      const targets = sessions.filter(
-        (s) =>
-          s.userId === input.userId &&
-          s.revokedAt === null &&
-          s.id !== input.exceptSessionId,
-      );
-
-      for (const session of targets) {
-        session.revokedAt = input.revokedAt;
-        session.revokedReason = input.revokedReason;
-      }
-
-      return { revokedCount: targets.length };
-    },
-
-    async revokeUserSessionByPublicId(input) {
-      const session = sessions.find(
-        (s) =>
-          s.publicId === input.publicId &&
-          s.userId === input.userId &&
-          s.revokedAt === null &&
-          s.expiresAt.getTime() > input.now.getTime(),
-      );
-
-      if (!session) {
-        return { revoked: false };
-      }
-
-      session.revokedAt = input.revokedAt;
-      session.revokedReason = input.revokedReason;
-      return { revoked: true };
-    },
-
-    async listActiveUserSessions(input) {
-      return sessions
+    async listUserSessions(input) {
+      return [...sessions.values()]
         .filter(
           (session) =>
             session.userId === input.userId &&
-            session.revokedAt === null &&
-            session.expiresAt.getTime() > input.now.getTime(),
+            session.createdAt.getTime() > input.createdAfter.getTime(),
         )
         .sort(
           (a, b) =>
-            b.createdAt.getTime() - a.createdAt.getTime() || b.id - a.id,
+            b.createdAt.getTime() - a.createdAt.getTime() ||
+            b.id.localeCompare(a.id),
         )
         .map((session) => ({
           id: session.id,
-          publicId: session.publicId,
           deviceLabel: session.deviceLabel,
           createdAt: session.createdAt,
-          expiresAt: session.expiresAt,
         }));
     },
   };
 
-  return {
-    ...repository,
-    authUsers,
-    pendingSignups,
-    passwordResets,
-    sessions,
-    profiles,
-  };
+  return { ...repository, users, verificationCodes, sessions };
 }
 
 export type InMemoryAuthRepository = ReturnType<

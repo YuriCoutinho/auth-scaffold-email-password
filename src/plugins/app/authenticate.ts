@@ -1,18 +1,22 @@
 import type { FastifyPluginAsync, onRequestAsyncHookHandler } from "fastify";
 import fp from "fastify-plugin";
-import { SESSION_COOKIE } from "../../lib/cookies.js";
+import type { AppOptions } from "../../app-options.js";
+import { cookiePolicy } from "../../lib/cookies.js";
+import { resolveTtl } from "../../lib/ttl.js";
 
 declare module "fastify" {
   interface FastifyInstance {
     authenticate: onRequestAsyncHookHandler;
   }
   interface FastifyRequest {
-    user: { id: number } | null;
-    session: { id: number } | null;
+    user: { id: string } | null;
+    session: { id: string } | null;
   }
 }
 
-const plugin: FastifyPluginAsync = async (fastify) => {
+const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
+  const sessionCookie = cookiePolicy(resolveTtl(opts.ttl)).session;
+
   // Every request carries the property, so a route that forgets the hook reads
   // null instead of undefined and the type stays honest about it, and because
   // Fastify asks for the request shape to be declared up front instead of being
@@ -24,7 +28,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.decorate("authenticate", async (request, reply) => {
     const result = await fastify.auth.authenticate(
-      request.cookies[SESSION_COOKIE.name],
+      request.cookies[sessionCookie.name],
     );
 
     if (result.outcome === "invalid") {

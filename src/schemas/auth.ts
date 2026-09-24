@@ -45,5 +45,5 @@ export const changePasswordBodySchema = z.object({
 });
 
 export const currentUserResponseSchema = z.object({
-  user: z.object({ publicId: z.uuid(), email: z.email() }),
+  user: z.object({ id: z.uuid(), email: z.email() }),
 });

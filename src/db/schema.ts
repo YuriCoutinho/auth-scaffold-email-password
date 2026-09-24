@@ -3,111 +3,82 @@ import {
   integer,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
 
-export const profileRole = pgEnum("profile_role", ["user", "admin"]);
+export const userRole = pgEnum("user_role", ["user", "admin"]);
 
-export const pendingSignups = pgTable(
-  "pending_signups",
+export const verificationPurpose = pgEnum("verification_purpose", [
+  "signup",
+  "password_reset",
+]);
+
+// One row per person, confirmed or not. A null email_verified_at is what a
+// pending signup is, so the unique email holds across both states and an
+// address can never be pending and confirmed at the same time.
+export const users = pgTable(
+  "users",
   {
-    id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+    id: uuid("id").primaryKey(),
     email: text("email").notNull().unique(),
     passwordHash: text("password_hash").notNull(),
-    codeHash: text("code_hash").notNull(),
-    codeAttempts: integer("code_attempts").notNull().default(0),
-    lastSentAt: timestamp("last_sent_at", { withTimezone: true })
+    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+    fullName: text("full_name"),
+    role: userRole("role").notNull().default("user"),
+    // Written by the application clock, like every instant the retention
+    // cutoffs are compared against.
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
-      .defaultNow(),
-    codeSendCount: integer("code_send_count").notNull().default(1),
-    signupSessionToken: text("signup_session_token").notNull().unique(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+      .defaultNow()
+      .$onUpdate(() => new Date()),
   },
-  (table) => [index("pending_signups_expires_at_idx").on(table.expiresAt)],
+  (table) => [index("users_created_at_idx").on(table.createdAt)],
 );
 
-export const authUsers = pgTable("auth_users", {
-  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
-  publicId: uuid("public_id").notNull().unique().defaultRandom(),
-  email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow()
-    .$onUpdate(() => new Date()),
-});
-
-export const profiles = pgTable("profiles", {
-  id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
-  userId: integer("user_id")
-    .notNull()
-    .unique()
-    .references(() => authUsers.id, { onDelete: "cascade" }),
-  fullName: text("full_name"),
-  role: profileRole("role").notNull().default("user"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow()
-    .$onUpdate(() => new Date()),
-});
-
-export const sessions = pgTable(
-  "sessions",
+// Validity is issued_at plus the TTL configured for the purpose, computed when
+// read, so a TTL change reaches rows that already exist.
+export const verificationCodes = pgTable(
+  "verification_codes",
   {
-    id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
-    publicId: uuid("public_id").notNull().unique().defaultRandom(),
-    userId: integer("user_id")
+    userId: uuid("user_id")
       .notNull()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
+      .references(() => users.id, { onDelete: "cascade" }),
+    purpose: verificationPurpose("purpose").notNull(),
+    codeHash: text("code_hash").notNull(),
+    // Hashed like a session token: the plaintext only ever lives in the
+    // cookie, so a read-only leak of this table cannot finish a reset.
     tokenHash: text("token_hash").notNull().unique(),
-    deviceLabel: text("device_label"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    revokedAt: timestamp("revoked_at", { withTimezone: true }),
-    revokedReason: text("revoked_reason"),
+    codeAttempts: integer("code_attempts").notNull().default(0),
+    codeSendCount: integer("code_send_count").notNull().default(1),
+    issuedAt: timestamp("issued_at", { withTimezone: true }).notNull(),
   },
   (table) => [
-    index("sessions_user_id_idx").on(table.userId),
-    index("sessions_expires_at_idx").on(table.expiresAt),
+    primaryKey({ columns: [table.userId, table.purpose] }),
+    index("verification_codes_issued_at_idx").on(table.issuedAt),
   ],
 );
 
-// Keyed by user, not by email: unlike a pending signup, the account already
-// exists, so the reset hangs off it and disappears with it.
-export const passwordResets = pgTable(
-  "password_resets",
+// Holds live sessions only: signing out deletes the row, and the retention
+// sweep deletes the ones that expired.
+export const sessions = pgTable(
+  "sessions",
   {
-    id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
-    userId: integer("user_id")
+    id: uuid("id").primaryKey(),
+    userId: uuid("user_id")
       .notNull()
-      .unique()
-      .references(() => authUsers.id, { onDelete: "cascade" }),
-    codeHash: text("code_hash").notNull(),
-    codeAttempts: integer("code_attempts").notNull().default(0),
-    resetSessionToken: text("reset_session_token").notNull().unique(),
-    lastSentAt: timestamp("last_sent_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    codeSendCount: integer("code_send_count").notNull().default(1),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    deviceLabel: text("device_label"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   },
-  (table) => [index("password_resets_expires_at_idx").on(table.expiresAt)],
+  (table) => [
+    index("sessions_user_id_idx").on(table.userId),
+    index("sessions_created_at_idx").on(table.createdAt),
+  ],
 );
 
 // Keyed by a hash of the email rather than the email itself: the row exists to
@@ -115,13 +86,9 @@ export const passwordResets = pgTable(
 export const credentialThrottle = pgTable(
   "credential_throttle",
   {
-    id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
-    keyHash: text("key_hash").notNull().unique(),
-    failedCount: integer("failed_count").notNull().default(0),
-    lastFailedAt: timestamp("last_failed_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    blockedUntil: timestamp("blocked_until", { withTimezone: true }),
+    keyHash: text("key_hash").primaryKey(),
+    failedCount: integer("failed_count").notNull(),
+    lastFailedAt: timestamp("last_failed_at", { withTimezone: true }).notNull(),
   },
   (table) => [
     index("credential_throttle_last_failed_at_idx").on(table.lastFailedAt),

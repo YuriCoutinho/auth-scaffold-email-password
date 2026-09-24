@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../../src/app.js";
+import { hashVerificationToken } from "../../../src/lib/token-hash.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
 
@@ -67,14 +68,34 @@ describe("POST /auth/signup", () => {
       maxAge: 900,
     });
     expect(cookie?.value).toMatch(/^[A-Za-z0-9_-]{43}$/);
+
+    const [user] = [...authRepository.users.values()];
+    expect(user).toMatchObject({
+      email: "user@example.com",
+      emailVerifiedAt: null,
+    });
+    const code = [...authRepository.verificationCodes.values()][0];
+    expect(code).toMatchObject({ userId: user?.id, purpose: "signup" });
+    // Only the digest of the cookie reaches the store.
+    expect(code?.tokenHash).toBe(hashVerificationToken(cookie?.value ?? ""));
+    expect(code?.tokenHash).not.toBe(cookie?.value);
+  });
+
+  it("follows a configured signup code ttl in the cookie maxAge", async () => {
+    const response = await post(
+      VALID_BODY,
+      makeAppOptions({ ttl: { signupCodeSeconds: 300 } }),
+    );
+
+    expect(response.statusCode).toBe(202);
     expect(
-      authRepository.pendingSignups.get("user@example.com")?.signupSessionToken,
-    ).toBe(cookie?.value);
+      response.cookies.find((c) => c.name === "signup_session")?.maxAge,
+    ).toBe(300);
   });
 
   it("returns the same generic 202 when the email already has a confirmed account", async () => {
     const authRepository = createInMemoryAuthRepository({
-      authUsers: [{ email: "user@example.com" }],
+      users: [{ email: "user@example.com", passwordHash: "original-hash" }],
     });
     const emailSender = {
       send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
@@ -89,7 +110,10 @@ describe("POST /auth/signup", () => {
       true,
     );
     expect(emailSender.send).not.toHaveBeenCalled();
-    expect(authRepository.pendingSignups.size).toBe(0);
+    expect(authRepository.verificationCodes.size).toBe(0);
+    expect([...authRepository.users.values()]).toEqual([
+      expect.objectContaining({ passwordHash: "original-hash" }),
+    ]);
   });
 
   it("still answers 202 with a cookie when delivery fails", async () => {
@@ -117,7 +141,7 @@ describe("POST /auth/signup", () => {
 
   it("hands out a different cookie on every call, whatever the address is", async () => {
     const authRepository = createInMemoryAuthRepository({
-      authUsers: [{ id: 1, email: "taken@example.com" }],
+      users: [{ email: "taken@example.com" }],
     });
     const app = await buildApp(makeAppOptions({ authRepository }));
 
@@ -189,11 +213,62 @@ describe("POST /auth/signup", () => {
     // real pending signup, so only it burned an attempt.
     expect(withFresh.statusCode).toBe(401);
     expect(withStale.statusCode).toBe(401);
-    const pending =
-      await authRepository.findPendingSignupByEmail("new@example.com");
-    expect(pending?.signupSessionToken).toBe(fresh);
-    expect(pending?.signupSessionToken).not.toBe(stale);
-    expect(pending?.codeAttempts).toBe(1);
+    const [code] = [...authRepository.verificationCodes.values()];
+    expect(code?.tokenHash).toBe(hashVerificationToken(fresh ?? ""));
+    expect(code?.tokenHash).not.toBe(hashVerificationToken(stale ?? ""));
+    expect(code?.codeAttempts).toBe(1);
+
+    await app.close();
+  });
+
+  it("lets the latest signup of an unconfirmed address win and retires the old cookie", async () => {
+    const authRepository = createInMemoryAuthRepository();
+    const emailSender = {
+      send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
+    };
+    const app = buildApp(makeAppOptions({ authRepository, emailSender }));
+    const signup = (password: string) =>
+      app.inject({
+        method: "POST",
+        url: "/auth/signup",
+        payload: { email: "new@example.com", password },
+      });
+
+    const stale = (await signup("the-first-long-passphrase")).cookies.find(
+      (c) => c.name === "signup_session",
+    )?.value;
+    await vi.waitFor(() => expect(emailSender.send).toHaveBeenCalledTimes(1));
+    const code = emailSender.send.mock.calls[0]?.[0].text.match(/\d{6}/)?.[0];
+
+    const second = await signup("the-second-long-passphrase");
+    const fresh = second.cookies.find(
+      (c) => c.name === "signup_session",
+    )?.value;
+
+    expect(second.statusCode).toBe(202);
+    expect(fresh).toBeTruthy();
+    expect(fresh).not.toBe(stale);
+
+    const verify = (cookie: string | undefined) =>
+      app.inject({
+        method: "POST",
+        url: "/auth/verify-code",
+        payload: { code },
+        cookies: { signup_session: cookie ?? "" },
+      });
+
+    // The code already in the mailbox still works; only the token rotated.
+    expect((await verify(stale)).statusCode).toBe(401);
+    expect((await verify(fresh)).statusCode).toBe(204);
+
+    const login = (password: string) =>
+      app.inject({
+        method: "POST",
+        url: "/auth/login",
+        payload: { email: "new@example.com", password },
+      });
+    expect((await login("the-first-long-passphrase")).statusCode).toBe(401);
+    expect((await login("the-second-long-passphrase")).statusCode).toBe(204);
 
     await app.close();
   });

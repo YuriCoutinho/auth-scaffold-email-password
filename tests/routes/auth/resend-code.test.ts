@@ -1,6 +1,6 @@
 import { describe, expect, it, type Mock, vi } from "vitest";
 import { buildApp } from "../../../src/app.js";
-import type { PendingSignupRecord } from "../../../src/plugins/app/auth/repository.js";
+import { hashVerificationToken } from "../../../src/lib/token-hash.js";
 import type { EmailSender } from "../../../src/plugins/app/email/sender.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
@@ -8,28 +8,34 @@ import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repos
 type FakeEmailSender = { send: Mock<EmailSender["send"]> };
 
 const TOKEN = "token-x";
+const USER_ID = "11111111-1111-4111-8111-111111111111";
 
-function makePendingRow(overrides: Partial<PendingSignupRecord> = {}) {
+interface PendingCode {
+  codeSendCount?: number;
+  issuedAt?: Date;
+}
+
+// Two minutes old: outside the 60 s cooldown and inside the 15 min ttl.
+function makePendingCode(overrides: PendingCode = {}) {
   return {
-    id: 1,
-    email: "user@example.com",
+    userId: USER_ID,
+    purpose: "signup" as const,
+    tokenHash: hashVerificationToken(TOKEN),
     codeHash: "old-hash",
     codeAttempts: 2,
-    signupSessionToken: TOKEN,
-    lastSentAt: new Date(Date.now() - 120_000), // 2 min ago: outside cooldown
-    codeSendCount: 1,
-    expiresAt: new Date(Date.now() + 600_000), // +10 min: not expired
-    ...overrides,
+    codeSendCount: overrides.codeSendCount ?? 1,
+    issuedAt: overrides.issuedAt ?? new Date(Date.now() - 120_000),
   };
 }
 
 async function post(options: {
-  pendingRow?: ReturnType<typeof makePendingRow>;
+  pendingCode?: ReturnType<typeof makePendingCode>;
   cookie?: boolean;
   emailSender?: FakeEmailSender;
 }) {
   const authRepository = createInMemoryAuthRepository({
-    pendingSignups: options.pendingRow ? [options.pendingRow] : [],
+    users: [{ id: USER_ID, email: "user@example.com", emailVerifiedAt: null }],
+    verificationCodes: options.pendingCode ? [options.pendingCode] : [],
   });
   const emailSender: FakeEmailSender = options.emailSender ?? {
     send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
@@ -47,7 +53,7 @@ async function post(options: {
 describe("POST /auth/resend-code", () => {
   it("responds 202, re-sets the signup_session cookie and sends a new code", async () => {
     const { response, emailSender, authRepository } = await post({
-      pendingRow: makePendingRow(),
+      pendingCode: makePendingCode(),
     });
 
     expect(response.statusCode).toBe(202);
@@ -68,17 +74,15 @@ describe("POST /auth/resend-code", () => {
 
     expect(emailSender.send).toHaveBeenCalledTimes(1);
     expect(emailSender.send.mock.calls[0]?.[0].to).toBe("user@example.com");
-    expect(authRepository.pendingSignups.get("user@example.com")).toMatchObject(
-      {
-        codeAttempts: 0,
-        codeSendCount: 2,
-      },
-    );
+    expect([...authRepository.verificationCodes.values()][0]).toMatchObject({
+      codeAttempts: 0,
+      codeSendCount: 2,
+    });
   });
 
   it("responds 401 when the cookie is missing", async () => {
     const { response, emailSender } = await post({
-      pendingRow: makePendingRow(),
+      pendingCode: makePendingCode(),
       cookie: false,
     });
     expect(response.statusCode).toBe(401);
@@ -90,7 +94,9 @@ describe("POST /auth/resend-code", () => {
 
   it("responds 401 when the pending signup is expired", async () => {
     const { response, emailSender } = await post({
-      pendingRow: makePendingRow({ expiresAt: new Date(Date.now() - 1000) }),
+      pendingCode: makePendingCode({
+        issuedAt: new Date(Date.now() - 16 * 60 * 1000),
+      }),
     });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({
@@ -101,7 +107,7 @@ describe("POST /auth/resend-code", () => {
 
   it("responds 429 within the cooldown window", async () => {
     const { response, emailSender } = await post({
-      pendingRow: makePendingRow({ lastSentAt: new Date(Date.now() - 10_000) }),
+      pendingCode: makePendingCode({ issuedAt: new Date(Date.now() - 10_000) }),
     });
     expect(response.statusCode).toBe(429);
     expect(response.json()).toEqual({
@@ -112,7 +118,7 @@ describe("POST /auth/resend-code", () => {
 
   it("responds 429 when the resend cap is reached", async () => {
     const { response, emailSender } = await post({
-      pendingRow: makePendingRow({ codeSendCount: 5 }),
+      pendingCode: makePendingCode({ codeSendCount: 5 }),
     });
     expect(response.statusCode).toBe(429);
     expect(response.json()).toEqual({
@@ -124,7 +130,7 @@ describe("POST /auth/resend-code", () => {
 
   it("responds 503 without re-setting the cookie when delivery fails", async () => {
     const { response, authRepository } = await post({
-      pendingRow: makePendingRow(),
+      pendingCode: makePendingCode(),
       emailSender: {
         send: vi.fn().mockRejectedValue(new Error("provider down")),
       },
@@ -135,12 +141,10 @@ describe("POST /auth/resend-code", () => {
         "We could not send the confirmation email right now. Please try again shortly.",
     });
     expect(response.headers["set-cookie"]).toBeUndefined();
-    expect(authRepository.pendingSignups.get("user@example.com")).toMatchObject(
-      {
-        codeHash: "old-hash",
-        codeSendCount: 1,
-      },
-    );
+    expect([...authRepository.verificationCodes.values()][0]).toMatchObject({
+      codeHash: "old-hash",
+      codeSendCount: 1,
+    });
   });
 
   it("accepts the rotated cookie and refuses the one it replaced", async () => {
@@ -165,9 +169,9 @@ describe("POST /auth/resend-code", () => {
 
     // Push the first send outside the cooldown, so the refusal under test is
     // the token and not the rate limit.
-    const pending = authRepository.pendingSignups.get("user@example.com");
+    const [pending] = authRepository.verificationCodes.values();
     if (pending) {
-      pending.lastSentAt = new Date(Date.now() - 120_000);
+      pending.issuedAt = new Date(Date.now() - 120_000);
     }
 
     const withStale = await app.inject({

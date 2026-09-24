@@ -8,7 +8,10 @@ const BODY = { email: "reset@example.com" };
 
 async function setup() {
   const authRepository = createInMemoryAuthRepository({
-    authUsers: [{ id: 1, email: "reset@example.com", passwordHash: "old" }],
+    users: [
+      { email: "reset@example.com", passwordHash: "old" },
+      { email: "pending@example.com", emailVerifiedAt: null },
+    ],
   });
   const emailSender = new FakeEmailSender();
   const app = await buildApp(makeAppOptions({ authRepository, emailSender }));
@@ -92,6 +95,34 @@ describe("POST /auth/forgot-password", () => {
     });
 
     await vi.waitFor(() => expect(emailSender.sent).toHaveLength(1));
+
+    await app.close();
+  });
+
+  it("treats an unconfirmed account like no account at all", async () => {
+    const { app, authRepository, emailSender } = await setup();
+
+    const known = await app.inject({
+      method: "POST",
+      url: "/auth/forgot-password",
+      payload: BODY,
+    });
+    await vi.waitFor(() => expect(emailSender.sent).toHaveLength(1));
+    const pending = await app.inject({
+      method: "POST",
+      url: "/auth/forgot-password",
+      payload: { email: "pending@example.com" },
+    });
+
+    expect(pending.statusCode).toBe(known.statusCode);
+    expect(pending.body).toBe(known.body);
+    expect(
+      pending.cookies.find((c) => c.name === "password_reset")?.value,
+    ).toBeTruthy();
+    expect(
+      [...authRepository.verificationCodes.values()].map((c) => c.purpose),
+    ).toEqual(["password_reset"]);
+    expect(emailSender.sent).toHaveLength(1);
 
     await app.close();
   });

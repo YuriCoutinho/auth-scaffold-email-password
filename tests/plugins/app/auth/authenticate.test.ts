@@ -3,44 +3,40 @@ import { hashSessionToken } from "../../../../src/lib/token-hash.js";
 import { createAuthenticateService } from "../../../../src/plugins/app/auth/authenticate.js";
 import type { SessionRecord } from "../../../../src/plugins/app/sessions/repository.js";
 
-const NOW = new Date("2026-09-23T12:00:00Z");
+const NOW = new Date("2026-09-24T12:00:00Z");
 const TOKEN = "a-session-token";
+const TTL_SECONDS = 60 * 60;
+const SESSION_ID = "11111111-1111-4111-8111-111111111111";
+const USER_ID = "22222222-2222-4222-8222-222222222222";
 
 function makeDeps(session: SessionRecord | undefined) {
   return {
     repo: { findSessionByTokenHash: vi.fn().mockResolvedValue(session) },
+    sessionTtlSeconds: TTL_SECONDS,
     now: () => NOW,
   };
 }
 
-function validSession(): SessionRecord {
+function createdSecondsAgo(seconds: number): SessionRecord {
   return {
-    id: 1,
-    userId: 7,
-    expiresAt: new Date(NOW.getTime() + 1000),
-    revokedAt: null,
+    id: SESSION_ID,
+    userId: USER_ID,
+    createdAt: new Date(NOW.getTime() - seconds * 1000),
   };
 }
 
 describe("authenticate", () => {
-  it("returns the user id and the session id for an active session", async () => {
-    const deps = makeDeps(validSession());
-    const result = await createAuthenticateService(deps).authenticate(TOKEN);
-    expect(result).toEqual({
+  it("returns the user id and the session id for a live session", async () => {
+    const deps = makeDeps(createdSecondsAgo(60));
+    expect(await createAuthenticateService(deps).authenticate(TOKEN)).toEqual({
       outcome: "authenticated",
-      user: { id: 7 },
-      session: { id: 1 },
+      user: { id: USER_ID },
+      session: { id: SESSION_ID },
     });
   });
 
-  it("reports the session that the token resolved to, not the first one", async () => {
-    const deps = makeDeps({ ...validSession(), id: 42 });
-    const result = await createAuthenticateService(deps).authenticate(TOKEN);
-    expect(result).toMatchObject({ session: { id: 42 } });
-  });
-
   it("looks the session up by the hash of the token, never by the token", async () => {
-    const deps = makeDeps(validSession());
+    const deps = makeDeps(createdSecondsAgo(60));
     await createAuthenticateService(deps).authenticate(TOKEN);
     expect(deps.repo.findSessionByTokenHash).toHaveBeenCalledWith(
       hashSessionToken(TOKEN),
@@ -48,52 +44,42 @@ describe("authenticate", () => {
     expect(deps.repo.findSessionByTokenHash).not.toHaveBeenCalledWith(TOKEN);
   });
 
-  it("rejects a missing cookie without touching the repository", async () => {
-    const deps = makeDeps(validSession());
-    const result =
-      await createAuthenticateService(deps).authenticate(undefined);
-    expect(result).toEqual({ outcome: "invalid" });
-    expect(deps.repo.findSessionByTokenHash).not.toHaveBeenCalled();
-  });
+  it.each([undefined, ""])(
+    "rejects a missing cookie (%j) without touching the repository",
+    async (token) => {
+      const deps = makeDeps(createdSecondsAgo(60));
+      expect(await createAuthenticateService(deps).authenticate(token)).toEqual(
+        { outcome: "invalid" },
+      );
+      expect(deps.repo.findSessionByTokenHash).not.toHaveBeenCalled();
+    },
+  );
 
-  it("rejects an empty cookie without touching the repository", async () => {
-    const deps = makeDeps(validSession());
-    const result = await createAuthenticateService(deps).authenticate("");
-    expect(result).toEqual({ outcome: "invalid" });
-    expect(deps.repo.findSessionByTokenHash).not.toHaveBeenCalled();
-  });
-
-  it("rejects a token with no matching session", async () => {
+  it("rejects a token with no matching session, which is what a deleted session gets", async () => {
     const deps = makeDeps(undefined);
     expect(await createAuthenticateService(deps).authenticate(TOKEN)).toEqual({
       outcome: "invalid",
     });
   });
 
-  it("rejects a revoked session even when it has not expired", async () => {
-    const deps = makeDeps({
-      ...validSession(),
-      revokedAt: new Date(NOW.getTime() - 1000),
-    });
-    expect(await createAuthenticateService(deps).authenticate(TOKEN)).toEqual({
-      outcome: "invalid",
-    });
-  });
-
-  it("rejects an expired session", async () => {
-    const deps = makeDeps({
-      ...validSession(),
-      expiresAt: new Date(NOW.getTime() - 1000),
-    });
+  it("rejects a session older than the configured ttl", async () => {
+    const deps = makeDeps(createdSecondsAgo(TTL_SECONDS + 1));
     expect(await createAuthenticateService(deps).authenticate(TOKEN)).toEqual({
       outcome: "invalid",
     });
   });
 
   it("rejects a session that expires exactly now", async () => {
-    const deps = makeDeps({ ...validSession(), expiresAt: NOW });
+    const deps = makeDeps(createdSecondsAgo(TTL_SECONDS));
     expect(await createAuthenticateService(deps).authenticate(TOKEN)).toEqual({
       outcome: "invalid",
     });
+  });
+
+  it("accepts a session one second before it expires", async () => {
+    const deps = makeDeps(createdSecondsAgo(TTL_SECONDS - 1));
+    expect(
+      (await createAuthenticateService(deps).authenticate(TOKEN)).outcome,
+    ).toBe("authenticated");
   });
 });
