@@ -84,3 +84,28 @@ export const sessions = pgTable(
     index("sessions_expires_at_idx").on(table.expiresAt),
   ],
 );
+
+// Keyed by user, not by email: unlike a pending signup, the account already
+// exists, so the reset hangs off it and disappears with it.
+export const passwordResets = pgTable(
+  "password_resets",
+  {
+    id: integer("id").generatedAlwaysAsIdentity().primaryKey(),
+    userId: integer("user_id")
+      .notNull()
+      .unique()
+      .references(() => authUsers.id, { onDelete: "cascade" }),
+    codeHash: text("code_hash").notNull(),
+    codeAttempts: integer("code_attempts").notNull().default(0),
+    resetSessionToken: text("reset_session_token").notNull().unique(),
+    lastSentAt: timestamp("last_sent_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    codeSendCount: integer("code_send_count").notNull().default(1),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [index("password_resets_expires_at_idx").on(table.expiresAt)],
+);

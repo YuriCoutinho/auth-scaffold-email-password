@@ -25,6 +25,8 @@ O gerenciador de pacotes é **pnpm**, gerenciado por corepack. Não use npm nem 
 | `pnpm db:generate` | Gera migration a partir do schema |
 | `pnpm db:migrate` | Aplica migrations |
 
+O `drizzle/` guarda um baseline único com o schema inicial inteiro, não uma cadeia de migrations, porque o projeto é um scaffold e não existe banco em produção. Mudança de schema que faça parte desse schema inicial regenera o baseline; mudança que venha depois dele entra como migration incremental.
+
 Antes de abrir PR, rode `pnpm typecheck`, `pnpm lint`, `pnpm test` e `pnpm build`, que é exatamente o que a CI executa.
 
 Postgres e Mailpit sobem com `docker compose up -d`. O Mailpit tem interface web em `http://localhost:8025` e é onde os emails aparecem em desenvolvimento.
