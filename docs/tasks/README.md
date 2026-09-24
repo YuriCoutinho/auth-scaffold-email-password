@@ -2,7 +2,7 @@
 
 Este diretório documenta, etapa por etapa, como este backend de autenticação foi construído. Cada arquivo traz o que a etapa entrega, quais decisões técnicas foram tomadas e por quê.
 
-A ordem numérica é a ordem em que vale a pena ler, e cada documento descreve o estado final do código, não o caminho até ele. Quando uma etapa posterior muda uma decisão anterior, o documento da etapa anterior é atualizado, para que ler os quinze na ordem leve a um projeto igual a este. Juntos, eles funcionam como um guia para levantar um fluxo de cadastro e login com email e senha do zero.
+A ordem numérica é a ordem em que vale a pena ler, e cada documento descreve o estado final do código, não o caminho até ele. Quando uma etapa posterior muda uma decisão anterior, o documento da etapa anterior é atualizado, para que ler os dezessete na ordem leve a um projeto igual a este. Juntos, eles funcionam como um guia para levantar um fluxo de cadastro e login com email e senha do zero.
 
 ## Estrutura de cada documento
 
@@ -32,3 +32,4 @@ A ordem numérica é a ordem em que vale a pena ler, e cada documento descreve o
 | 14 | [Change password endpoint](14-change-password-endpoint.md) | `POST /auth/change-password`, troca de senha com confirmação da senha atual, revogação das demais sessões na mesma transação e aviso por email |
 | 15 | [Password reset endpoints](15-password-reset-endpoints.md) | `POST /auth/forgot-password` e `POST /auth/reset-password`, recuperação por código de seis dígitos com resposta genérica, envio fora do caminho da requisição para não vazar quais emails existem, revogação de todas as sessões e autologin |
 | 16 | [Rate limit and credential throttling](16-rate-limit-and-credential-throttling.md) | Bloqueio progressivo por email guardado no banco, com `429` e `Retry-After` no login e na troca de senha, mais limite de requisições por IP em toda rota via `@fastify/rate-limit` |
+| 17 | [Security headers and CORS](17-security-headers-and-cors.md) | Cabeçalhos de segurança de resposta via `@fastify/helmet`, com a CSP restrita a produção, e CORS limitado à origem do frontend vinda do ambiente, com credenciais liberadas para o cookie de sessão |
