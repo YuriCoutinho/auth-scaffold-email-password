@@ -25,6 +25,11 @@ function makeDeps(user: typeof USER | undefined) {
       findAuthUserByEmail: vi.fn().mockResolvedValue(user),
       createSession: vi.fn().mockResolvedValue(undefined),
     },
+    throttle: {
+      check: vi.fn().mockResolvedValue({ outcome: "allowed" }),
+      registerFailure: vi.fn().mockResolvedValue(undefined),
+      reset: vi.fn().mockResolvedValue(undefined),
+    },
     now: () => NOW,
   };
 }
@@ -109,5 +114,43 @@ describe("login", () => {
       { userId: USER.id, reason: "invalid_password" },
       "login failed",
     );
+  });
+});
+
+describe("login throttling", () => {
+  it("returns throttled without spending a password verification", async () => {
+    const deps = makeDeps(USER);
+    deps.throttle.check.mockResolvedValue({
+      outcome: "blocked",
+      retryAfterSeconds: 42,
+    });
+    await expect(
+      createLoginService(deps).login("foo@gmail.com", "secret", null),
+    ).resolves.toEqual({ outcome: "throttled", retryAfterSeconds: 42 });
+    expect(verifyPasswordMock).not.toHaveBeenCalled();
+    expect(deps.repo.createSession).not.toHaveBeenCalled();
+  });
+
+  it("registers a failure under the normalized email", async () => {
+    verifyPasswordMock.mockResolvedValue(false);
+    const deps = makeDeps(USER);
+    await createLoginService(deps).login("  Foo@GMAIL.com ", "secret", null);
+    expect(deps.throttle.registerFailure).toHaveBeenCalledWith("foo@gmail.com");
+  });
+
+  it("registers a failure for an email that belongs to no account", async () => {
+    verifyPasswordMock.mockResolvedValue(false);
+    const deps = makeDeps(undefined);
+    await createLoginService(deps).login("nobody@gmail.com", "secret", null);
+    expect(deps.throttle.registerFailure).toHaveBeenCalledWith(
+      "nobody@gmail.com",
+    );
+  });
+
+  it("clears the throttle on a successful login", async () => {
+    verifyPasswordMock.mockResolvedValue(true);
+    const deps = makeDeps(USER);
+    await createLoginService(deps).login("foo@gmail.com", "secret", null);
+    expect(deps.throttle.reset).toHaveBeenCalledWith("foo@gmail.com");
   });
 });

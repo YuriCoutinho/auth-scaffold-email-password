@@ -4,6 +4,7 @@ import { hashPassword } from "../../../src/lib/password.js";
 import { hashSessionToken } from "../../../src/lib/token-hash.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
+import { createInMemoryCredentialThrottleRepository } from "../../helpers/credential-throttle/in-memory-repository.js";
 
 const EMAIL = "foo@gmail.com";
 const PASSWORD = "correct-horse-battery-staple";
@@ -92,6 +93,54 @@ describe("POST /auth/login", () => {
     });
 
     expect(response.statusCode).toBe(400);
+    await app.close();
+  });
+});
+
+describe("POST /auth/login throttling", () => {
+  it("returns 429 with Retry-After once the free attempts are spent", async () => {
+    const authRepository = repoWithUser();
+    const credentialThrottleRepository =
+      createInMemoryCredentialThrottleRepository();
+    const app = buildApp(
+      makeAppOptions({ authRepository, credentialThrottleRepository }),
+    );
+    const attempt = () =>
+      app.inject({
+        method: "POST",
+        url: "/auth/login",
+        payload: { email: EMAIL, password: "wrong-password-wrong-password" },
+      });
+
+    for (let i = 0; i < 4; i += 1) {
+      await attempt();
+    }
+    const response = await attempt();
+
+    expect(response.statusCode).toBe(429);
+    expect(response.json()).toEqual({
+      message: "Too many attempts. Try again later.",
+    });
+    expect(Number(response.headers["retry-after"])).toBeGreaterThan(0);
+    await app.close();
+  });
+
+  it("blocks an unknown email the same way, so the block reveals nothing", async () => {
+    const app = buildApp(makeAppOptions());
+    const attempt = () =>
+      app.inject({
+        method: "POST",
+        url: "/auth/login",
+        payload: {
+          email: "nobody@gmail.com",
+          password: "wrong-password-wrong-password",
+        },
+      });
+
+    for (let i = 0; i < 4; i += 1) {
+      await attempt();
+    }
+    expect((await attempt()).statusCode).toBe(429);
     await app.close();
   });
 });

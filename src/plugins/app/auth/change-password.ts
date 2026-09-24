@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { hashPassword, verifyPassword } from "../../../lib/password.js";
+import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
 import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import type { AuthRepository } from "./repository.js";
@@ -9,7 +10,8 @@ export type ChangePasswordResult =
   | { outcome: "changed" }
   | { outcome: "invalid-current-password" }
   | { outcome: "same-password" }
-  | { outcome: "pwned-password" };
+  | { outcome: "pwned-password" }
+  | { outcome: "throttled"; retryAfterSeconds: number };
 
 export interface ChangePasswordInput {
   userId: number;
@@ -25,6 +27,7 @@ interface ChangePasswordServiceDeps {
   >;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
+  throttle: CredentialThrottle;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }
@@ -37,19 +40,36 @@ export function createChangePasswordService(deps: ChangePasswordServiceDeps) {
       input: ChangePasswordInput,
     ): Promise<ChangePasswordResult> {
       const user = await deps.repo.findAuthUserCredentialsById(input.userId);
-
-      // Proof of possession comes first: the breach lookup is an outbound
-      // call, and nobody gets to spend it by guessing with a stolen cookie.
-      if (
-        !user ||
-        !(await verifyPassword(user.passwordHash, input.currentPassword))
-      ) {
+      if (!user) {
         deps.log?.warn(
           { userId: input.userId, reason: "invalid_current_password" },
           "password change failed",
         );
         return { outcome: "invalid-current-password" };
       }
+
+      // Same key space as login, so alternating between the two endpoints does
+      // not hand an attacker a second budget of free attempts.
+      const throttleCheck = await deps.throttle.check(user.email);
+      if (throttleCheck.outcome === "blocked") {
+        return {
+          outcome: "throttled",
+          retryAfterSeconds: throttleCheck.retryAfterSeconds,
+        };
+      }
+
+      // Proof of possession comes first: the breach lookup is an outbound
+      // call, and nobody gets to spend it by guessing with a stolen cookie.
+      if (!(await verifyPassword(user.passwordHash, input.currentPassword))) {
+        await deps.throttle.registerFailure(user.email);
+        deps.log?.warn(
+          { userId: input.userId, reason: "invalid_current_password" },
+          "password change failed",
+        );
+        return { outcome: "invalid-current-password" };
+      }
+
+      await deps.throttle.reset(user.email);
 
       if (input.newPassword === input.currentPassword) {
         return { outcome: "same-password" };

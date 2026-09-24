@@ -19,12 +19,14 @@ const routes: FastifyPluginAsyncZod = async (app) => {
           "working. The session behind this request is preserved, so the " +
           "caller stays signed in on this device. Requires a valid session, " +
           "so the response is 401 whenever the cookie is missing, unknown, " +
-          "revoked or expired.",
+          "revoked or expired. Repeated wrong current passwords are " +
+          "throttled, and the 429 carries Retry-After in seconds.",
         body: changePasswordBodySchema,
         response: {
           204: noContentSchema,
           400: messageSchema,
           401: messageSchema,
+          429: messageSchema,
         },
       },
     },
@@ -43,6 +45,11 @@ const routes: FastifyPluginAsyncZod = async (app) => {
       });
 
       switch (result.outcome) {
+        case "throttled":
+          return reply
+            .code(429)
+            .header("Retry-After", String(result.retryAfterSeconds))
+            .send({ message: "Too many attempts. Try again later." });
         case "invalid-current-password":
           return reply
             .code(400)

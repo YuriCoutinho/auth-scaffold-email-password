@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
+import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
 import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import type { SessionRepository } from "../sessions/repository.js";
@@ -17,6 +18,7 @@ export interface AuthDeps {
   sessionRepository: SessionRepository;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
+  credentialThrottle: CredentialThrottle;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }
@@ -48,6 +50,7 @@ export function createAuth(deps: AuthDeps) {
   const { verifyCode } = createVerifyCodeService(shared);
   const { login } = createLoginService({
     ...shared,
+    throttle: deps.credentialThrottle,
     repo: {
       findAuthUserByEmail: deps.repository.findAuthUserByEmail,
       createSession: deps.sessionRepository.createSession,
@@ -61,6 +64,7 @@ export function createAuth(deps: AuthDeps) {
     ...shared,
     emailSender: deps.emailSender,
     checkPwnedPassword: deps.checkPwnedPassword,
+    throttle: deps.credentialThrottle,
   });
 
   return {
