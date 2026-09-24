@@ -4,9 +4,13 @@ import type {
   AuthRepository,
   AuthUserRecord,
   ChangeUserPasswordInput,
+  PasswordResetRecord,
+  PasswordResetSendState,
   PendingSignupRecord,
   PendingSignupResendState,
   PromotePendingSignupInput,
+  ResetUserPasswordInput,
+  UpsertPasswordResetInput,
   UpsertPendingSignupInput,
 } from "../../../src/plugins/app/auth/repository.js";
 import type {
@@ -51,10 +55,12 @@ interface StoredSession extends SessionRecord {
 export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
   const authUsers = new Map<string, StoredAuthUser>();
   const pendingSignups = new Map<string, PendingSignupRecord>();
+  const passwordResets = new Map<number, PasswordResetRecord>();
   const sessions: StoredSession[] = [];
   const profiles: Array<{ userId: number }> = [];
   let nextUserId = 1;
   let nextPendingId = 1;
+  let nextPasswordResetId = 1;
   let nextSessionId = 1;
 
   for (const user of seed.authUsers ?? []) {
@@ -102,6 +108,9 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
 
   const findByToken = (token: string) =>
     [...pendingSignups.values()].find((p) => p.signupSessionToken === token);
+
+  const findResetByToken = (token: string) =>
+    [...passwordResets.values()].find((r) => r.resetSessionToken === token);
 
   const repository: AuthRepository & SessionRepository = {
     async findAuthUserByEmail(email) {
@@ -244,6 +253,78 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       }
     },
 
+    async findPasswordResetByUserId(userId) {
+      return passwordResets.get(userId);
+    },
+
+    async upsertPasswordReset(input: UpsertPasswordResetInput) {
+      const existing = passwordResets.get(input.userId);
+      const id = existing?.id ?? nextPasswordResetId++;
+      const user = [...authUsers.values()].find((u) => u.id === input.userId);
+      passwordResets.set(input.userId, {
+        id,
+        userId: input.userId,
+        email: user?.email ?? "",
+        passwordHash: user?.passwordHash ?? "",
+        codeHash: input.codeHash,
+        resetSessionToken: input.resetSessionToken,
+        codeAttempts: 0,
+        lastSentAt: input.now,
+        codeSendCount: 1,
+        expiresAt: input.expiresAt,
+      });
+      return { id };
+    },
+
+    async findPasswordResetBySessionToken(token) {
+      return findResetByToken(token);
+    },
+
+    async updatePasswordResetSendState(token, state: PasswordResetSendState) {
+      const reset = findResetByToken(token);
+      if (reset) {
+        Object.assign(reset, state);
+      }
+    },
+
+    async incrementPasswordResetAttempts(token) {
+      const reset = findResetByToken(token);
+      if (reset) {
+        reset.codeAttempts += 1;
+      }
+    },
+
+    async resetUserPassword(input: ResetUserPasswordInput) {
+      for (const session of sessions) {
+        if (session.userId === input.userId && session.revokedAt === null) {
+          session.revokedAt = input.revokedAt;
+          session.revokedReason = input.revokedReason;
+        }
+      }
+
+      const user = [...authUsers.values()].find((u) => u.id === input.userId);
+      if (user) {
+        user.passwordHash = input.passwordHash;
+      }
+
+      const reset = findResetByToken(input.resetSessionToken);
+      if (reset) {
+        passwordResets.delete(reset.userId);
+      }
+
+      sessions.push({
+        id: nextSessionId++,
+        publicId: randomUUID(),
+        userId: input.userId,
+        tokenHash: input.sessionTokenHash,
+        deviceLabel: input.deviceLabel,
+        createdAt: new Date(),
+        expiresAt: input.sessionExpiresAt,
+        revokedAt: null,
+        revokedReason: null,
+      });
+    },
+
     async revokeSessionByTokenHash(tokenHash, revokedAt, revokedReason) {
       const session = sessions.find(
         (s) => s.tokenHash === tokenHash && s.revokedAt === null,
@@ -310,7 +391,14 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
     },
   };
 
-  return { ...repository, authUsers, pendingSignups, sessions, profiles };
+  return {
+    ...repository,
+    authUsers,
+    pendingSignups,
+    passwordResets,
+    sessions,
+    profiles,
+  };
 }
 
 export type InMemoryAuthRepository = ReturnType<

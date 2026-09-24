@@ -67,6 +67,52 @@ export interface ChangeUserPasswordInput {
   exceptSessionId: number;
 }
 
+// The email and the password hash ride along because every caller that reads
+// a reset row needs at least one of them, and joining here keeps the flow at
+// one query instead of two.
+export interface PasswordResetRecord {
+  id: number;
+  userId: number;
+  email: string;
+  passwordHash: string;
+  codeHash: string;
+  resetSessionToken: string;
+  codeAttempts: number;
+  lastSentAt: Date;
+  // Unlike the signup flow, 0 never means "first send": the same endpoint is
+  // both the first request and the resend, so a failed delivery restores the
+  // previous count instead of zeroing it.
+  codeSendCount: number;
+  expiresAt: Date;
+}
+
+export interface UpsertPasswordResetInput {
+  userId: number;
+  codeHash: string;
+  resetSessionToken: string;
+  expiresAt: Date;
+  now: Date;
+}
+
+export interface PasswordResetSendState {
+  codeHash: string;
+  expiresAt: Date;
+  codeAttempts: number;
+  lastSentAt: Date;
+  codeSendCount: number;
+}
+
+export interface ResetUserPasswordInput {
+  userId: number;
+  passwordHash: string;
+  resetSessionToken: string;
+  sessionTokenHash: string;
+  deviceLabel: string | null;
+  sessionExpiresAt: Date;
+  revokedAt: Date;
+  revokedReason: RevokedReason;
+}
+
 export interface AuthRepository {
   findAuthUserByEmail(email: string): Promise<AuthUserRecord | undefined>;
   findPendingSignupByEmail(
@@ -90,4 +136,17 @@ export interface AuthRepository {
     id: number,
   ): Promise<AuthUserCredentials | undefined>;
   changeUserPassword(input: ChangeUserPasswordInput): Promise<void>;
+  findPasswordResetByUserId(
+    userId: number,
+  ): Promise<PasswordResetRecord | undefined>;
+  upsertPasswordReset(input: UpsertPasswordResetInput): Promise<{ id: number }>;
+  findPasswordResetBySessionToken(
+    token: string,
+  ): Promise<PasswordResetRecord | undefined>;
+  updatePasswordResetSendState(
+    token: string,
+    state: PasswordResetSendState,
+  ): Promise<void>;
+  incrementPasswordResetAttempts(token: string): Promise<void>;
+  resetUserPassword(input: ResetUserPasswordInput): Promise<void>;
 }

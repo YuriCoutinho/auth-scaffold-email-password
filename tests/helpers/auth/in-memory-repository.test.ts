@@ -674,3 +674,129 @@ describe("changeUserPassword", () => {
     );
   });
 });
+
+describe("password resets", () => {
+  const expiresAt = new Date("2026-01-01T00:15:00Z");
+  const now = new Date("2026-01-01T00:00:00Z");
+
+  function seeded() {
+    return createInMemoryAuthRepository({
+      authUsers: [{ id: 1, email: "reset@example.com", passwordHash: "old" }],
+    });
+  }
+
+  it("upserts a reset and reads it back by user and by token", async () => {
+    const repo = seeded();
+    await repo.upsertPasswordReset({
+      userId: 1,
+      codeHash: "hash",
+      resetSessionToken: "tok",
+      expiresAt,
+      now,
+    });
+
+    const byUser = await repo.findPasswordResetByUserId(1);
+    expect(byUser).toMatchObject({
+      userId: 1,
+      email: "reset@example.com",
+      passwordHash: "old",
+      codeHash: "hash",
+      codeAttempts: 0,
+      codeSendCount: 1,
+      lastSentAt: now,
+    });
+    expect(await repo.findPasswordResetBySessionToken("tok")).toEqual(byUser);
+  });
+
+  it("replaces the row on a second upsert, keeping one per user", async () => {
+    const repo = seeded();
+    await repo.upsertPasswordReset({
+      userId: 1,
+      codeHash: "first",
+      resetSessionToken: "tok-1",
+      expiresAt,
+      now,
+    });
+    await repo.upsertPasswordReset({
+      userId: 1,
+      codeHash: "second",
+      resetSessionToken: "tok-2",
+      expiresAt,
+      now,
+    });
+
+    expect(await repo.findPasswordResetBySessionToken("tok-1")).toBeUndefined();
+    expect(await repo.findPasswordResetByUserId(1)).toMatchObject({
+      codeHash: "second",
+      resetSessionToken: "tok-2",
+    });
+  });
+
+  it("increments attempts and writes send state by token", async () => {
+    const repo = seeded();
+    await repo.upsertPasswordReset({
+      userId: 1,
+      codeHash: "hash",
+      resetSessionToken: "tok",
+      expiresAt,
+      now,
+    });
+
+    await repo.incrementPasswordResetAttempts("tok");
+    expect(await repo.findPasswordResetByUserId(1)).toMatchObject({
+      codeAttempts: 1,
+    });
+
+    await repo.updatePasswordResetSendState("tok", {
+      codeHash: "restored",
+      expiresAt,
+      codeAttempts: 0,
+      lastSentAt: now,
+      codeSendCount: 3,
+    });
+    expect(await repo.findPasswordResetByUserId(1)).toMatchObject({
+      codeHash: "restored",
+      codeAttempts: 0,
+      codeSendCount: 3,
+    });
+  });
+
+  it("resets the password, revokes every session, drops the row and opens a new session", async () => {
+    const repo = createInMemoryAuthRepository({
+      authUsers: [{ id: 1, email: "reset@example.com", passwordHash: "old" }],
+      sessions: [
+        { id: 10, userId: 1, tokenHash: "old-session", expiresAt },
+        { id: 11, userId: 1, tokenHash: "other-session", expiresAt },
+      ],
+    });
+    await repo.upsertPasswordReset({
+      userId: 1,
+      codeHash: "hash",
+      resetSessionToken: "tok",
+      expiresAt,
+      now,
+    });
+
+    await repo.resetUserPassword({
+      userId: 1,
+      passwordHash: "new",
+      resetSessionToken: "tok",
+      sessionTokenHash: "fresh-session",
+      deviceLabel: null,
+      sessionExpiresAt: expiresAt,
+      revokedAt: now,
+      revokedReason: "password_reset",
+    });
+
+    expect(await repo.findAuthUserCredentialsById(1)).toMatchObject({
+      passwordHash: "new",
+    });
+    expect(await repo.findPasswordResetBySessionToken("tok")).toBeUndefined();
+    expect(repo.sessions.filter((s) => s.revokedAt !== null)).toHaveLength(2);
+    expect(
+      repo.sessions.filter((s) => s.revokedReason === "password_reset"),
+    ).toHaveLength(2);
+    const fresh = repo.sessions.find((s) => s.tokenHash === "fresh-session");
+    expect(fresh?.revokedAt).toBeNull();
+  });
+});
