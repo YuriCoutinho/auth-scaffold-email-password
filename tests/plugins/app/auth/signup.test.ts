@@ -22,6 +22,7 @@ function makeDeps() {
       send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
     },
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
+    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     now: () => NOW,
   };
 }
@@ -255,5 +256,23 @@ describe("signup service", () => {
 
     if (first.outcome !== "accepted" || second.outcome !== "accepted") return;
     expect(second.sessionToken).not.toBe(first.sessionToken);
+  });
+  it("logs the pending signup creation with its id and no email", async () => {
+    const deps = makeDeps();
+    await createSignupService(deps).signup("foo@gmail.com", PASSWORD);
+    expect(deps.log.info).toHaveBeenCalledWith(
+      { pendingSignupId: 1 },
+      "pending signup created",
+    );
+  });
+
+  it("logs nothing about a pending signup when none is created", async () => {
+    const deps = makeDeps();
+    deps.repo.findAuthUserByEmail.mockResolvedValue({ id: 1 });
+    await createSignupService(deps).signup("foo@gmail.com", PASSWORD);
+    expect(deps.log.info).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "pending signup created",
+    );
   });
 });

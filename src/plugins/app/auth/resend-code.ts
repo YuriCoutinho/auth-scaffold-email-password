@@ -41,7 +41,17 @@ export function createResendCodeService(deps: ResendCodeServiceDeps) {
       const currentTime = now();
       const pending =
         await deps.repo.findPendingSignupBySessionToken(sessionToken);
-      if (!pending || pending.expiresAt <= currentTime) {
+      // Both cases answer the same 401; only the log separates a dead signup
+      // session from an unknown token.
+      if (!pending) {
+        deps.log?.info("signup session token not recognized");
+        return { outcome: "invalid-session" };
+      }
+      if (pending.expiresAt <= currentTime) {
+        deps.log?.info(
+          { pendingSignupId: pending.id },
+          "pending signup expired",
+        );
         return { outcome: "invalid-session" };
       }
 

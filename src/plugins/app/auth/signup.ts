@@ -74,6 +74,7 @@ export function createSignupService(deps: SignupServiceDeps) {
         expiresAt: new Date(currentTime.getTime() + SIGNUP_TTL_SECONDS * 1000),
         now: currentTime,
       });
+      deps.log?.info({ pendingSignupId }, "pending signup created");
 
       // Detached, like /auth/forgot-password: the response is a fixed 202 that
       // delivery cannot change, and awaiting the provider would make a new
