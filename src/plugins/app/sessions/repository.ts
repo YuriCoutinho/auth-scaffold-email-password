@@ -1,68 +1,51 @@
-import type { RevokedReason } from "../../../lib/session.js";
-
 export interface CreateSessionInput {
-  publicId: string;
-  userId: number;
+  id: string;
+  userId: string;
   tokenHash: string;
   deviceLabel: string | null;
-  expiresAt: Date;
+  createdAt: Date;
 }
 
 export interface SessionRecord {
-  id: number;
-  userId: number;
-  expiresAt: Date;
-  revokedAt: Date | null;
+  id: string;
+  userId: string;
+  createdAt: Date;
 }
 
-export interface RevokeAllUserSessionsInput {
-  userId: number;
-  revokedAt: Date;
-  revokedReason: RevokedReason;
-  // Absent means "revoke literally every session", which is what the caller
+export interface DeleteUserSessionsInput {
+  userId: string;
+  // Absent means "delete literally every session", which is what the caller
   // asks for when it accepts losing the device it is calling from.
-  exceptSessionId?: number;
+  exceptSessionId?: string;
 }
 
-export interface RevokeUserSessionInput {
-  publicId: string;
-  userId: number;
-  revokedAt: Date;
-  revokedReason: RevokedReason;
-  now: Date;
+export interface DeleteUserSessionInput {
+  id: string;
+  userId: string;
 }
 
-export interface ListActiveUserSessionsInput {
-  userId: number;
-  now: Date;
+export interface ListUserSessionsInput {
+  userId: string;
+  createdAfter: Date;
 }
 
-// The internal id travels with the record so the service can match it against
-// the id the session hook published, without the public id ever being the key
-// anything is looked up by.
 export interface ActiveSessionRecord {
-  id: number;
-  publicId: string;
+  id: string;
   deviceLabel: string | null;
   createdAt: Date;
-  expiresAt: Date;
 }
 
 export interface SessionRepository {
   createSession(input: CreateSessionInput): Promise<void>;
   findSessionByTokenHash(tokenHash: string): Promise<SessionRecord | undefined>;
-  revokeSessionByTokenHash(
-    tokenHash: string,
-    revokedAt: Date,
-    revokedReason: RevokedReason,
-  ): Promise<void>;
-  revokeAllUserSessions(
-    input: RevokeAllUserSessionsInput,
-  ): Promise<{ revokedCount: number }>;
-  revokeUserSessionByPublicId(
-    input: RevokeUserSessionInput,
-  ): Promise<{ revoked: boolean }>;
-  listActiveUserSessions(
-    input: ListActiveUserSessionsInput,
+  deleteSessionByTokenHash(tokenHash: string): Promise<void>;
+  deleteUserSessions(
+    input: DeleteUserSessionsInput,
+  ): Promise<{ deletedCount: number }>;
+  deleteUserSession(
+    input: DeleteUserSessionInput,
+  ): Promise<{ deleted: boolean }>;
+  listUserSessions(
+    input: ListUserSessionsInput,
   ): Promise<ActiveSessionRecord[]>;
 }

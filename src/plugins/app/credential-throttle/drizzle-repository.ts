@@ -12,7 +12,6 @@ export function createDrizzleCredentialThrottleRepository(
         .select({
           failedCount: credentialThrottle.failedCount,
           lastFailedAt: credentialThrottle.lastFailedAt,
-          blockedUntil: credentialThrottle.blockedUntil,
         })
         .from(credentialThrottle)
         .where(eq(credentialThrottle.keyHash, keyHash))
@@ -29,7 +28,6 @@ export function createDrizzleCredentialThrottleRepository(
           set: {
             failedCount: input.failedCount,
             lastFailedAt: input.lastFailedAt,
-            blockedUntil: input.blockedUntil,
           },
         });
     },

@@ -14,32 +14,26 @@ export type ChangePasswordResult =
   | { outcome: "throttled"; retryAfterSeconds: number };
 
 export interface ChangePasswordInput {
-  userId: number;
-  currentSessionId: number;
+  userId: string;
+  currentSessionId: string;
   currentPassword: string;
   newPassword: string;
 }
 
 interface ChangePasswordServiceDeps {
-  repo: Pick<
-    AuthRepository,
-    "findAuthUserCredentialsById" | "changeUserPassword"
-  >;
+  repo: Pick<AuthRepository, "findUserById" | "changePassword">;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
   throttle: CredentialThrottle;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
-  now?: () => Date;
 }
 
 export function createChangePasswordService(deps: ChangePasswordServiceDeps) {
-  const now = deps.now ?? (() => new Date());
-
   return {
     async changePassword(
       input: ChangePasswordInput,
     ): Promise<ChangePasswordResult> {
-      const user = await deps.repo.findAuthUserCredentialsById(input.userId);
+      const user = await deps.repo.findUserById(input.userId);
       if (!user) {
         deps.log?.warn(
           { userId: input.userId, reason: "invalid_current_password" },
@@ -79,11 +73,9 @@ export function createChangePasswordService(deps: ChangePasswordServiceDeps) {
         return { outcome: "pwned-password" };
       }
 
-      await deps.repo.changeUserPassword({
+      await deps.repo.changePassword({
         userId: user.id,
         passwordHash: await hashPassword(input.newPassword),
-        revokedAt: now(),
-        revokedReason: "password_changed",
         exceptSessionId: input.currentSessionId,
       });
       deps.log?.info({ userId: user.id }, "password changed");

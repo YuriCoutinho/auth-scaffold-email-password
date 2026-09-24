@@ -1,30 +1,18 @@
 import type { FastifyBaseLogger } from "fastify";
-import { generateOtpCode } from "../../../lib/otp.js";
+import { generateId } from "../../../lib/id.js";
 import { hashPassword } from "../../../lib/password.js";
-import {
-  generateSignupSessionToken,
-  SIGNUP_TTL_SECONDS,
-} from "../../../lib/session.js";
-import { hashOtpCode } from "../../../lib/token-hash.js";
-import type { EmailSender } from "../email/sender.js";
+import { generateToken } from "../../../lib/session.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import type { AuthRepository } from "./repository.js";
-import { sendSignupCode } from "./send-signup-code.js";
+import type { VerificationCodes } from "./verification-codes.js";
 
 export type SignupResult =
   | { outcome: "accepted"; sessionToken: string }
   | { outcome: "pwned-password" };
 
 interface SignupServiceDeps {
-  repo: Pick<
-    AuthRepository,
-    | "findAuthUserByEmail"
-    | "findPendingSignupByEmail"
-    | "upsertPendingSignup"
-    | "markPendingSignupUndelivered"
-    | "rotatePendingSignupToken"
-  >;
-  emailSender: EmailSender;
+  repo: Pick<AuthRepository, "findUserByEmail">;
+  codes: Pick<VerificationCodes, "startSignup">;
   checkPwnedPassword: CheckPwnedPassword;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
@@ -41,64 +29,33 @@ export function createSignupService(deps: SignupServiceDeps) {
         return { outcome: "pwned-password" };
       }
 
-      const currentTime = now();
+      // Hashed before any branch, so a new, a pending and a confirmed address
+      // all pay for exactly one argon2 run and the response time says nothing
+      // about which one it was.
+      const passwordHash = await hashPassword(password);
+      const user = await deps.repo.findUserByEmail(email);
 
-      if (await deps.repo.findAuthUserByEmail(email)) {
-        // Confirmed account: no code is generated or delivered, but the
-        // response (cookie included) must be indistinguishable.
-        return {
-          outcome: "accepted",
-          sessionToken: generateSignupSessionToken(),
-        };
+      if (user?.emailVerifiedAt) {
+        // Confirmed account: nothing is written or delivered, but the response
+        // (cookie included) must be indistinguishable.
+        return { outcome: "accepted", sessionToken: generateToken() };
       }
 
-      const pending = await deps.repo.findPendingSignupByEmail(email);
-      if (pending && pending.expiresAt > currentTime) {
-        // Nothing is created or resent, but the token still rotates. A value
-        // that stays the same across calls would answer, in two requests,
-        // whether the address already has an account, which is the question
-        // this response refuses to answer. The code already in the mailbox
-        // keeps working because its validity lives in codeHash, not here.
-        const rotated = generateSignupSessionToken();
-        await deps.repo.rotatePendingSignupToken(email, rotated);
-        return { outcome: "accepted", sessionToken: rotated };
-      }
-
-      const code = generateOtpCode();
-      const sessionToken = generateSignupSessionToken();
-      const { id: pendingSignupId } = await deps.repo.upsertPendingSignup({
+      // The latest signup wins: an unconfirmed account takes the new password,
+      // so someone who registered the address first cannot keep a password of
+      // their own waiting for the owner to confirm it.
+      const started = await deps.codes.startSignup({
+        id: user?.id ?? generateId(),
         email,
-        passwordHash: await hashPassword(password),
-        codeHash: hashOtpCode(code),
-        signupSessionToken: sessionToken,
-        expiresAt: new Date(currentTime.getTime() + SIGNUP_TTL_SECONDS * 1000),
-        now: currentTime,
+        passwordHash,
+        createdAt: now(),
       });
-      deps.log?.info({ pendingSignupId }, "pending signup created");
-
-      // Detached, like /auth/forgot-password: the response is a fixed 202 that
-      // delivery cannot change, and awaiting the provider would make a new
-      // address slower than an already-confirmed one, which is account
-      // enumeration by stopwatch. Failed delivery must not consume resend
-      // quota, so the mark still runs, just after the response.
-      void sendSignupCode(
-        { emailSender: deps.emailSender, log: deps.log },
-        { to: email, code, pendingSignupId },
-      )
-        .then((delivered) => {
-          if (delivered) {
-            return;
-          }
-          return deps.repo.markPendingSignupUndelivered(email);
-        })
-        .catch((markError) => {
-          deps.log?.warn(
-            { err: markError },
-            "failed to mark pending signup as undelivered",
-          );
-        });
-
-      return { outcome: "accepted", sessionToken };
+      if (!started) {
+        // Confirmed by a concurrent request between the read and the write.
+        return { outcome: "accepted", sessionToken: generateToken() };
+      }
+      deps.log?.info({ userId: started.userId }, "signup started");
+      return { outcome: "accepted", sessionToken: started.token };
     },
   };
 }

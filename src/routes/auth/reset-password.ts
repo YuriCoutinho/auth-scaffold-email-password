@@ -1,8 +1,9 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import type { AppOptions } from "../../app-options.js";
-import { PASSWORD_RESET_COOKIE, SESSION_COOKIE } from "../../lib/cookies.js";
+import { cookiePolicy } from "../../lib/cookies.js";
 import { deviceLabelFromUserAgent } from "../../lib/device-label.js";
 import { rateLimitFor } from "../../lib/rate-limit.js";
+import { resolveTtl } from "../../lib/ttl.js";
 import {
   messageSchema,
   noContentSchema,
@@ -10,6 +11,7 @@ import {
 } from "../../schemas/auth.js";
 
 const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
+  const cookies = cookiePolicy(resolveTtl(opts.ttl));
   app.post(
     "/reset-password",
     {
@@ -19,7 +21,7 @@ const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
         summary: "Finish a password reset and sign in",
         description:
           "Verifies the 6-digit code for the reset identified by the " +
-          "password_reset cookie, stores the new password, revokes every " +
+          "password_reset cookie, stores the new password, ends every " +
           "session of the account and starts a new one. Everything about the " +
           "code answers with the same generic 401, because telling the cases " +
           "apart would reveal which addresses have accounts.",
@@ -34,7 +36,7 @@ const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
     },
     async (request, reply) => {
       const result = await app.auth.resetPassword({
-        sessionToken: request.cookies[PASSWORD_RESET_COOKIE.name],
+        sessionToken: request.cookies[cookies.passwordReset.name],
         code: request.body.code,
         newPassword: request.body.newPassword,
         deviceLabel: deviceLabelFromUserAgent(request.headers["user-agent"]),
@@ -53,13 +55,13 @@ const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
               "This password has appeared in a known data breach. Please choose a different one.",
           });
         case "reset":
-          reply.clearCookie(PASSWORD_RESET_COOKIE.name, {
-            path: PASSWORD_RESET_COOKIE.options.path,
+          reply.clearCookie(cookies.passwordReset.name, {
+            path: cookies.passwordReset.options.path,
           });
           reply.setCookie(
-            SESSION_COOKIE.name,
+            cookies.session.name,
             result.sessionToken,
-            SESSION_COOKIE.options,
+            cookies.session.options,
           );
           return reply.code(204).send();
       }

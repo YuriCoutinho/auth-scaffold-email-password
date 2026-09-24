@@ -1,17 +1,14 @@
 import type { FastifyBaseLogger } from "fastify";
+import { generateId } from "../../../lib/id.js";
 import { hashPassword, verifyPassword } from "../../../lib/password.js";
-import { generatePublicId } from "../../../lib/public-id.js";
-import {
-  generateSessionToken,
-  MAX_CODE_ATTEMPTS,
-  SESSION_TTL_SECONDS,
-} from "../../../lib/session.js";
-import { hashOtpCode, hashSessionToken } from "../../../lib/token-hash.js";
+import { generateToken } from "../../../lib/session.js";
+import { hashSessionToken } from "../../../lib/token-hash.js";
 import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
 import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import type { AuthRepository } from "./repository.js";
 import { sendPasswordChanged } from "./send-password-changed.js";
+import type { VerificationCodes } from "./verification-codes.js";
 
 export type ResetPasswordResult =
   | { outcome: "reset"; sessionToken: string }
@@ -27,12 +24,8 @@ export interface ResetPasswordInput {
 }
 
 interface ResetPasswordServiceDeps {
-  repo: Pick<
-    AuthRepository,
-    | "findPasswordResetBySessionToken"
-    | "incrementPasswordResetAttempts"
-    | "resetUserPassword"
-  >;
+  repo: Pick<AuthRepository, "resetPassword">;
+  codes: Pick<VerificationCodes, "verify">;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
   throttle: CredentialThrottle;
@@ -47,37 +40,15 @@ export function createResetPasswordService(deps: ResetPasswordServiceDeps) {
     async resetPassword(
       input: ResetPasswordInput,
     ): Promise<ResetPasswordResult> {
-      if (!input.sessionToken) {
-        return { outcome: "invalid" };
-      }
-
-      const currentTime = now();
-      const reset = await deps.repo.findPasswordResetBySessionToken(
+      const result = await deps.codes.verify(
+        "password_reset",
         input.sessionToken,
+        input.code,
       );
-      // A token minted for an address with no account matches no row and dies
-      // here, which is the same answer a wrong code gets.
-      if (!reset || reset.expiresAt <= currentTime) {
-        return { outcome: "invalid" };
+      if (result.outcome === "invalid") {
+        return result;
       }
-
-      // Exhausted codes stay unusable even if the right code shows up later;
-      // asking for another one or waiting for expiry are the only ways out.
-      if (reset.codeAttempts >= MAX_CODE_ATTEMPTS) {
-        return { outcome: "invalid" };
-      }
-
-      if (hashOtpCode(input.code) !== reset.codeHash) {
-        await deps.repo.incrementPasswordResetAttempts(input.sessionToken);
-        const attempts = reset.codeAttempts + 1;
-        deps.log?.warn(
-          { passwordResetId: reset.id, codeAttempts: attempts },
-          attempts >= MAX_CODE_ATTEMPTS
-            ? "password reset code invalidated after too many failed attempts"
-            : "password reset code verification failed",
-        );
-        return { outcome: "invalid" };
-      }
+      const reset = result.code;
 
       // Neither refusal below counts as an attempt or drops the row: attempts
       // track wrong codes, not bad password choices, so the caller retries
@@ -91,20 +62,26 @@ export function createResetPasswordService(deps: ResetPasswordServiceDeps) {
         return { outcome: "pwned-password" };
       }
 
-      const sessionToken = generateSessionToken();
-      await deps.repo.resetUserPassword({
+      const sessionToken = generateToken();
+      const applied = await deps.repo.resetPassword({
         userId: reset.userId,
+        tokenHash: reset.tokenHash,
+        codeHash: reset.codeHash,
         passwordHash: await hashPassword(input.newPassword),
-        resetSessionToken: input.sessionToken,
-        sessionPublicId: generatePublicId(),
-        sessionTokenHash: hashSessionToken(sessionToken),
-        deviceLabel: input.deviceLabel,
-        sessionExpiresAt: new Date(
-          currentTime.getTime() + SESSION_TTL_SECONDS * 1000,
-        ),
-        revokedAt: currentTime,
-        revokedReason: "password_reset",
+        session: {
+          id: generateId(),
+          tokenHash: hashSessionToken(sessionToken),
+          deviceLabel: input.deviceLabel,
+          createdAt: now(),
+        },
       });
+      if (!applied) {
+        deps.log?.info(
+          { userId: reset.userId },
+          "password reset code already consumed by a concurrent request",
+        );
+        return { outcome: "invalid" };
+      }
       // Proving possession of the email outranks the failed-attempt count, so
       // a reset frees the account the way a successful login does. Without it
       // the owner would finish the reset and still be locked out.

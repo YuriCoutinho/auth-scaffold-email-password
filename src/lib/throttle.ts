@@ -14,3 +14,14 @@ export function blockSecondsForFailures(failedCount: number): number {
     THROTTLE_BASE_BLOCK_SECONDS * THROTTLE_BLOCK_MULTIPLIER ** steps;
   return Math.min(seconds, THROTTLE_MAX_BLOCK_SECONDS);
 }
+
+// Derived rather than stored: the block follows from how many failures there
+// were and when the last one happened, so persisting it would only add a
+// column that can disagree with the other two.
+export function blockedUntil(
+  failedCount: number,
+  lastFailedAt: Date,
+): Date | null {
+  const seconds = blockSecondsForFailures(failedCount);
+  return seconds > 0 ? new Date(lastFailedAt.getTime() + seconds * 1000) : null;
+}

@@ -32,7 +32,7 @@ interface EmailSender {
 
 ### O template
 
-* Função pura que recebe o código e o prazo de validade e devolve assunto, HTML e texto. Os drivers apenas transportam a mensagem e não sabem o que é um código de confirmação
+* Função pura que recebe o código e o prazo de validade em minutos e devolve assunto, HTML e texto. O prazo vem do TTL configurado, e não de uma constante do template, para que o email nunca prometa uma validade diferente da que o servidor aplica. Os drivers apenas transportam a mensagem e não sabem o que é um código de confirmação
 * O template fica em `src/plugins/app/auth/emails/signup-code.ts`, dentro do domínio que o usa, e não em `plugins/app/email/`. Ele é conhecimento do fluxo de cadastro, e o plugin de email só conhece transporte. A subpasta `emails/` existe para que o próximo template do domínio tenha onde nascer
 * Assunto traz o código, porque muita gente lê e digita direto da lista de mensagens sem abrir o email
 * Corpo com o código em destaque, o prazo de validade e a frase avisando que quem não pediu pode ignorar, que é o que permite a pessoa perceber uso indevido do seu email
@@ -67,13 +67,16 @@ interface EmailSender {
 * Timeout de 10 segundos por requisição, via `AbortSignal.timeout`
 * Duas tentativas no total, e apenas para erro de rede, timeout, 429 e 5xx. Resposta 4xx nunca repete, porque requisição malformada ou chave inválida não melhora tentando de novo
 * As duas tentativas usam a mesma `Idempotency-Key`, gerada uma vez por chamada, de modo que um timeout que na verdade chegou ao provedor não vire dois emails para a pessoa
-* O corpo da requisição contém o código e por isso nunca aparece em log nem em mensagem de erro. O log de sucesso registra o identificador da mensagem associado ao identificador do cadastro pendente, sem email e sem código
+* O corpo da requisição contém o código e por isso nunca aparece em log nem em mensagem de erro. O log de sucesso registra o identificador da mensagem associado ao id da conta e à finalidade do código, sem email e sem código. O log de falha registra o status do provedor e nunca o corpo da resposta, que pode ecoar o endereço do destinatário
 
 ### Falha de envio no fluxo de cadastro
 
+* O envio mora no módulo de código, `src/plugins/app/auth/verification-codes.ts`, e não no service de cadastro. É o módulo que sabe qual código acabou de emitir e qual era o estado anterior, então é ele que envia e que compensa
 * A ordem continua sendo gravar primeiro e enviar depois
-* O envio não fica no caminho da requisição. Quando ele falha, o service captura o erro e registra o diagnóstico, e o endpoint responde `202` com cookie de qualquer forma, sem expor detalhe interno. Manter o envio fora da requisição é o que impede que o tempo de resposta diferencie um endereço novo de um já cadastrado, e o documento 15 traz o raciocínio completo
-* Uma falha de envio não pode consumir a cota de reenvio nem iniciar o cooldown de quem nem recebeu o email. Para isso o contador de envios volta para zero, o que estabelece o significado: contador zerado quer dizer que nenhum email foi entregue para o código atual, e o reenvio deve tratar esse caso como livre de cooldown. A marcação roda depois da resposta, na continuação do envio
+* O envio não fica no caminho da requisição. Ele é disparado com `void` depois que a transação do cadastro terminou, e a função de envio converte qualquer erro em `false` e registra o diagnóstico, de modo que nunca rejeita. O endpoint responde `202` com cookie de qualquer forma, sem expor detalhe interno. Manter o envio fora da requisição é o que impede que o tempo de resposta diferencie um endereço novo de um já cadastrado, e o documento 15 traz o raciocínio completo
+* Uma falha de envio não pode consumir a cota de reenvio nem iniciar o cooldown de quem nem recebeu o email. Para isso a compensação devolve a linha ao estado anterior ao envio, que o módulo capturou em memória antes de gravar. Quando não havia estado anterior, porque o código é o primeiro, a linha não é apagada: o código fica, com a contagem de envios em zero. Isso estabelece o significado do zero, que é nenhum email entregue para o código atual, e o cookie já entregue continua apontando para uma linha que o reenvio pode substituir sem esperar
+* A compensação é um compare-and-set: o `UPDATE` só se aplica enquanto a linha ainda guarda o `code_hash` do código que falhou. Se um pedido mais novo emitiu outro código nesse meio tempo, a restauração não casa linha nenhuma e não desfaz o que veio depois. Ela também nunca reescreve o token, para não matar um cookie que um pedido mais novo já entregou
+* A compensação roda depois da resposta, na continuação do envio, e uma falha dela vira log de aviso
 
 ## Definition of done
 
@@ -81,6 +84,7 @@ interface EmailSender {
 * Os três drivers funcionando e selecionados pela variável de ambiente
 * Mailpit no Docker Compose, com instrução de uso no README
 * Testes do cadastro usando o driver fake e verificando destinatário e presença do código na mensagem
+* Teste do módulo de código provando que uma entrega falha do primeiro código deixa a contagem em zero sem apagar a linha, e que a restauração não se aplica quando outro código já substituiu o que falhou
 * Testes do adapter de produção cobrindo sucesso, 4xx sem repetir, 5xx repetindo, 429 até esgotar as tentativas, erro de rede, e a mesma chave de idempotência entre as duas tentativas
 * Teste da fábrica de drivers garantindo que cada valor da variável devolve a implementação correta
 * `.env.sample` atualizado e nenhuma chave real versionada

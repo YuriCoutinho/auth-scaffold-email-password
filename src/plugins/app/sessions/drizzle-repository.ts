@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull, ne } from "drizzle-orm";
+import { and, desc, eq, gt, ne } from "drizzle-orm";
 import type { Database } from "../../../db/client.js";
 import { sessions } from "../../../db/schema.js";
 import type { SessionRepository } from "./repository.js";
@@ -22,8 +22,7 @@ export function createDrizzleSessionRepository(
         .select({
           id: sessions.id,
           userId: sessions.userId,
-          expiresAt: sessions.expiresAt,
-          revokedAt: sessions.revokedAt,
+          createdAt: sessions.createdAt,
         })
         .from(sessions)
         .where(eq(sessions.tokenHash, tokenHash))
@@ -31,28 +30,16 @@ export function createDrizzleSessionRepository(
       return rows[0];
     },
 
-    async revokeSessionByTokenHash(tokenHash, revokedAt, revokedReason) {
-      // The revoked_at IS NULL guard is what makes logout idempotent: a second
-      // call matches no row instead of overwriting the first revocation.
-      await db
-        .update(sessions)
-        .set({ revokedAt, revokedReason })
-        .where(
-          and(eq(sessions.tokenHash, tokenHash), isNull(sessions.revokedAt)),
-        );
+    async deleteSessionByTokenHash(tokenHash) {
+      await db.delete(sessions).where(eq(sessions.tokenHash, tokenHash));
     },
 
-    async revokeAllUserSessions(input) {
-      // The revoked_at IS NULL guard keeps this idempotent and keeps the count
-      // honest: a session revoked by an earlier call matches no row, so it is
-      // neither overwritten nor counted again.
-      const revoked = await db
-        .update(sessions)
-        .set({ revokedAt: input.revokedAt, revokedReason: input.revokedReason })
+    async deleteUserSessions(input) {
+      const deleted = await db
+        .delete(sessions)
         .where(
           and(
             eq(sessions.userId, input.userId),
-            isNull(sessions.revokedAt),
             input.exceptSessionId === undefined
               ? undefined
               : ne(sessions.id, input.exceptSessionId),
@@ -60,45 +47,35 @@ export function createDrizzleSessionRepository(
         )
         .returning({ id: sessions.id });
 
-      return { revokedCount: revoked.length };
+      return { deletedCount: deleted.length };
     },
 
-    async revokeUserSessionByPublicId(input) {
+    async deleteUserSession(input) {
       // Identification and authorization ride in the same WHERE, so a session
       // of another user matches no row instead of relying on a check the
-      // caller might forget. The expiry condition keeps "revocable" and
-      // "listed as active" the same definition.
-      const revoked = await db
-        .update(sessions)
-        .set({ revokedAt: input.revokedAt, revokedReason: input.revokedReason })
+      // caller might forget.
+      const deleted = await db
+        .delete(sessions)
         .where(
-          and(
-            eq(sessions.publicId, input.publicId),
-            eq(sessions.userId, input.userId),
-            isNull(sessions.revokedAt),
-            gt(sessions.expiresAt, input.now),
-          ),
+          and(eq(sessions.id, input.id), eq(sessions.userId, input.userId)),
         )
         .returning({ id: sessions.id });
 
-      return { revoked: revoked.length > 0 };
+      return { deleted: deleted.length > 0 };
     },
 
-    async listActiveUserSessions(input) {
+    async listUserSessions(input) {
       return db
         .select({
           id: sessions.id,
-          publicId: sessions.publicId,
           deviceLabel: sessions.deviceLabel,
           createdAt: sessions.createdAt,
-          expiresAt: sessions.expiresAt,
         })
         .from(sessions)
         .where(
           and(
             eq(sessions.userId, input.userId),
-            isNull(sessions.revokedAt),
-            gt(sessions.expiresAt, input.now),
+            gt(sessions.createdAt, input.createdAfter),
           ),
         )
         .orderBy(desc(sessions.createdAt), desc(sessions.id));

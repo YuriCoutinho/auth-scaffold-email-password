@@ -23,7 +23,7 @@ Esta etapa entrega `POST /auth/login` com essa armadilha fechada e cria uma sess
 A resposta não tem corpo, e o que ficou de fora vale registrar porque explica a decisão.
 
 * Sem token de sessão, porque ele vive no cookie `HttpOnly` e devolvê-lo no JSON entregaria de volta exatamente a proteção contra scripts maliciosos que o cookie oferece
-* Sem o identificador interno, que é sequencial e revelaria o tamanho da base
+* Sem o id do usuário, que não tem uso para quem acabou de entrar e que é o `GET /me` que descreve
 * Sem email, porque quem acabou de digitar já sabe
 * Sem hash de senha, que nunca deve sair do servidor em nenhuma circunstância
 
@@ -31,13 +31,14 @@ A resposta não tem corpo, e o que ficou de fora vale registrar porque explica a
 
 * Email normalizado com `trim` e lowercase antes da busca, do mesmo jeito que no cadastro
 * Exatamente uma verificação Argon2 por tentativa, sempre. Quando o email não existe, a verificação roda contra um hash pré-computado que nunca corresponde a senha nenhuma, e o resultado é descartado
+* Conta não confirmada é tratada exatamente como conta inexistente: não entra, responde o mesmo `401` e roda a mesma verificação contra o hash pré-computado. Ela tem senha gravada, mas essa senha pertence a quem se cadastrou por último e ainda não provou posse do email, então aceitá-la reabriria o sequestro de conta que o cadastro fecha
 * Comparação sempre por `argon2.verify()`, que já é de tempo constante, nunca por igualdade direta
 * O hash pré-computado fica numa constante do módulo de senha, `DUMMY_PASSWORD_HASH` em `src/lib/password.ts`, gerado uma vez com os mesmos parâmetros dos hashes reais, de modo que o custo bata
 
 ### Organização do código
 
-* Rota em `src/routes/auth/login.ts`, que extrai o `User-Agent`, chama `app.auth.login` e monta cookie e corpo. Service em `src/plugins/app/auth/login.ts`, dependendo apenas de `findAuthUserByEmail`, da interface `AuthRepository`, e de `createSession`, da interface `SessionRepository`. O login é o ponto em que as duas fatias se encontram, porque ele confere a credencial e abre a sessão na mesma operação, e é `create-auth.ts` que entrega a ele um método de cada repositório
-* Os geradores de token e a constante de tempo de vida da sessão vivem em `src/lib/session.ts`, compartilhados entre login e confirmação de cadastro. É isso que garante um único formato de sessão no sistema, em vez de dois fluxos com constantes que podem divergir
+* Rota em `src/routes/auth/login.ts`, que extrai o `User-Agent`, chama `app.auth.login` e monta cookie e corpo. Service em `src/plugins/app/auth/login.ts`, dependendo apenas de `findUserByEmail`, da interface `AuthRepository`, e de `createSession`, da interface `SessionRepository`. O login é o ponto em que as duas fatias se encontram, porque ele confere a credencial e abre a sessão na mesma operação, e é `create-auth.ts` que entrega a ele um método de cada repositório
+* O gerador de token vive em `src/lib/session.ts`, o tempo de vida da sessão na política de `src/lib/ttl.ts` e o cookie em `cookiePolicy`, todos compartilhados entre login e confirmação de cadastro. É isso que garante um único formato de sessão no sistema, em vez de dois fluxos com constantes que podem divergir
 * Os schemas de body e de resposta ficam em `src/schemas/auth.ts`, junto dos schemas dos outros endpoints de autenticação, para que a política de senha do cadastro e a do login estejam lado a lado e a diferença entre elas seja visível
 
 ### Resposta de erro única
@@ -47,14 +48,15 @@ Email inexistente e senha errada produzem resposta idêntica: mesmo status `401`
 ### A sessão
 
 * Token de 32 bytes aleatórios em base64url, com apenas o SHA-256 gravado na tabela de sessões
-* Tempo de vida de 30 dias, com o mesmo valor na coluna de expiração e no `Max-Age` do cookie
+* Id da sessão em uuid gerado pela aplicação e `created_at` gravado pelo relógio da aplicação
+* Tempo de vida de 30 dias por padrão, calculado a partir de `created_at`, com o mesmo valor no `Max-Age` do cookie
 * Rótulo do dispositivo vindo do `User-Agent` truncado em 256 caracteres
 * Cookie `session` com `HttpOnly`, `Secure`, `SameSite=Strict` e `Path=/`, no mesmo formato da sessão criada ao confirmar o cadastro, para que exista um único conceito de sessão no sistema
 * Cada login cria uma linha nova, então entrar pelo celular não derruba a sessão do computador
 
 ### Logs
 
-* Tentativa falha registra o motivo, distinguindo email desconhecido de senha incorreta, e o identificador do usuário quando ele existe
+* Tentativa falha registra o motivo, distinguindo email desconhecido de senha incorreta, e o id do usuário quando ele existe. Conta não confirmada entra no log como email desconhecido, porque para o login ela não é conta
 * Essa distinção fica apenas no log, jamais na resposta, e é o insumo para detectar ataque de força bruta depois
 * Senha, email e token nunca entram em log
 
@@ -65,5 +67,6 @@ Email inexistente e senha errada produzem resposta idêntica: mesmo status `401`
 * Teste do caminho feliz conferindo a criação da sessão, o hash gravado diferente do token do cookie e a resposta sem corpo
 * Teste de email inexistente e de senha errada produzindo resposta idêntica
 * Teste garantindo que a verificação Argon2 roda também quando o email não existe
+* Teste de conta não confirmada respondendo como email inexistente, com a verificação Argon2 rodando contra o hash pré-computado
 * Teste de normalização do email, com maiúsculas e espaços chegando à mesma conta
 * Teste de validação de body respondendo 400

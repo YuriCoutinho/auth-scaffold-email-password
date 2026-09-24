@@ -7,21 +7,34 @@ import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repos
 const TOKEN = "a-session-token";
 const OTHER_TOKEN = "another-session-token";
 const THIRD_TOKEN = "a-third-session-token";
+const USER_ID = "77777777-7777-4777-8777-777777777777";
+const OTHER_USER_ID = "88888888-8888-4888-8888-888888888888";
+const CURRENT_ID = "11111111-1111-4111-8111-111111111111";
+const OTHER_ID = "22222222-2222-4222-8222-222222222222";
+const THIRD_ID = "33333333-3333-4333-8333-333333333333";
+const EXPIRED_CREATED_AT = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
 
 function repoWithThreeSessions() {
-  const expiresAt = new Date(Date.now() + 60_000);
   return createInMemoryAuthRepository({
-    authUsers: [{ id: 7, email: "foo@gmail.com" }],
+    users: [{ id: USER_ID, email: "foo@gmail.com" }],
     sessions: [
-      { id: 1, userId: 7, tokenHash: hashSessionToken(TOKEN), expiresAt },
-      { id: 2, userId: 7, tokenHash: hashSessionToken(OTHER_TOKEN), expiresAt },
-      { id: 3, userId: 7, tokenHash: hashSessionToken(THIRD_TOKEN), expiresAt },
+      { id: CURRENT_ID, userId: USER_ID, tokenHash: hashSessionToken(TOKEN) },
+      {
+        id: OTHER_ID,
+        userId: USER_ID,
+        tokenHash: hashSessionToken(OTHER_TOKEN),
+      },
+      {
+        id: THIRD_ID,
+        userId: USER_ID,
+        tokenHash: hashSessionToken(THIRD_TOKEN),
+      },
     ],
   });
 }
 
 describe("DELETE /sessions", () => {
-  it("revokes the other sessions and keeps the current one", async () => {
+  it("deletes the other sessions and keeps the current one", async () => {
     const authRepository = repoWithThreeSessions();
     const app = buildApp(makeAppOptions({ authRepository }));
 
@@ -32,16 +45,7 @@ describe("DELETE /sessions", () => {
     });
 
     expect(response.statusCode).toBe(204);
-    expect(authRepository.sessions.find((s) => s.id === 1)).toMatchObject({
-      revokedAt: null,
-      revokedReason: null,
-    });
-    expect(authRepository.sessions.find((s) => s.id === 2)).toMatchObject({
-      revokedReason: "logout_all",
-    });
-    expect(authRepository.sessions.find((s) => s.id === 3)).toMatchObject({
-      revokedReason: "logout_all",
-    });
+    expect([...authRepository.sessions.keys()]).toEqual([CURRENT_ID]);
     await app.close();
   });
 
@@ -63,14 +67,9 @@ describe("DELETE /sessions", () => {
 
   it("answers 204 for a user whose only session is the current one", async () => {
     const authRepository = createInMemoryAuthRepository({
-      authUsers: [{ id: 7, email: "foo@gmail.com" }],
+      users: [{ id: USER_ID, email: "foo@gmail.com" }],
       sessions: [
-        {
-          id: 1,
-          userId: 7,
-          tokenHash: hashSessionToken(TOKEN),
-          expiresAt: new Date(Date.now() + 60_000),
-        },
+        { id: CURRENT_ID, userId: USER_ID, tokenHash: hashSessionToken(TOKEN) },
       ],
     });
     const app = buildApp(makeAppOptions({ authRepository }));
@@ -82,23 +81,22 @@ describe("DELETE /sessions", () => {
     });
 
     expect(response.statusCode).toBe(204);
+    expect([...authRepository.sessions.keys()]).toEqual([CURRENT_ID]);
     await app.close();
   });
 
   it("never touches the sessions of another user", async () => {
-    const expiresAt = new Date(Date.now() + 60_000);
     const authRepository = createInMemoryAuthRepository({
-      authUsers: [
-        { id: 7, email: "foo@gmail.com" },
-        { id: 8, email: "bar@gmail.com" },
+      users: [
+        { id: USER_ID, email: "foo@gmail.com" },
+        { id: OTHER_USER_ID, email: "bar@gmail.com" },
       ],
       sessions: [
-        { id: 1, userId: 7, tokenHash: hashSessionToken(TOKEN), expiresAt },
+        { id: CURRENT_ID, userId: USER_ID, tokenHash: hashSessionToken(TOKEN) },
         {
-          id: 2,
-          userId: 8,
+          id: OTHER_ID,
+          userId: OTHER_USER_ID,
           tokenHash: hashSessionToken(OTHER_TOKEN),
-          expiresAt,
         },
       ],
     });
@@ -110,50 +108,42 @@ describe("DELETE /sessions", () => {
       cookies: { session: TOKEN },
     });
 
-    expect(authRepository.sessions.find((s) => s.id === 2)).toMatchObject({
-      revokedAt: null,
-      revokedReason: null,
-    });
+    expect(authRepository.sessions.has(OTHER_ID)).toBe(true);
     await app.close();
   });
 
   const REFUSALS: Array<{
     name: string;
     cookie?: string;
-    session?: { expiresAt: Date; revokedAt?: Date };
+    createdAt?: Date;
   }> = [
     { name: "the cookie is missing" },
     { name: "the token is unknown", cookie: "not-a-real-token" },
     {
       name: "the session is expired",
       cookie: TOKEN,
-      session: { expiresAt: new Date(Date.now() - 60_000) },
-    },
-    {
-      name: "the session is revoked",
-      cookie: TOKEN,
-      session: {
-        expiresAt: new Date(Date.now() + 60_000),
-        revokedAt: new Date(),
-      },
+      createdAt: EXPIRED_CREATED_AT,
     },
   ];
 
   it.each(REFUSALS)(
-    "answers a generic 401 without revoking anything when $name",
-    async ({ cookie, session }) => {
+    "answers a generic 401 without deleting anything when $name",
+    async ({ cookie, createdAt }) => {
       const authRepository = createInMemoryAuthRepository({
-        authUsers: [{ id: 7, email: "foo@gmail.com" }],
-        sessions: session
-          ? [
-              {
-                id: 1,
-                userId: 7,
-                tokenHash: hashSessionToken(TOKEN),
-                ...session,
-              },
-            ]
-          : [],
+        users: [{ id: USER_ID, email: "foo@gmail.com" }],
+        sessions: [
+          {
+            id: CURRENT_ID,
+            userId: USER_ID,
+            tokenHash: hashSessionToken(TOKEN),
+            createdAt: createdAt ?? new Date(),
+          },
+          {
+            id: OTHER_ID,
+            userId: USER_ID,
+            tokenHash: hashSessionToken(OTHER_TOKEN),
+          },
+        ],
       });
       const app = buildApp(makeAppOptions({ authRepository }));
 
@@ -165,6 +155,7 @@ describe("DELETE /sessions", () => {
 
       expect(response.statusCode).toBe(401);
       expect(response.json()).toEqual({ message: "Unauthorized." });
+      expect(authRepository.sessions.size).toBe(2);
       await app.close();
     },
   );

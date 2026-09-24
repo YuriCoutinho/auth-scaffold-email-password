@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hashPassword } from "../../../../src/lib/password.js";
 import { createChangePasswordService } from "../../../../src/plugins/app/auth/change-password.js";
+import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 
 // A spy over the real implementation: the existing tests still hash and verify
 // for real, and a test can still assert the verification was never spent.
@@ -12,7 +13,6 @@ vi.mock("../../../../src/lib/password.js", async (importOriginal) => {
 const { verifyPassword } = await import("../../../../src/lib/password.js");
 const verifyPasswordMock = vi.mocked(verifyPassword);
 
-const NOW = new Date("2026-03-01T12:00:00.000Z");
 const CURRENT = "current-password-here";
 const NEXT = "a-brand-new-long-password";
 
@@ -23,16 +23,32 @@ beforeEach(async () => {
   currentHash = await hashPassword(CURRENT);
 });
 
-function makeDeps(overrides: Record<string, unknown> = {}) {
+const USER_ID = "11111111-1111-4111-8111-111111111111";
+const OTHER_USER_ID = "22222222-2222-4222-8222-222222222222";
+const CURRENT_SESSION_ID = "33333333-3333-4333-8333-333333333333";
+
+function makeDeps(
+  overrides: Record<string, unknown> = {},
+  options: { email?: string; passwordHash?: string } = {},
+) {
+  const repo = createInMemoryAuthRepository({
+    users: [
+      {
+        id: USER_ID,
+        email: options.email ?? "owner@example.com",
+        passwordHash: options.passwordHash ?? currentHash,
+      },
+      { id: OTHER_USER_ID, email: "other@example.com" },
+    ],
+    sessions: [
+      { id: CURRENT_SESSION_ID, userId: USER_ID, tokenHash: "current" },
+      { userId: USER_ID, tokenHash: "laptop" },
+      { userId: USER_ID, tokenHash: "phone" },
+      { userId: OTHER_USER_ID, tokenHash: "someone-else" },
+    ],
+  });
   return {
-    repo: {
-      findAuthUserCredentialsById: vi.fn().mockResolvedValue({
-        id: 1,
-        email: "owner@example.com",
-        passwordHash: currentHash,
-      }),
-      changeUserPassword: vi.fn().mockResolvedValue(undefined),
-    },
+    repo,
     emailSender: {
       send: vi.fn().mockResolvedValue({ providerMessageId: "x" }),
     },
@@ -43,43 +59,60 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
       reset: vi.fn().mockResolvedValue(undefined),
     },
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-    now: () => NOW,
     ...overrides,
   };
 }
 
+const storedHash = (deps: ReturnType<typeof makeDeps>) =>
+  deps.repo.users.get(USER_ID)?.passwordHash ?? "";
+
+const sessionIdsOf = (deps: ReturnType<typeof makeDeps>, userId: string) =>
+  [...deps.repo.sessions.values()]
+    .filter((session) => session.userId === userId)
+    .map((session) => session.id);
+
 const input = {
-  userId: 1,
-  currentSessionId: 10,
+  userId: USER_ID,
+  currentSessionId: CURRENT_SESSION_ID,
   currentPassword: CURRENT,
   newPassword: NEXT,
 };
 
 describe("changePassword", () => {
-  it("stores a new hash and revokes the other sessions", async () => {
+  it("stores a new argon2 hash of the new password", async () => {
     const deps = makeDeps();
     const { changePassword } = createChangePasswordService(deps);
 
     await expect(changePassword(input)).resolves.toEqual({
       outcome: "changed",
     });
-    expect(deps.repo.changeUserPassword).toHaveBeenCalledWith({
-      userId: 1,
-      passwordHash: expect.stringMatching(/^\$argon2id\$/),
-      revokedAt: NOW,
-      revokedReason: "password_changed",
-      exceptSessionId: 10,
-    });
+    expect(storedHash(deps)).toMatch(/^\$argon2id\$/);
+    expect(storedHash(deps)).not.toContain(NEXT);
+    expect(await verifyPassword(storedHash(deps), NEXT)).toBe(true);
   });
 
-  it("never stores the new password in clear text", async () => {
+  it("deletes every other session of the account and keeps the current one", async () => {
     const deps = makeDeps();
     const { changePassword } = createChangePasswordService(deps);
 
     await changePassword(input);
 
-    const call = deps.repo.changeUserPassword.mock.calls[0]?.[0];
-    expect(call.passwordHash).not.toBe(NEXT);
+    expect(sessionIdsOf(deps, USER_ID)).toEqual([CURRENT_SESSION_ID]);
+    expect(sessionIdsOf(deps, OTHER_USER_ID)).toHaveLength(1);
+  });
+
+  it("rejects an account that no longer exists as a wrong current password", async () => {
+    const deps = makeDeps();
+    const { changePassword } = createChangePasswordService(deps);
+
+    await expect(
+      changePassword({
+        ...input,
+        userId: "44444444-4444-4444-8444-444444444444",
+      }),
+    ).resolves.toEqual({ outcome: "invalid-current-password" });
+    expect(deps.checkPwnedPassword).not.toHaveBeenCalled();
+    expect(deps.throttle.check).not.toHaveBeenCalled();
   });
 
   it("rejects a wrong current password without writing anything", async () => {
@@ -89,7 +122,8 @@ describe("changePassword", () => {
     await expect(
       changePassword({ ...input, currentPassword: "wrong-password-entirely" }),
     ).resolves.toEqual({ outcome: "invalid-current-password" });
-    expect(deps.repo.changeUserPassword).not.toHaveBeenCalled();
+    expect(storedHash(deps)).toBe(currentHash);
+    expect(sessionIdsOf(deps, USER_ID)).toHaveLength(3);
   });
 
   it("checks the current password before the breach database", async () => {
@@ -105,16 +139,10 @@ describe("changePassword", () => {
   });
 
   it("reports the wrong current password even when the new one equals it", async () => {
-    const deps = makeDeps({
-      repo: {
-        findAuthUserCredentialsById: vi.fn().mockResolvedValue({
-          id: 1,
-          email: "owner@example.com",
-          passwordHash: await hashPassword("something-else-entirely"),
-        }),
-        changeUserPassword: vi.fn().mockResolvedValue(undefined),
-      },
-    });
+    const deps = makeDeps(
+      {},
+      { passwordHash: await hashPassword("something-else-entirely") },
+    );
     const { changePassword } = createChangePasswordService(deps);
 
     await expect(
@@ -129,7 +157,7 @@ describe("changePassword", () => {
     await expect(
       changePassword({ ...input, newPassword: CURRENT }),
     ).resolves.toEqual({ outcome: "same-password" });
-    expect(deps.repo.changeUserPassword).not.toHaveBeenCalled();
+    expect(storedHash(deps)).toBe(currentHash);
   });
 
   it("rejects a new password found in a breach", async () => {
@@ -141,7 +169,7 @@ describe("changePassword", () => {
     await expect(changePassword(input)).resolves.toEqual({
       outcome: "pwned-password",
     });
-    expect(deps.repo.changeUserPassword).not.toHaveBeenCalled();
+    expect(storedHash(deps)).toBe(currentHash);
   });
 
   it("asks the breach checker about the new password and proceeds on false", async () => {
@@ -234,12 +262,7 @@ describe("changePassword", () => {
 
 describe("changePassword throttling", () => {
   it("keys the throttle by the stored email, sharing the count with login", async () => {
-    const deps = makeDeps();
-    deps.repo.findAuthUserCredentialsById.mockResolvedValue({
-      id: 7,
-      email: "foo@gmail.com",
-      passwordHash: currentHash,
-    });
+    const deps = makeDeps({}, { email: "foo@gmail.com" });
 
     await createChangePasswordService(deps).changePassword({
       ...input,
@@ -266,6 +289,6 @@ describe("changePassword throttling", () => {
       createChangePasswordService(deps).changePassword(input),
     ).resolves.toEqual({ outcome: "throttled", retryAfterSeconds: 42 });
     expect(verifyPasswordMock).not.toHaveBeenCalled();
-    expect(deps.repo.changeUserPassword).not.toHaveBeenCalled();
+    expect(storedHash(deps)).toBe(currentHash);
   });
 });

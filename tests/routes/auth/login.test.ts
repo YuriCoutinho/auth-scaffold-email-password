@@ -8,16 +8,16 @@ import { createInMemoryCredentialThrottleRepository } from "../../helpers/creden
 
 const EMAIL = "foo@gmail.com";
 const PASSWORD = "correct-horse-battery-staple";
-const PUBLIC_ID = "11111111-1111-4111-8111-111111111111";
+const USER_ID = "11111111-1111-4111-8111-111111111111";
 let passwordHash: string;
 
 beforeAll(async () => {
   passwordHash = await hashPassword(PASSWORD);
 });
 
-function repoWithUser() {
+function repoWithUser(emailVerifiedAt: Date | null = new Date(0)) {
   return createInMemoryAuthRepository({
-    authUsers: [{ id: 7, email: EMAIL, publicId: PUBLIC_ID, passwordHash }],
+    users: [{ id: USER_ID, email: EMAIL, passwordHash, emailVerifiedAt }],
   });
 }
 
@@ -44,14 +44,51 @@ describe("POST /auth/login", () => {
       maxAge: 2_592_000,
     });
 
-    expect(authRepository.sessions).toHaveLength(1);
-    expect(authRepository.sessions[0]).toMatchObject({
-      userId: 7,
+    const sessions = [...authRepository.sessions.values()];
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).toMatchObject({
+      userId: USER_ID,
       deviceLabel: "Mozilla/5.0",
       tokenHash: hashSessionToken(cookie?.value ?? ""),
     });
-    expect(authRepository.sessions[0]?.tokenHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(authRepository.sessions[0]?.tokenHash).not.toBe(cookie?.value);
+    expect(sessions[0]?.tokenHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(sessions[0]?.tokenHash).not.toBe(cookie?.value);
+    await app.close();
+  });
+
+  it("follows a configured session ttl in the cookie maxAge", async () => {
+    const app = buildApp(
+      makeAppOptions({
+        authRepository: repoWithUser(),
+        ttl: { sessionSeconds: 3600 },
+      }),
+    );
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: EMAIL, password: PASSWORD },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.cookies.find((c) => c.name === "session")?.maxAge).toBe(
+      3600,
+    );
+    await app.close();
+  });
+
+  it("returns the same generic 401 for an account whose email was never confirmed", async () => {
+    const authRepository = repoWithUser(null);
+    const app = buildApp(makeAppOptions({ authRepository }));
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: EMAIL, password: PASSWORD },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ message: "Invalid credentials." });
+    expect(response.cookies).toEqual([]);
+    expect(authRepository.sessions.size).toBe(0);
     await app.close();
   });
 
@@ -80,7 +117,7 @@ describe("POST /auth/login", () => {
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid credentials." });
-    expect(authRepository.sessions).toEqual([]);
+    expect(authRepository.sessions.size).toBe(0);
     await app.close();
   });
 

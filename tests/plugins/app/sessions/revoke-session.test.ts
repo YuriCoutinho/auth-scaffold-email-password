@@ -1,94 +1,89 @@
 import { describe, expect, it, vi } from "vitest";
 import { createRevokeSessionService } from "../../../../src/plugins/app/sessions/revoke-session.js";
+import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 
-const NOW = new Date("2026-02-01T00:00:00.000Z");
-const PUBLIC_ID = "33333333-3333-4333-8333-333333333333";
+const USER = "11111111-1111-4111-8111-111111111111";
+const SESSION = "33333333-3333-4333-8333-333333333333";
+
+function makeDeps(deleted: boolean) {
+  return {
+    repo: { deleteUserSession: vi.fn().mockResolvedValue({ deleted }) },
+    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  };
+}
 
 describe("revokeSession", () => {
-  it("asks the repository to revoke that session for that user", async () => {
-    const repo = {
-      revokeUserSessionByPublicId: vi.fn().mockResolvedValue({ revoked: true }),
-    };
-    const { revokeSession } = createRevokeSessionService({
-      repo,
-      now: () => NOW,
+  it("asks the repository to delete that session for that user", async () => {
+    const deps = makeDeps(true);
+
+    await createRevokeSessionService(deps).revokeSession({
+      userId: USER,
+      sessionId: SESSION,
     });
 
-    await revokeSession({ userId: 7, publicId: PUBLIC_ID });
-
-    expect(repo.revokeUserSessionByPublicId).toHaveBeenCalledWith({
-      publicId: PUBLIC_ID,
-      userId: 7,
-      revokedAt: NOW,
-      revokedReason: "session_revoked",
-      now: NOW,
+    expect(deps.repo.deleteUserSession).toHaveBeenCalledWith({
+      id: SESSION,
+      userId: USER,
     });
   });
 
   it("logs the revocation with the user and the session, and never a token", async () => {
-    const repo = {
-      revokeUserSessionByPublicId: vi.fn().mockResolvedValue({ revoked: true }),
-    };
-    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    const { revokeSession } = createRevokeSessionService({
-      repo,
-      log,
-      now: () => NOW,
+    const deps = makeDeps(true);
+
+    await createRevokeSessionService(deps).revokeSession({
+      userId: USER,
+      sessionId: SESSION,
     });
 
-    await revokeSession({ userId: 7, publicId: PUBLIC_ID });
-
-    expect(log.info).toHaveBeenCalledWith(
-      { userId: 7, sessionPublicId: PUBLIC_ID },
+    expect(deps.log.info).toHaveBeenCalledWith(
+      { userId: USER, sessionId: SESSION },
       "session revoked",
     );
   });
 
-  it("stays silent when nothing was revoked", async () => {
-    const repo = {
-      revokeUserSessionByPublicId: vi
-        .fn()
-        .mockResolvedValue({ revoked: false }),
-    };
-    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    const { revokeSession } = createRevokeSessionService({
-      repo,
-      log,
-      now: () => NOW,
-    });
+  it("stays silent and resolves the same way when nothing was deleted", async () => {
+    const deps = makeDeps(false);
 
-    await revokeSession({ userId: 7, publicId: PUBLIC_ID });
+    await expect(
+      createRevokeSessionService(deps).revokeSession({
+        userId: USER,
+        sessionId: SESSION,
+      }),
+    ).resolves.toBeUndefined();
 
-    expect(log.info).not.toHaveBeenCalled();
+    expect(deps.log.info).not.toHaveBeenCalled();
   });
 
-  it("resolves the same way whether it revoked or not", async () => {
-    const repo = {
-      revokeUserSessionByPublicId: vi
-        .fn()
-        .mockResolvedValue({ revoked: false }),
-    };
-    const { revokeSession } = createRevokeSessionService({
-      repo,
-      now: () => NOW,
+  it("revokes an expired session the sweep has not removed yet, harmlessly", async () => {
+    const repo = createInMemoryAuthRepository({
+      sessions: [
+        {
+          id: SESSION,
+          userId: USER,
+          tokenHash: "expired",
+          createdAt: new Date(0),
+        },
+      ],
     });
 
     await expect(
-      revokeSession({ userId: 7, publicId: PUBLIC_ID }),
+      createRevokeSessionService({ repo }).revokeSession({
+        userId: USER,
+        sessionId: SESSION,
+      }),
     ).resolves.toBeUndefined();
+
+    expect(repo.sessions.size).toBe(0);
   });
 
   it("works without a logger", async () => {
-    const repo = {
-      revokeUserSessionByPublicId: vi.fn().mockResolvedValue({ revoked: true }),
-    };
-    const { revokeSession } = createRevokeSessionService({
-      repo,
-      now: () => NOW,
-    });
+    const { log: _log, ...deps } = makeDeps(true);
 
     await expect(
-      revokeSession({ userId: 7, publicId: PUBLIC_ID }),
+      createRevokeSessionService(deps).revokeSession({
+        userId: USER,
+        sessionId: SESSION,
+      }),
     ).resolves.toBeUndefined();
   });
 });

@@ -1,11 +1,34 @@
 import type { FastifyInstance, RouteHandlerMethod } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../../src/app.js";
+import { cookiePolicy } from "../../../src/lib/cookies.js";
 import { hashSessionToken } from "../../../src/lib/token-hash.js";
+import { DEFAULT_TTL } from "../../../src/lib/ttl.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
 
 const TOKEN = "a-session-token";
+const USER_ID = "11111111-1111-4111-8111-111111111111";
+const SESSION_ID = "22222222-2222-4222-8222-222222222222";
+const SESSION_COOKIE = cookiePolicy(DEFAULT_TTL).session.name;
+
+function secondsAgo(seconds: number) {
+  return new Date(Date.now() - seconds * 1000);
+}
+
+function repositoryWithSession(createdAt: Date) {
+  return createInMemoryAuthRepository({
+    users: [{ id: USER_ID, email: "a@b.com" }],
+    sessions: [
+      {
+        id: SESSION_ID,
+        userId: USER_ID,
+        tokenHash: hashSessionToken(TOKEN),
+        createdAt,
+      },
+    ],
+  });
+}
 
 // The route has to be registered after the app plugin, so that the hook
 // decorator already exists when the route options are built.
@@ -25,18 +48,10 @@ function protectedRoute(
 }
 
 describe("authenticate hook", () => {
-  it("lets a request with an active session through and exposes the user id", async () => {
-    const authRepository = createInMemoryAuthRepository({
-      authUsers: [{ id: 7, email: "a@b.com" }],
-      sessions: [
-        {
-          userId: 7,
-          tokenHash: hashSessionToken(TOKEN),
-          expiresAt: new Date(Date.now() + 60_000),
-        },
-      ],
-    });
-    const app = buildApp(makeAppOptions({ authRepository }));
+  it("lets a request with a live session through and exposes the user and session ids", async () => {
+    const app = buildApp(
+      makeAppOptions({ authRepository: repositoryWithSession(secondsAgo(60)) }),
+    );
     const seen = vi.fn();
     protectedRoute(app, "GET", async (request) => {
       seen({ user: request.user, session: request.session });
@@ -46,13 +61,13 @@ describe("authenticate hook", () => {
     const response = await app.inject({
       method: "GET",
       url: "/protected",
-      cookies: { session: TOKEN },
+      cookies: { [SESSION_COOKIE]: TOKEN },
     });
 
     expect(response.statusCode).toBe(200);
     expect(seen).toHaveBeenCalledWith({
-      user: { id: 7 },
-      session: { id: 1 },
+      user: { id: USER_ID },
+      session: { id: SESSION_ID },
     });
     await app.close();
   });
@@ -76,41 +91,31 @@ describe("authenticate hook", () => {
   const REFUSALS: Array<{
     name: string;
     cookie?: string;
-    session?: { expiresAt: Date; revokedAt?: Date };
+    createdAt?: Date;
   }> = [
     { name: "the cookie is missing" },
     { name: "the token is unknown", cookie: "not-a-real-token" },
     {
-      name: "the session is expired",
+      name: "the session is past its ttl",
       cookie: TOKEN,
-      session: { expiresAt: new Date(Date.now() - 60_000) },
-    },
-    {
-      name: "the session is revoked",
-      cookie: TOKEN,
-      session: {
-        expiresAt: new Date(Date.now() + 60_000),
-        revokedAt: new Date(),
-      },
+      createdAt: secondsAgo(DEFAULT_TTL.sessionSeconds + 60),
     },
   ];
 
   it.each(REFUSALS)(
     "returns a generic 401 and never clears the session cookie when $name",
-    async ({ cookie, session }) => {
-      const authRepository = createInMemoryAuthRepository({
-        authUsers: [{ id: 7, email: "a@b.com" }],
-        sessions: session
-          ? [{ userId: 7, tokenHash: hashSessionToken(TOKEN), ...session }]
-          : [],
-      });
-      const app = buildApp(makeAppOptions({ authRepository }));
+    async ({ cookie, createdAt }) => {
+      const app = buildApp(
+        makeAppOptions({
+          authRepository: repositoryWithSession(createdAt ?? secondsAgo(60)),
+        }),
+      );
       protectedRoute(app, "GET", async () => ({ ok: true }));
 
       const response = await app.inject({
         method: "GET",
         url: "/protected",
-        ...(cookie ? { cookies: { session: cookie } } : {}),
+        ...(cookie ? { cookies: { [SESSION_COOKIE]: cookie } } : {}),
       });
 
       expect(response.statusCode).toBe(401);
@@ -119,6 +124,41 @@ describe("authenticate hook", () => {
       await app.close();
     },
   );
+
+  it("refuses a session whose row was deleted, as after a logout", async () => {
+    const authRepository = repositoryWithSession(secondsAgo(60));
+    await authRepository.deleteSessionByTokenHash(hashSessionToken(TOKEN));
+    const app = buildApp(makeAppOptions({ authRepository }));
+    protectedRoute(app, "GET", async () => ({ ok: true }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/protected",
+      cookies: { [SESSION_COOKIE]: TOKEN },
+    });
+
+    expect(response.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it("judges expiry by the ttl passed to buildApp", async () => {
+    const app = buildApp(
+      makeAppOptions({
+        authRepository: repositoryWithSession(secondsAgo(120)),
+        ttl: { sessionSeconds: 60 },
+      }),
+    );
+    protectedRoute(app, "GET", async () => ({ ok: true }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/protected",
+      cookies: { [SESSION_COOKIE]: TOKEN },
+    });
+
+    expect(response.statusCode).toBe(401);
+    await app.close();
+  });
 
   it("rejects before parsing the body of an unauthenticated request", async () => {
     const app = buildApp(makeAppOptions());

@@ -1,8 +1,9 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import type { AppOptions } from "../../app-options.js";
-import { SESSION_COOKIE } from "../../lib/cookies.js";
+import { cookiePolicy } from "../../lib/cookies.js";
 import { deviceLabelFromUserAgent } from "../../lib/device-label.js";
 import { rateLimitFor } from "../../lib/rate-limit.js";
+import { resolveTtl } from "../../lib/ttl.js";
 import {
   loginBodySchema,
   messageSchema,
@@ -10,6 +11,7 @@ import {
 } from "../../schemas/auth.js";
 
 const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
+  const cookies = cookiePolicy(resolveTtl(opts.ttl));
   app.post(
     "/login",
     {
@@ -55,9 +57,9 @@ const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
       }
 
       reply.setCookie(
-        SESSION_COOKIE.name,
+        cookies.session.name,
         result.sessionToken,
-        SESSION_COOKIE.options,
+        cookies.session.options,
       );
       return reply.code(204).send();
     },

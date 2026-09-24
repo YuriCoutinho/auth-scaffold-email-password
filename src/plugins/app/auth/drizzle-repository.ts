@@ -1,326 +1,236 @@
-import { and, eq, sql } from "drizzle-orm";
-import {
-  authUsers,
-  passwordResets,
-  pendingSignups,
-  profiles,
-} from "../../../db/schema.js";
+import { and, eq, isNull, sql, TransactionRollbackError } from "drizzle-orm";
+import { users, verificationCodes } from "../../../db/schema.js";
 import {
   createDrizzleSessionRepository,
   type DatabaseOrTransaction,
 } from "../sessions/drizzle-repository.js";
 import type {
   AuthRepository,
-  ChangeUserPasswordInput,
-  PasswordResetSendState,
-  PendingSignupResendState,
-  PromotePendingSignupInput,
-  ResetUserPasswordInput,
-  UpsertPasswordResetInput,
-  UpsertPendingSignupInput,
+  ConsumeVerificationCodeInput,
+  VerificationCodeKey,
+  VerificationPurpose,
 } from "./repository.js";
 
-const pendingSignupColumns = {
-  id: pendingSignups.id,
-  email: pendingSignups.email,
-  passwordHash: pendingSignups.passwordHash,
-  codeHash: pendingSignups.codeHash,
-  signupSessionToken: pendingSignups.signupSessionToken,
-  codeAttempts: pendingSignups.codeAttempts,
-  lastSentAt: pendingSignups.lastSentAt,
-  codeSendCount: pendingSignups.codeSendCount,
-  expiresAt: pendingSignups.expiresAt,
+const userColumns = {
+  id: users.id,
+  email: users.email,
+  passwordHash: users.passwordHash,
+  emailVerifiedAt: users.emailVerifiedAt,
 };
 
-const passwordResetColumns = {
-  id: passwordResets.id,
-  userId: passwordResets.userId,
-  email: authUsers.email,
-  passwordHash: authUsers.passwordHash,
-  codeHash: passwordResets.codeHash,
-  resetSessionToken: passwordResets.resetSessionToken,
-  codeAttempts: passwordResets.codeAttempts,
-  lastSentAt: passwordResets.lastSentAt,
-  codeSendCount: passwordResets.codeSendCount,
-  expiresAt: passwordResets.expiresAt,
+const verificationCodeColumns = {
+  userId: verificationCodes.userId,
+  purpose: verificationCodes.purpose,
+  tokenHash: verificationCodes.tokenHash,
+  codeHash: verificationCodes.codeHash,
+  codeAttempts: verificationCodes.codeAttempts,
+  codeSendCount: verificationCodes.codeSendCount,
+  issuedAt: verificationCodes.issuedAt,
+  email: users.email,
+  passwordHash: users.passwordHash,
 };
+
+function byKey(key: VerificationCodeKey) {
+  return and(
+    eq(verificationCodes.userId, key.userId),
+    eq(verificationCodes.purpose, key.purpose),
+  );
+}
+
+// Consumption matches the token and the code the caller read, so a code
+// rotated or reissued in between matches no row and the caller learns it lost.
+async function consumeCode(
+  tx: DatabaseOrTransaction,
+  purpose: VerificationPurpose,
+  input: ConsumeVerificationCodeInput,
+): Promise<boolean> {
+  const consumed = await tx
+    .delete(verificationCodes)
+    .where(
+      and(
+        byKey({ userId: input.userId, purpose }),
+        eq(verificationCodes.tokenHash, input.tokenHash),
+        eq(verificationCodes.codeHash, input.codeHash),
+      ),
+    )
+    .returning({ userId: verificationCodes.userId });
+  return consumed.length > 0;
+}
 
 export function createDrizzleAuthRepository(
   db: DatabaseOrTransaction,
 ): AuthRepository {
   return {
-    async findAuthUserByEmail(email) {
+    async findUserByEmail(email) {
       const rows = await db
-        .select({
-          id: authUsers.id,
-          publicId: authUsers.publicId,
-          passwordHash: authUsers.passwordHash,
-        })
-        .from(authUsers)
-        .where(eq(authUsers.email, email))
+        .select(userColumns)
+        .from(users)
+        .where(eq(users.email, email))
         .limit(1);
       return rows[0];
     },
 
-    async findPendingSignupByEmail(email) {
+    async findUserById(id) {
       const rows = await db
-        .select(pendingSignupColumns)
-        .from(pendingSignups)
-        .where(eq(pendingSignups.email, email))
+        .select(userColumns)
+        .from(users)
+        .where(eq(users.id, id))
         .limit(1);
       return rows[0];
     },
 
-    // Atomic replace: defaults only fire on real inserts, so the update
-    // clause must renew createdAt/lastSentAt/codeSendCount explicitly.
-    async upsertPendingSignup(input: UpsertPendingSignupInput) {
-      const rows = await db
-        .insert(pendingSignups)
-        .values({
-          email: input.email,
-          passwordHash: input.passwordHash,
-          codeHash: input.codeHash,
-          signupSessionToken: input.signupSessionToken,
-          expiresAt: input.expiresAt,
-        })
-        .onConflictDoUpdate({
-          target: pendingSignups.email,
-          set: {
-            passwordHash: input.passwordHash,
-            codeHash: input.codeHash,
-            signupSessionToken: input.signupSessionToken,
-            expiresAt: input.expiresAt,
-            codeAttempts: 0,
-            createdAt: input.now,
-            lastSentAt: input.now,
-            codeSendCount: 1,
-          },
-        })
-        .returning({ id: pendingSignups.id });
-      return rows[0] as { id: number };
-    },
-
-    async markPendingSignupUndelivered(email) {
-      await db
-        .update(pendingSignups)
-        .set({ codeSendCount: 0 })
-        .where(eq(pendingSignups.email, email));
-    },
-
-    async findPendingSignupBySessionToken(token) {
-      const rows = await db
-        .select(pendingSignupColumns)
-        .from(pendingSignups)
-        .where(eq(pendingSignups.signupSessionToken, token))
-        .limit(1);
-      return rows[0];
-    },
-
-    // Also used to restore the previous state when delivery fails.
-    async updatePendingSignupResendState(
-      token,
-      state: PendingSignupResendState,
-    ) {
-      await db
-        .update(pendingSignups)
-        .set(state)
-        .where(eq(pendingSignups.signupSessionToken, token));
-    },
-
-    async rotatePendingSignupToken(email, nextToken) {
-      await db
-        .update(pendingSignups)
-        .set({ signupSessionToken: nextToken })
-        .where(eq(pendingSignups.email, email));
-    },
-
-    async incrementCodeAttempts(signupSessionToken) {
-      await db
-        .update(pendingSignups)
-        .set({ codeAttempts: sql`${pendingSignups.codeAttempts} + 1` })
-        .where(eq(pendingSignups.signupSessionToken, signupSessionToken));
-    },
-
-    // All-or-nothing promotion: if anything fails, the pending signup (and its
-    // still-valid code) survives for a retry.
-    async promotePendingSignup(input: PromotePendingSignupInput) {
+    async startSignup(user, code) {
       return await db.transaction(async (tx) => {
-        // Deleting first makes the pending row the serialization point. The
-        // caller read it outside this transaction, so two requests carrying
-        // the same code both get here; the second one blocks on this delete
-        // and then matches no row, instead of reaching the insert below and
-        // hitting the unique violation on email.
-        //
-        // Keyed by email, which is unique and never changes. The signup
-        // session token rotates on every request, so a delete keyed by the
-        // token the caller read could match zero rows and leave the pending
-        // row orphaned.
-        const consumed = await tx
-          .delete(pendingSignups)
-          .where(eq(pendingSignups.email, input.email))
-          .returning({ id: pendingSignups.id });
-        if (consumed.length === 0) {
+        // The WHERE on the conflict branch is what keeps a confirmed account
+        // out of reach: its row is left alone and RETURNING comes back empty.
+        const upserted = await tx
+          .insert(users)
+          .values(user)
+          .onConflictDoUpdate({
+            target: users.email,
+            set: { passwordHash: user.passwordHash },
+            setWhere: isNull(users.emailVerifiedAt),
+          })
+          .returning({ id: users.id });
+        const userId = upserted[0]?.id;
+        if (!userId) {
           return null;
         }
-        const users = await tx
-          .insert(authUsers)
-          .values({
-            publicId: input.publicId,
-            email: input.email,
-            passwordHash: input.passwordHash,
-          })
-          .returning({ id: authUsers.id });
-        const user = users[0] as { id: number };
-        await createDrizzleSessionRepository(tx).createSession({
-          publicId: input.sessionPublicId,
-          userId: user.id,
-          tokenHash: input.sessionTokenHash,
-          deviceLabel: input.deviceLabel,
-          expiresAt: input.sessionExpiresAt,
-        });
-        await tx.insert(profiles).values({ userId: user.id });
-        return user;
+        const values = { userId, purpose: "signup" as const, ...code };
+        await tx
+          .insert(verificationCodes)
+          .values(values)
+          .onConflictDoUpdate({
+            target: [verificationCodes.userId, verificationCodes.purpose],
+            set: code,
+          });
+        return { userId };
       });
     },
 
-    async findAuthUserById(id) {
+    async findVerificationCode(key) {
       const rows = await db
-        .select({ publicId: authUsers.publicId, email: authUsers.email })
-        .from(authUsers)
-        .where(eq(authUsers.id, id))
+        .select(verificationCodeColumns)
+        .from(verificationCodes)
+        .innerJoin(users, eq(users.id, verificationCodes.userId))
+        .where(byKey(key))
         .limit(1);
       return rows[0];
     },
 
-    async findAuthUserCredentialsById(id) {
+    async findVerificationCodeByTokenHash(purpose, tokenHash) {
       const rows = await db
-        .select({
-          id: authUsers.id,
-          email: authUsers.email,
-          passwordHash: authUsers.passwordHash,
-        })
-        .from(authUsers)
-        .where(eq(authUsers.id, id))
+        .select(verificationCodeColumns)
+        .from(verificationCodes)
+        .innerJoin(users, eq(users.id, verificationCodes.userId))
+        .where(
+          and(
+            eq(verificationCodes.tokenHash, tokenHash),
+            eq(verificationCodes.purpose, purpose),
+          ),
+        )
         .limit(1);
       return rows[0];
+    },
+
+    async saveVerificationCode(input) {
+      const { userId, purpose, ...state } = input;
+      await db
+        .insert(verificationCodes)
+        .values(input)
+        .onConflictDoUpdate({
+          target: [verificationCodes.userId, verificationCodes.purpose],
+          set: state,
+        });
+    },
+
+    async rotateVerificationToken(key, tokenHash) {
+      await db.update(verificationCodes).set({ tokenHash }).where(byKey(key));
+    },
+
+    async restoreVerificationCode(key, failedCodeHash, previous) {
+      await db
+        .update(verificationCodes)
+        .set(previous)
+        .where(and(byKey(key), eq(verificationCodes.codeHash, failedCodeHash)));
+    },
+
+    async incrementVerificationAttempts(key) {
+      await db
+        .update(verificationCodes)
+        .set({ codeAttempts: sql`${verificationCodes.codeAttempts} + 1` })
+        .where(byKey(key));
+    },
+
+    // All-or-nothing: if anything fails, the code survives for a retry.
+    async verifyEmail(input) {
+      return await db
+        .transaction(async (tx) => {
+          // Consuming first makes the code row the serialization point: a second
+          // request carrying the same code blocks on this delete and then
+          // matches nothing.
+          if (!(await consumeCode(tx, "signup", input))) {
+            return false;
+          }
+          const confirmed = await tx
+            .update(users)
+            .set({ emailVerifiedAt: input.verifiedAt })
+            .where(
+              and(eq(users.id, input.userId), isNull(users.emailVerifiedAt)),
+            )
+            .returning({ id: users.id });
+          if (confirmed.length === 0) {
+            // A leftover signup code of a confirmed account must never turn
+            // into a session without a password.
+            tx.rollback();
+          }
+          await createDrizzleSessionRepository(tx).createSession({
+            ...input.session,
+            userId: input.userId,
+          });
+          return true;
+        })
+        .catch((error: unknown) => {
+          if (error instanceof TransactionRollbackError) {
+            return false;
+          }
+          throw error;
+        });
     },
 
     // One transaction so the two writes cannot come apart: a new password with
     // the old sessions still alive is the exact state this flow prevents.
-    async changeUserPassword(input: ChangeUserPasswordInput) {
+    async changePassword(input) {
       await db.transaction(async (tx) => {
-        await createDrizzleSessionRepository(tx).revokeAllUserSessions({
+        await createDrizzleSessionRepository(tx).deleteUserSessions({
           userId: input.userId,
-          revokedAt: input.revokedAt,
-          revokedReason: input.revokedReason,
           exceptSessionId: input.exceptSessionId,
         });
         await tx
-          .update(authUsers)
+          .update(users)
           .set({ passwordHash: input.passwordHash })
-          .where(eq(authUsers.id, input.userId));
+          .where(eq(users.id, input.userId));
       });
     },
 
-    async findPasswordResetByUserId(userId) {
-      const rows = await db
-        .select(passwordResetColumns)
-        .from(passwordResets)
-        .innerJoin(authUsers, eq(authUsers.id, passwordResets.userId))
-        .where(eq(passwordResets.userId, userId))
-        .limit(1);
-      return rows[0];
-    },
-
-    // Atomic replace, same shape as upsertPendingSignup: defaults only fire on
-    // real inserts, so the update clause renews the counters explicitly.
-    async upsertPasswordReset(input: UpsertPasswordResetInput) {
-      const rows = await db
-        .insert(passwordResets)
-        .values({
-          userId: input.userId,
-          codeHash: input.codeHash,
-          resetSessionToken: input.resetSessionToken,
-          expiresAt: input.expiresAt,
-        })
-        .onConflictDoUpdate({
-          target: passwordResets.userId,
-          set: {
-            codeHash: input.codeHash,
-            resetSessionToken: input.resetSessionToken,
-            expiresAt: input.expiresAt,
-            codeAttempts: 0,
-            createdAt: input.now,
-            lastSentAt: input.now,
-            codeSendCount: 1,
-          },
-        })
-        .returning({ id: passwordResets.id });
-      return rows[0] as { id: number };
-    },
-
-    async findPasswordResetBySessionToken(token) {
-      const rows = await db
-        .select(passwordResetColumns)
-        .from(passwordResets)
-        .innerJoin(authUsers, eq(authUsers.id, passwordResets.userId))
-        .where(eq(passwordResets.resetSessionToken, token))
-        .limit(1);
-      return rows[0];
-    },
-
-    // The state carries the new token while the WHERE matches the row by user,
-    // which is what rotates the identifier in a single write that cannot miss.
-    async updatePasswordResetSendState(userId, state: PasswordResetSendState) {
-      await db
-        .update(passwordResets)
-        .set(state)
-        .where(eq(passwordResets.userId, userId));
-    },
-
-    async restorePasswordResetSendState(userId, state: PasswordResetSendState) {
-      await db
-        .update(passwordResets)
-        .set(state)
-        .where(
-          and(
-            eq(passwordResets.userId, userId),
-            eq(passwordResets.resetSessionToken, state.resetSessionToken),
-          ),
-        );
-    },
-
-    async incrementPasswordResetAttempts(token) {
-      await db
-        .update(passwordResets)
-        .set({ codeAttempts: sql`${passwordResets.codeAttempts} + 1` })
-        .where(eq(passwordResets.resetSessionToken, token));
-    },
-
-    // One transaction, and the revocation runs before the insert so the
+    // One transaction, and every session goes before the insert so the
     // session this flow opens is not caught by its own sweep.
-    async resetUserPassword(input: ResetUserPasswordInput) {
-      await db.transaction(async (tx) => {
+    async resetPassword(input) {
+      return await db.transaction(async (tx) => {
+        if (!(await consumeCode(tx, "password_reset", input))) {
+          return false;
+        }
         const sessionRepository = createDrizzleSessionRepository(tx);
-        await sessionRepository.revokeAllUserSessions({
-          userId: input.userId,
-          revokedAt: input.revokedAt,
-          revokedReason: input.revokedReason,
-        });
+        await sessionRepository.deleteUserSessions({ userId: input.userId });
         await tx
-          .update(authUsers)
+          .update(users)
           .set({ passwordHash: input.passwordHash })
-          .where(eq(authUsers.id, input.userId));
-        await tx
-          .delete(passwordResets)
-          .where(eq(passwordResets.resetSessionToken, input.resetSessionToken));
+          .where(eq(users.id, input.userId));
         await sessionRepository.createSession({
-          publicId: input.sessionPublicId,
+          ...input.session,
           userId: input.userId,
-          tokenHash: input.sessionTokenHash,
-          deviceLabel: input.deviceLabel,
-          expiresAt: input.sessionExpiresAt,
         });
+        return true;
       });
     },
   };

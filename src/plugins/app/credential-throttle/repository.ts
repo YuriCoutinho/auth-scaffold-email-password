@@ -1,14 +1,12 @@
 export interface ThrottleRecord {
   failedCount: number;
   lastFailedAt: Date;
-  blockedUntil: Date | null;
 }
 
 export interface ThrottleFailureInput {
   keyHash: string;
   failedCount: number;
   lastFailedAt: Date;
-  blockedUntil: Date | null;
 }
 
 export interface CredentialThrottleRepository {

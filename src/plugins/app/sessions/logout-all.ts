@@ -2,8 +2,8 @@ import type { FastifyBaseLogger } from "fastify";
 import type { SessionRepository } from "./repository.js";
 
 export interface LogoutAllInput {
-  userId: number;
-  currentSessionId: number;
+  userId: string;
+  currentSessionId: string;
 }
 
 export interface LogoutAllResult {
@@ -11,20 +11,15 @@ export interface LogoutAllResult {
 }
 
 interface LogoutAllServiceDeps {
-  repo: Pick<SessionRepository, "revokeAllUserSessions">;
+  repo: Pick<SessionRepository, "deleteUserSessions">;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
-  now?: () => Date;
 }
 
 export function createLogoutAllService(deps: LogoutAllServiceDeps) {
-  const now = deps.now ?? (() => new Date());
-
   return {
     async logoutAll(input: LogoutAllInput): Promise<LogoutAllResult> {
-      const { revokedCount } = await deps.repo.revokeAllUserSessions({
+      const { deletedCount } = await deps.repo.deleteUserSessions({
         userId: input.userId,
-        revokedAt: now(),
-        revokedReason: "logout_all",
         exceptSessionId: input.currentSessionId,
       });
 
@@ -32,11 +27,11 @@ export function createLogoutAllService(deps: LogoutAllServiceDeps) {
       // account was reached by someone else, so the event is worth a line even
       // though the request itself succeeded.
       deps.log?.info(
-        { userId: input.userId, revokedCount },
+        { userId: input.userId, revokedCount: deletedCount },
         "all sessions revoked",
       );
 
-      return { revokedCount };
+      return { revokedCount: deletedCount };
     },
   };
 }

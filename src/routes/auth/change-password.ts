@@ -18,11 +18,11 @@ const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
         summary: "Change the password of the signed-in user",
         description:
           "Replaces the password after confirming the current one, and " +
-          "revokes every other session of the user so a stolen cookie stops " +
+          "ends every other session of the user so a stolen cookie stops " +
           "working. The session behind this request is preserved, so the " +
           "caller stays signed in on this device. Requires a valid session, " +
           "so the response is 401 whenever the cookie is missing, unknown, " +
-          "revoked or expired. Repeated wrong current passwords are " +
+          "signed out or expired. Repeated wrong current passwords are " +
           "throttled, and the 429 carries Retry-After in seconds.",
         body: changePasswordBodySchema,
         response: {

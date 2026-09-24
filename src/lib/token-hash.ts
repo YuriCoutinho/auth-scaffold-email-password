@@ -22,3 +22,9 @@ export function hashSessionToken(token: string): string {
 export function hashThrottleKey(value: string): string {
   return sha256Hex(value);
 }
+
+// The verification token rides in a cookie like a session token, so it is
+// stored the same way: only its digest reaches the database.
+export function hashVerificationToken(token: string): string {
+  return sha256Hex(token);
+}

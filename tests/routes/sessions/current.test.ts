@@ -6,14 +6,20 @@ import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repos
 
 const TOKEN = "a-session-token";
 const OTHER_TOKEN = "another-session-token";
+const USER_ID = "77777777-7777-4777-8777-777777777777";
+const CURRENT_ID = "11111111-1111-4111-8111-111111111111";
+const OTHER_ID = "22222222-2222-4222-8222-222222222222";
 
 function repoWithTwoSessions() {
-  const expiresAt = new Date(Date.now() + 60_000);
   return createInMemoryAuthRepository({
-    authUsers: [{ id: 7, email: "foo@gmail.com" }],
+    users: [{ id: USER_ID, email: "foo@gmail.com" }],
     sessions: [
-      { id: 1, userId: 7, tokenHash: hashSessionToken(TOKEN), expiresAt },
-      { id: 2, userId: 7, tokenHash: hashSessionToken(OTHER_TOKEN), expiresAt },
+      { id: CURRENT_ID, userId: USER_ID, tokenHash: hashSessionToken(TOKEN) },
+      {
+        id: OTHER_ID,
+        userId: USER_ID,
+        tokenHash: hashSessionToken(OTHER_TOKEN),
+      },
     ],
   });
 }
@@ -25,7 +31,7 @@ function sessionCookie(response: { headers: Record<string, unknown> }) {
 }
 
 describe("DELETE /sessions/current", () => {
-  it("revokes the session of the cookie and answers 204", async () => {
+  it("deletes the session of the cookie and answers 204", async () => {
     const authRepository = repoWithTwoSessions();
     const app = buildApp(makeAppOptions({ authRepository }));
 
@@ -36,10 +42,7 @@ describe("DELETE /sessions/current", () => {
     });
 
     expect(response.statusCode).toBe(204);
-    expect(authRepository.sessions[0]).toMatchObject({
-      revokedReason: "user_logout",
-    });
-    expect(authRepository.sessions[0]?.revokedAt).toBeInstanceOf(Date);
+    expect(authRepository.sessions.has(CURRENT_ID)).toBe(false);
     await app.close();
   });
 
@@ -53,10 +56,28 @@ describe("DELETE /sessions/current", () => {
       cookies: { session: TOKEN },
     });
 
-    expect(authRepository.sessions[1]).toMatchObject({
-      revokedAt: null,
-      revokedReason: null,
+    expect([...authRepository.sessions.keys()]).toEqual([OTHER_ID]);
+    await app.close();
+  });
+
+  it("makes the cookie useless afterwards, so GET /me answers 401", async () => {
+    const app = buildApp(
+      makeAppOptions({ authRepository: repoWithTwoSessions() }),
+    );
+
+    await app.inject({
+      method: "DELETE",
+      url: "/sessions/current",
+      cookies: { session: TOKEN },
     });
+    const me = await app.inject({
+      method: "GET",
+      url: "/me",
+      cookies: { session: TOKEN },
+    });
+
+    expect(me.statusCode).toBe(401);
+    expect(me.json()).toEqual({ message: "Unauthorized." });
     await app.close();
   });
 
@@ -93,7 +114,7 @@ describe("DELETE /sessions/current", () => {
     await app.close();
   });
 
-  it("answers 204 for a session that was already revoked", async () => {
+  it("answers 204 for a session that was already signed out", async () => {
     const authRepository = repoWithTwoSessions();
     const app = buildApp(makeAppOptions({ authRepository }));
 
@@ -102,8 +123,6 @@ describe("DELETE /sessions/current", () => {
       url: "/sessions/current",
       cookies: { session: TOKEN },
     });
-    const first = authRepository.sessions[0]?.revokedAt;
-
     const response = await app.inject({
       method: "DELETE",
       url: "/sessions/current",
@@ -111,14 +130,13 @@ describe("DELETE /sessions/current", () => {
     });
 
     expect(response.statusCode).toBe(204);
-    expect(authRepository.sessions[0]?.revokedAt).toBe(first);
+    expect([...authRepository.sessions.keys()]).toEqual([OTHER_ID]);
     await app.close();
   });
 
-  it("answers 204 for an unknown token", async () => {
-    const app = buildApp(
-      makeAppOptions({ authRepository: repoWithTwoSessions() }),
-    );
+  it("answers 204 for an unknown token without deleting anything", async () => {
+    const authRepository = repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ authRepository }));
 
     const response = await app.inject({
       method: "DELETE",
@@ -127,6 +145,7 @@ describe("DELETE /sessions/current", () => {
     });
 
     expect(response.statusCode).toBe(204);
+    expect(authRepository.sessions.size).toBe(2);
     await app.close();
   });
 

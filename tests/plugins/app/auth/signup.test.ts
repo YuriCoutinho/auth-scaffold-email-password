@@ -1,278 +1,260 @@
-import { describe, expect, it, vi } from "vitest";
-import { verifyPassword } from "../../../../src/lib/password.js";
-import { SIGNUP_TTL_SECONDS } from "../../../../src/lib/session.js";
-import { hashOtpCode } from "../../../../src/lib/token-hash.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  hashOtpCode,
+  hashVerificationToken,
+} from "../../../../src/lib/token-hash.js";
+import { DEFAULT_TTL } from "../../../../src/lib/ttl.js";
 import { createSignupService } from "../../../../src/plugins/app/auth/signup.js";
+import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
+import { createVerifyCodeService } from "../../../../src/plugins/app/auth/verify-code.js";
 import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
-import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
+import {
+  createInMemoryAuthRepository,
+  type InMemorySeed,
+} from "../../../helpers/auth/in-memory-repository.js";
 
-const NOW = new Date("2026-09-20T12:00:00Z");
+// A spy over the real implementation: every test still hashes for real, and
+// the timing cases can assert argon2 ran on each branch.
+vi.mock("../../../../src/lib/password.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../../src/lib/password.js")>();
+  return { ...actual, hashPassword: vi.fn(actual.hashPassword) };
+});
+const { hashPassword, verifyPassword } = await import(
+  "../../../../src/lib/password.js"
+);
+const hashPasswordMock = vi.mocked(hashPassword);
+
+const NOW = new Date("2026-09-24T12:00:00Z");
+const EMAIL = "user@example.com";
 const PASSWORD = "a perfectly fine passphrase";
+const OTHER_PASSWORD = "another perfectly fine passphrase";
+const USER_ID = "11111111-1111-4111-8111-111111111111";
 
-function makeDeps() {
-  return {
-    repo: {
-      findAuthUserByEmail: vi.fn().mockResolvedValue(undefined),
-      findPendingSignupByEmail: vi.fn().mockResolvedValue(undefined),
-      upsertPendingSignup: vi.fn().mockResolvedValue({ id: 1 }),
-      markPendingSignupUndelivered: vi.fn().mockResolvedValue(undefined),
-      rotatePendingSignupToken: vi.fn().mockResolvedValue(undefined),
-    },
-    emailSender: {
-      send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
-    },
-    checkPwnedPassword: vi.fn().mockResolvedValue(false),
-    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+beforeEach(() => {
+  hashPasswordMock.mockClear();
+});
+
+function setup(seed: InMemorySeed = {}) {
+  const repo = createInMemoryAuthRepository(seed);
+  const emailSender = new FakeEmailSender();
+  const send = vi.spyOn(emailSender, "send");
+  const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const checkPwnedPassword = vi.fn().mockResolvedValue(false);
+  const codes = createVerificationCodes({
+    repo,
+    emailSender,
+    ttl: DEFAULT_TTL,
+    log,
     now: () => NOW,
+  });
+  const { signup } = createSignupService({
+    repo,
+    codes,
+    checkPwnedPassword,
+    log,
+    now: () => NOW,
+  });
+  const { verifyCode } = createVerifyCodeService({
+    repo,
+    codes,
+    now: () => NOW,
+  });
+  return {
+    repo,
+    emailSender,
+    send,
+    log,
+    checkPwnedPassword,
+    signup,
+    verifyCode,
   };
 }
 
+async function acceptedToken(
+  result: Awaited<ReturnType<ReturnType<typeof setup>["signup"]>>,
+) {
+  expect(result.outcome).toBe("accepted");
+  return result.outcome === "accepted" ? result.sessionToken : "";
+}
+
+const userByEmail = (repo: ReturnType<typeof setup>["repo"], email: string) =>
+  [...repo.users.values()].find((user) => user.email === email);
+
 describe("signup service", () => {
-  it("rejects pwned passwords without touching the database", async () => {
-    const deps = makeDeps();
-    deps.checkPwnedPassword.mockResolvedValue(true);
-    const result = await createSignupService(deps).signup(
-      "user@example.com",
-      PASSWORD,
+  it("rejects a pwned password without writing or hashing anything", async () => {
+    const { repo, send, checkPwnedPassword, signup } = setup();
+    checkPwnedPassword.mockResolvedValue(true);
+
+    expect(await signup(EMAIL, PASSWORD)).toEqual({
+      outcome: "pwned-password",
+    });
+    expect(repo.users.size).toBe(0);
+    expect(repo.verificationCodes.size).toBe(0);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("creates an unconfirmed account with the hashed password and emails its code", async () => {
+    const { repo, emailSender, signup } = setup();
+
+    const token = await acceptedToken(await signup(EMAIL, PASSWORD));
+
+    const user = userByEmail(repo, EMAIL);
+    expect(user?.emailVerifiedAt).toBeNull();
+    expect(user?.createdAt).toEqual(NOW);
+    expect(user?.passwordHash).not.toContain(PASSWORD);
+    expect(await verifyPassword(user?.passwordHash ?? "", PASSWORD)).toBe(true);
+
+    const code = await repo.findVerificationCodeByTokenHash(
+      "signup",
+      hashVerificationToken(token),
     );
-    expect(result).toEqual({ outcome: "pwned-password" });
-    expect(deps.repo.findAuthUserByEmail).not.toHaveBeenCalled();
-    expect(deps.repo.upsertPendingSignup).not.toHaveBeenCalled();
-    expect(deps.emailSender.send).not.toHaveBeenCalled();
+    expect(code).toMatchObject({ userId: user?.id, codeSendCount: 1 });
+    await vi.waitFor(() => expect(emailSender.sent).toHaveLength(1));
+    expect(emailSender.sent[0]?.to).toBe(EMAIL);
+    const sentCode = emailSender.sent[0]?.subject.match(/\d{6}/)?.[0] ?? "";
+    expect(code?.codeHash).toBe(hashOtpCode(sentCode));
   });
 
   it("normalizes the email before any lookup or write", async () => {
-    const deps = makeDeps();
-    await createSignupService(deps).signup("  Foo@Gmail.COM ", PASSWORD);
-    expect(deps.repo.findAuthUserByEmail).toHaveBeenCalledWith("foo@gmail.com");
-    expect(deps.repo.upsertPendingSignup).toHaveBeenCalledWith(
-      expect.objectContaining({ email: "foo@gmail.com" }),
-    );
+    const { repo, signup } = setup();
+
+    await signup("  User@Example.COM ", PASSWORD);
+
+    expect(userByEmail(repo, EMAIL)).toBeDefined();
+    expect(repo.users.size).toBe(1);
   });
 
-  it("returns generic success without creating anything when the account is already confirmed", async () => {
-    const deps = makeDeps();
-    deps.repo.findAuthUserByEmail.mockResolvedValue({ id: 1 });
-    const result = await createSignupService(deps).signup(
-      "user@example.com",
-      PASSWORD,
-    );
-    expect(result.outcome).toBe("accepted");
-    if (result.outcome === "accepted") {
-      expect(result.sessionToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    }
-    expect(deps.repo.upsertPendingSignup).not.toHaveBeenCalled();
-    expect(deps.emailSender.send).not.toHaveBeenCalled();
+  it.each([
+    { name: "a new address", seed: {} },
+    {
+      name: "a pending address",
+      seed: { users: [{ id: USER_ID, email: EMAIL, emailVerifiedAt: null }] },
+    },
+    {
+      name: "a confirmed address",
+      seed: { users: [{ id: USER_ID, email: EMAIL }] },
+    },
+  ])("runs argon2 exactly once for $name", async ({ seed }) => {
+    const { signup } = setup(seed);
+
+    await signup(EMAIL, PASSWORD);
+
+    expect(hashPasswordMock).toHaveBeenCalledOnce();
+    expect(hashPasswordMock).toHaveBeenCalledWith(PASSWORD);
   });
 
-  it("rotates the token and creates nothing while a non-expired pending signup exists", async () => {
-    const deps = makeDeps();
-    deps.repo.findPendingSignupByEmail.mockResolvedValue({
-      signupSessionToken: "stored-token",
-      expiresAt: new Date(NOW.getTime() + 60_000),
-    });
-    const result = await createSignupService(deps).signup(
-      "user@example.com",
-      PASSWORD,
-    );
-    expect(result.outcome).toBe("accepted");
-    if (result.outcome !== "accepted") return;
-    expect(result.sessionToken).not.toBe("stored-token");
-    expect(deps.repo.rotatePendingSignupToken).toHaveBeenCalledWith(
-      "user@example.com",
-      result.sessionToken,
-    );
-    expect(deps.repo.upsertPendingSignup).not.toHaveBeenCalled();
-    expect(deps.emailSender.send).not.toHaveBeenCalled();
-  });
-
-  it("creates a pending signup with hashed password and code, then delivers the code", async () => {
-    const deps = makeDeps();
-    const result = await createSignupService(deps).signup(
-      "foo@gmail.com",
-      PASSWORD,
-    );
-
-    expect(deps.repo.upsertPendingSignup).toHaveBeenCalledOnce();
-    const row = deps.repo.upsertPendingSignup.mock.calls[0]?.[0];
-    expect(deps.emailSender.send).toHaveBeenCalledOnce();
-    const message = deps.emailSender.send.mock.calls[0]?.[0];
-
-    expect(message.to).toBe("foo@gmail.com");
-    const code = message.subject.match(/\d{6}/)?.[0] ?? "";
-    expect(code).toMatch(/^\d{6}$/);
-    expect(row.codeHash).toBe(hashOtpCode(code));
-    expect(message.html).toContain(code);
-    expect(message.text).toContain(code);
-    expect(row.passwordHash).not.toContain(PASSWORD);
-    expect(await verifyPassword(row.passwordHash, PASSWORD)).toBe(true);
-    expect(row.expiresAt).toEqual(
-      new Date(NOW.getTime() + SIGNUP_TTL_SECONDS * 1000),
-    );
-    expect(row.now).toEqual(NOW);
-    expect(result).toEqual({
-      outcome: "accepted",
-      sessionToken: row.signupSessionToken,
-    });
-  });
-
-  it("replaces an expired pending signup", async () => {
-    const deps = makeDeps();
-    deps.repo.findPendingSignupByEmail.mockResolvedValue({
-      signupSessionToken: "old-token",
-      expiresAt: new Date(NOW.getTime() - 1000),
-    });
-    const result = await createSignupService(deps).signup(
-      "user@example.com",
-      PASSWORD,
-    );
-    expect(deps.repo.upsertPendingSignup).toHaveBeenCalledOnce();
-    expect(deps.emailSender.send).toHaveBeenCalledOnce();
-    if (result.outcome === "accepted") {
-      expect(result.sessionToken).not.toBe("old-token");
-    }
-  });
-
-  it("persists before delivering the email", async () => {
-    const deps = makeDeps();
-    await createSignupService(deps).signup("user@example.com", PASSWORD);
-    const upsertOrder =
-      deps.repo.upsertPendingSignup.mock.invocationCallOrder[0];
-    const emailOrder =
-      deps.emailSender.send.mock.invocationCallOrder[0] ?? Number.NaN;
-    expect(upsertOrder).toBeLessThan(emailOrder);
-  });
-
-  it("still accepts the signup when delivery fails, and refunds the send", async () => {
-    const deps = makeDeps();
-    deps.emailSender.send.mockRejectedValueOnce(new Error("smtp down"));
-
-    const result = await createSignupService(deps).signup(
-      "foo@gmail.com",
-      PASSWORD,
-    );
-
-    expect(result).toMatchObject({ outcome: "accepted" });
-    await vi.waitFor(() =>
-      expect(deps.repo.markPendingSignupUndelivered).toHaveBeenCalledWith(
-        "foo@gmail.com",
-      ),
-    );
-  });
-
-  it("still accepts the signup when the mark itself fails", async () => {
-    const deps = makeDeps();
-    deps.emailSender.send.mockRejectedValueOnce(new Error("smtp down"));
-    deps.repo.markPendingSignupUndelivered.mockRejectedValueOnce(
-      new Error("db down"),
-    );
-
-    await expect(
-      createSignupService(deps).signup("foo@gmail.com", PASSWORD),
-    ).resolves.toMatchObject({ outcome: "accepted" });
-    // Waiting for the continuation is what proves the rejected mark is caught:
-    // an uncaught one fails the run instead of passing unnoticed.
-    await vi.waitFor(() =>
-      expect(deps.repo.markPendingSignupUndelivered).toHaveBeenCalled(),
-    );
-  });
-
-  it("does not wait for the provider before returning", async () => {
-    const deps = makeDeps();
-    let release: () => void = () => {};
-    deps.emailSender.send.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          release = () => resolve({ providerMessageId: "late" });
-        }),
-    );
-
-    await expect(
-      createSignupService(deps).signup("new@example.com", PASSWORD),
-    ).resolves.toMatchObject({ outcome: "accepted" });
-    release();
-  });
-
-  it("hands out a different token on every call for a live pending signup", async () => {
-    const repo = createInMemoryAuthRepository();
-    const emailSender = new FakeEmailSender();
-    const { signup } = createSignupService({
-      repo,
-      emailSender,
-      checkPwnedPassword: vi.fn().mockResolvedValue(false),
+  it("returns a throwaway token and writes nothing for a confirmed address", async () => {
+    const { repo, send, signup } = setup({
+      users: [{ id: USER_ID, email: EMAIL, passwordHash: "owner-hash" }],
     });
 
-    const first = await signup("new@example.com", "a-valid-long-passphrase");
-    const second = await signup("new@example.com", "a-valid-long-passphrase");
+    const first = await acceptedToken(await signup(EMAIL, PASSWORD));
+    const second = await acceptedToken(await signup(EMAIL, PASSWORD));
 
-    expect(first.outcome).toBe("accepted");
-    expect(second.outcome).toBe("accepted");
-    if (first.outcome !== "accepted" || second.outcome !== "accepted") return;
-    expect(second.sessionToken).not.toBe(first.sessionToken);
-    // The second call is not a resend: no new code, no second email.
+    expect(first).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(second).not.toBe(first);
+    expect(repo.users.get(USER_ID)).toMatchObject({
+      passwordHash: "owner-hash",
+      emailVerifiedAt: new Date(0),
+    });
+    expect(repo.verificationCodes.size).toBe(0);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("lets the latest signup win: the password is replaced and the old token no longer confirms", async () => {
+    const { repo, emailSender, signup, verifyCode } = setup();
+
+    const attackerToken = await acceptedToken(await signup(EMAIL, PASSWORD));
     await vi.waitFor(() => expect(emailSender.sent).toHaveLength(1));
+    const code = emailSender.sent[0]?.subject.match(/\d{6}/)?.[0] ?? "";
+    const ownerToken = await acceptedToken(await signup(EMAIL, OTHER_PASSWORD));
+
+    const user = userByEmail(repo, EMAIL);
+    expect(await verifyPassword(user?.passwordHash ?? "", OTHER_PASSWORD)).toBe(
+      true,
+    );
+    expect(await verifyPassword(user?.passwordHash ?? "", PASSWORD)).toBe(
+      false,
+    );
+    expect(repo.users.size).toBe(1);
+
+    expect(await verifyCode(attackerToken, code, null)).toEqual({
+      outcome: "invalid",
+    });
+    expect(userByEmail(repo, EMAIL)?.emailVerifiedAt).toBeNull();
+    expect(await verifyCode(ownerToken, code, null)).toMatchObject({
+      outcome: "verified",
+    });
   });
 
-  it("changes nothing but the token when it rotates", async () => {
+  it("does not send a second code for a signup repeated inside the cooldown", async () => {
+    const { emailSender, send, signup } = setup();
+
+    await signup(EMAIL, PASSWORD);
+    await signup(EMAIL, OTHER_PASSWORD);
+
+    await vi.waitFor(() => expect(emailSender.sent).toHaveLength(1));
+    expect(send).toHaveBeenCalledOnce();
+  });
+
+  it("answers like a confirmed address when the account is confirmed between the read and the write", async () => {
+    const { repo, send, signup } = setup({
+      users: [{ id: USER_ID, email: EMAIL, passwordHash: "owner-hash" }],
+    });
+    // The read misses the confirmation that a concurrent verify just landed.
+    repo.findUserByEmail = vi.fn().mockResolvedValue(undefined);
+
+    const token = await acceptedToken(await signup(EMAIL, PASSWORD));
+
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(repo.users.get(USER_ID)?.passwordHash).toBe("owner-hash");
+    expect(repo.users.size).toBe(1);
+    expect(repo.verificationCodes.size).toBe(0);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("still accepts the signup when delivery fails", async () => {
     const repo = createInMemoryAuthRepository();
-    const { signup } = createSignupService({
+    const codes = createVerificationCodes({
       repo,
-      emailSender: new FakeEmailSender(),
-      checkPwnedPassword: vi.fn().mockResolvedValue(false),
-    });
-
-    await signup("new@example.com", "a-valid-long-passphrase");
-    await vi.waitFor(async () =>
-      expect(
-        (await repo.findPendingSignupByEmail("new@example.com"))?.codeSendCount,
-      ).toBe(1),
-    );
-    const before = await repo.findPendingSignupByEmail("new@example.com");
-
-    const second = await signup("new@example.com", "a-valid-long-passphrase");
-    const after = await repo.findPendingSignupByEmail("new@example.com");
-
-    expect(after?.codeHash).toBe(before?.codeHash);
-    expect(after?.codeAttempts).toBe(before?.codeAttempts);
-    expect(after?.codeSendCount).toBe(before?.codeSendCount);
-    expect(after?.expiresAt).toEqual(before?.expiresAt);
-    expect(after?.lastSentAt).toEqual(before?.lastSentAt);
-    if (second.outcome !== "accepted") return;
-    expect(after?.signupSessionToken).toBe(second.sessionToken);
-  });
-
-  it("keeps a confirmed account indistinguishable, with a new token every call", async () => {
-    const repo = createInMemoryAuthRepository({
-      authUsers: [{ id: 1, email: "taken@example.com" }],
+      emailSender: { send: vi.fn().mockRejectedValue(new Error("down")) },
+      ttl: DEFAULT_TTL,
+      now: () => NOW,
     });
     const { signup } = createSignupService({
       repo,
-      emailSender: new FakeEmailSender(),
+      codes,
       checkPwnedPassword: vi.fn().mockResolvedValue(false),
+      now: () => NOW,
     });
 
-    const first = await signup("taken@example.com", "a-valid-long-passphrase");
-    const second = await signup("taken@example.com", "a-valid-long-passphrase");
-
-    if (first.outcome !== "accepted" || second.outcome !== "accepted") return;
-    expect(second.sessionToken).not.toBe(first.sessionToken);
-  });
-  it("logs the pending signup creation with its id and no email", async () => {
-    const deps = makeDeps();
-    await createSignupService(deps).signup("foo@gmail.com", PASSWORD);
-    expect(deps.log.info).toHaveBeenCalledWith(
-      { pendingSignupId: 1 },
-      "pending signup created",
+    expect((await signup(EMAIL, PASSWORD)).outcome).toBe("accepted");
+    await vi.waitFor(() =>
+      expect([...repo.verificationCodes.values()][0]?.codeSendCount).toBe(0),
     );
   });
 
-  it("logs nothing about a pending signup when none is created", async () => {
-    const deps = makeDeps();
-    deps.repo.findAuthUserByEmail.mockResolvedValue({ id: 1 });
-    await createSignupService(deps).signup("foo@gmail.com", PASSWORD);
-    expect(deps.log.info).not.toHaveBeenCalledWith(
+  it("logs the signup start with the user id and never the email", async () => {
+    const { repo, log, signup } = setup();
+
+    await signup(EMAIL, PASSWORD);
+
+    const userId = userByEmail(repo, EMAIL)?.id;
+    expect(log.info).toHaveBeenCalledWith({ userId }, "signup started");
+    expect(JSON.stringify(log.info.mock.calls)).not.toContain(EMAIL);
+  });
+
+  it("logs no signup start for a confirmed address", async () => {
+    const { log, signup } = setup({
+      users: [{ id: USER_ID, email: EMAIL }],
+    });
+
+    await signup(EMAIL, PASSWORD);
+
+    expect(log.info).not.toHaveBeenCalledWith(
       expect.anything(),
-      "pending signup created",
+      "signup started",
     );
   });
 });

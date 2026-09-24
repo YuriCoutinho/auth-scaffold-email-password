@@ -1,39 +1,37 @@
 import { describe, expect, it, vi } from "vitest";
 import { createLogoutAllService } from "../../../../src/plugins/app/sessions/logout-all.js";
 
-const NOW = new Date("2026-09-23T12:00:00Z");
+const USER = "11111111-1111-4111-8111-111111111111";
+const CURRENT = "22222222-2222-4222-8222-222222222222";
 
-function makeDeps(revokedCount = 2) {
+function makeDeps(deletedCount = 2) {
   return {
     repo: {
-      revokeAllUserSessions: vi.fn().mockResolvedValue({ revokedCount }),
+      deleteUserSessions: vi.fn().mockResolvedValue({ deletedCount }),
     },
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
-    now: () => NOW,
   };
 }
 
 describe("logoutAll", () => {
-  it("always keeps the current session out of the revocation", async () => {
+  it("always keeps the current session out of the deletion", async () => {
     const deps = makeDeps();
 
     await createLogoutAllService(deps).logoutAll({
-      userId: 7,
-      currentSessionId: 3,
+      userId: USER,
+      currentSessionId: CURRENT,
     });
 
-    expect(deps.repo.revokeAllUserSessions).toHaveBeenCalledWith({
-      userId: 7,
-      revokedAt: NOW,
-      revokedReason: "logout_all",
-      exceptSessionId: 3,
+    expect(deps.repo.deleteUserSessions).toHaveBeenCalledWith({
+      userId: USER,
+      exceptSessionId: CURRENT,
     });
   });
 
   it("reports how many sessions were revoked", async () => {
     const result = await createLogoutAllService(makeDeps(3)).logoutAll({
-      userId: 7,
-      currentSessionId: 3,
+      userId: USER,
+      currentSessionId: CURRENT,
     });
 
     expect(result).toEqual({ revokedCount: 3 });
@@ -41,8 +39,8 @@ describe("logoutAll", () => {
 
   it("succeeds when the user has no other session to revoke", async () => {
     const result = await createLogoutAllService(makeDeps(0)).logoutAll({
-      userId: 7,
-      currentSessionId: 3,
+      userId: USER,
+      currentSessionId: CURRENT,
     });
 
     expect(result).toEqual({ revokedCount: 0 });
@@ -52,12 +50,12 @@ describe("logoutAll", () => {
     const deps = makeDeps(5);
 
     await createLogoutAllService(deps).logoutAll({
-      userId: 7,
-      currentSessionId: 3,
+      userId: USER,
+      currentSessionId: CURRENT,
     });
 
     expect(deps.log.info).toHaveBeenCalledWith(
-      { userId: 7, revokedCount: 5 },
+      { userId: USER, revokedCount: 5 },
       "all sessions revoked",
     );
   });
@@ -67,8 +65,8 @@ describe("logoutAll", () => {
 
     await expect(
       createLogoutAllService(deps).logoutAll({
-        userId: 7,
-        currentSessionId: 3,
+        userId: USER,
+        currentSessionId: CURRENT,
       }),
     ).resolves.toEqual({ revokedCount: 2 });
   });
