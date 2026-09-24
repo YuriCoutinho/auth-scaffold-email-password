@@ -222,6 +222,28 @@ describe("in-memory auth repository", () => {
     });
     expect(await repo.findAuthUserById(999)).toBeUndefined();
   });
+
+  it("rotates the pending signup token by email, leaving the rest alone", async () => {
+    const repo = createInMemoryAuthRepository({
+      pendingSignups: [
+        {
+          email: "new@example.com",
+          expiresAt: new Date("2026-01-01T00:15:00Z"),
+          codeHash: "code",
+          signupSessionToken: "old",
+          codeSendCount: 2,
+        },
+      ],
+    });
+
+    await repo.rotatePendingSignupToken("new@example.com", "fresh");
+
+    expect(await repo.findPendingSignupBySessionToken("old")).toBeUndefined();
+    expect(await repo.findPendingSignupBySessionToken("fresh")).toMatchObject({
+      codeHash: "code",
+      codeSendCount: 2,
+    });
+  });
 });
 
 describe("revokeSessionByTokenHash", () => {

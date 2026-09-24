@@ -127,6 +127,13 @@ export function createDrizzleAuthRepository(
         .where(eq(pendingSignups.signupSessionToken, token));
     },
 
+    async rotatePendingSignupToken(email, nextToken) {
+      await db
+        .update(pendingSignups)
+        .set({ signupSessionToken: nextToken })
+        .where(eq(pendingSignups.email, email));
+    },
+
     async incrementCodeAttempts(signupSessionToken) {
       await db
         .update(pendingSignups)

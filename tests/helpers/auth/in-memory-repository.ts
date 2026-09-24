@@ -171,6 +171,13 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       }
     },
 
+    async rotatePendingSignupToken(email, nextToken) {
+      const pending = pendingSignups.get(email);
+      if (pending) {
+        pending.signupSessionToken = nextToken;
+      }
+    },
+
     async incrementCodeAttempts(token) {
       const pending = findByToken(token);
       if (pending) {

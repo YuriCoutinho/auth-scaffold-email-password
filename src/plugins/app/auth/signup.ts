@@ -22,6 +22,7 @@ interface SignupServiceDeps {
     | "findPendingSignupByEmail"
     | "upsertPendingSignup"
     | "markPendingSignupUndelivered"
+    | "rotatePendingSignupToken"
   >;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
@@ -53,10 +54,14 @@ export function createSignupService(deps: SignupServiceDeps) {
 
       const pending = await deps.repo.findPendingSignupByEmail(email);
       if (pending && pending.expiresAt > currentTime) {
-        return {
-          outcome: "accepted",
-          sessionToken: pending.signupSessionToken,
-        };
+        // Nothing is created or resent, but the token still rotates. A value
+        // that stays the same across calls would answer, in two requests,
+        // whether the address already has an account, which is the question
+        // this response refuses to answer. The code already in the mailbox
+        // keeps working because its validity lives in codeHash, not here.
+        const rotated = generateSignupSessionToken();
+        await deps.repo.rotatePendingSignupToken(email, rotated);
+        return { outcome: "accepted", sessionToken: rotated };
       }
 
       const code = generateOtpCode();

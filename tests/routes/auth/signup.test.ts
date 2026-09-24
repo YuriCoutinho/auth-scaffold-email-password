@@ -114,4 +114,86 @@ describe("POST /auth/signup", () => {
     expect(response.json().message).toMatch(/data breach/i);
     expect(response.cookies).toHaveLength(0);
   });
+
+  it("hands out a different cookie on every call, whatever the address is", async () => {
+    const authRepository = createInMemoryAuthRepository({
+      authUsers: [{ id: 1, email: "taken@example.com" }],
+    });
+    const app = await buildApp(makeAppOptions({ authRepository }));
+
+    const cookieFor = async (email: string) => {
+      const response = await app.inject({
+        method: "POST",
+        url: "/auth/signup",
+        payload: { email, password: "a-valid-long-passphrase" },
+      });
+      return response.cookies.find((c) => c.name === "signup_session")?.value;
+    };
+
+    const newFirst = await cookieFor("new@example.com");
+    const newSecond = await cookieFor("new@example.com");
+    const takenFirst = await cookieFor("taken@example.com");
+    const takenSecond = await cookieFor("taken@example.com");
+
+    expect(newFirst).toBeTruthy();
+    expect(takenFirst).toBeTruthy();
+    // A value that repeats for one address and not the other would answer, in
+    // two requests, which addresses already have an account.
+    expect(newSecond).not.toBe(newFirst);
+    expect(takenSecond).not.toBe(takenFirst);
+
+    await app.close();
+  });
+
+  it("accepts the rotated cookie on the flows that read it", async () => {
+    const authRepository = createInMemoryAuthRepository();
+    const app = await buildApp(makeAppOptions({ authRepository }));
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/auth/signup",
+      payload: {
+        email: "new@example.com",
+        password: "a-valid-long-passphrase",
+      },
+    });
+    const second = await app.inject({
+      method: "POST",
+      url: "/auth/signup",
+      payload: {
+        email: "new@example.com",
+        password: "a-valid-long-passphrase",
+      },
+    });
+
+    const stale = first.cookies.find((c) => c.name === "signup_session")?.value;
+    const fresh = second.cookies.find(
+      (c) => c.name === "signup_session",
+    )?.value;
+
+    const withFresh = await app.inject({
+      method: "POST",
+      url: "/auth/verify-code",
+      payload: { code: "000000" },
+      cookies: { signup_session: fresh ?? "" },
+    });
+    const withStale = await app.inject({
+      method: "POST",
+      url: "/auth/verify-code",
+      payload: { code: "000000" },
+      cookies: { signup_session: stale ?? "" },
+    });
+
+    // Both answer the same generic 401, so the status alone proves nothing.
+    // What separates them is the side effect: only the fresh cookie reached a
+    // real pending signup, so only it burned an attempt.
+    expect(withFresh.statusCode).toBe(401);
+    expect(withStale.statusCode).toBe(401);
+    expect(
+      (await authRepository.findPendingSignupByEmail("new@example.com"))
+        ?.codeAttempts,
+    ).toBe(1);
+
+    await app.close();
+  });
 });

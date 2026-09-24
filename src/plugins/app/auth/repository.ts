@@ -130,6 +130,9 @@ export interface AuthRepository {
     token: string,
     state: PendingSignupResendState,
   ): Promise<void>;
+  // Keyed by email, which is unique on the table, so the write always matches
+  // the one row it means.
+  rotatePendingSignupToken(email: string, nextToken: string): Promise<void>;
   incrementCodeAttempts(signupSessionToken: string): Promise<void>;
   promotePendingSignup(
     input: PromotePendingSignupInput,
