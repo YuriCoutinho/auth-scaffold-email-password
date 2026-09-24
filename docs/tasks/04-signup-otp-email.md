@@ -72,8 +72,8 @@ interface EmailSender {
 ### Falha de envio no fluxo de cadastro
 
 * A ordem continua sendo gravar primeiro e enviar depois
-* Quando o envio falha, o service captura o erro, registra o diagnóstico e o endpoint responde `503` com mensagem genérica, sem setar cookie e sem expor detalhe interno
-* Uma falha de envio não pode consumir a cota de reenvio nem iniciar o cooldown de quem nem recebeu o email. Para isso o contador de envios volta para zero, o que estabelece o significado: contador zerado quer dizer que nenhum email foi entregue para o código atual, e o reenvio deve tratar esse caso como livre de cooldown
+* O envio não fica no caminho da requisição. Quando ele falha, o service captura o erro e registra o diagnóstico, e o endpoint responde `202` com cookie de qualquer forma, sem expor detalhe interno. Manter o envio fora da requisição é o que impede que o tempo de resposta diferencie um endereço novo de um já cadastrado, e o documento 15 traz o raciocínio completo
+* Uma falha de envio não pode consumir a cota de reenvio nem iniciar o cooldown de quem nem recebeu o email. Para isso o contador de envios volta para zero, o que estabelece o significado: contador zerado quer dizer que nenhum email foi entregue para o código atual, e o reenvio deve tratar esse caso como livre de cooldown. A marcação roda depois da resposta, na continuação do envio
 
 ## Definition of done
 

@@ -70,11 +70,11 @@ Nenhuma delas é `401`. A sessão é válida em todos esses casos, e foi a confi
 
 O corpo é validado por `changePasswordBodySchema`, então uma senha nova fora da faixa de quinze a cento e vinte e oito caracteres também recebe `400`, antes de o service ser chamado.
 
-### O aviso por email é aguardado, mas nunca muda a resposta
+### O aviso por email sai do caminho da requisição
 
-`sendPasswordChanged` é chamado com `await` no fim do fluxo, como todos os envios deste projeto, e o resultado dele é descartado. A senha já está trocada quando o email sai, então deixar uma falha de entrega virar erro da requisição contaria ao usuário o oposto do que aconteceu, e ele tentaria de novo com uma senha atual que não é mais a atual. A função converte qualquer exceção em `false` e registra a falha no log, exatamente como `sendSignupCode` faz, de modo que o service nem precisa de um `try`.
+`sendPasswordChanged` é disparado com `void` no fim do fluxo, e o resultado dele é descartado. A senha já está trocada quando o email sai, então deixar uma falha de entrega virar erro da requisição contaria ao usuário o oposto do que aconteceu, e ele tentaria de novo com uma senha atual que não é mais a atual. A função converte qualquer exceção em `false` e registra a falha no log, exatamente como `sendSignupCode` faz, de modo que o service nem precisa de um `try`.
 
-O email não carrega link. O fluxo de recuperação de senha ainda não existe, então um botão de "não fui eu" não teria para onde apontar, e um link que não resolve o problema só ensina o usuário a clicar em links dentro de emails sobre segurança, que é o hábito que o phishing explora. O texto orienta a procurar o suporte.
+O email não carrega link. O fluxo de recuperação de senha existe, e a linha final do aviso aponta para ele, mas como texto e não como link, porque um link dentro de um email sobre segurança ensina exatamente o hábito que o phishing explora. Quem não reconhece a troca é orientado a recuperar a senha a partir da tela de entrada.
 
 Ele também não carrega horário nem nome do dispositivo. O rótulo de dispositivo vem do User-Agent, que é trivialmente forjável, e colocá-lo num aviso de segurança emprestaria a esse dado uma credibilidade que ele não tem, levando o leitor a descartar um aviso legítimo por não reconhecer a descrição. Sem nenhum desses valores, o template não recebe parâmetro algum, o que significa que nenhum dado fornecido pelo usuário chega até ele e não há nada a escapar. O log do envio registra apenas `userId` e o id da mensagem no provedor, nunca o endereço de destino nem o corpo da resposta do provedor, que pode ecoar o endereço.
 
