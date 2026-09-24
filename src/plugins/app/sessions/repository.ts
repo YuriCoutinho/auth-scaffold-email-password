@@ -1,6 +1,7 @@
 import type { RevokedReason } from "../../../lib/session.js";
 
 export interface CreateSessionInput {
+  publicId: string;
   userId: number;
   tokenHash: string;
   deviceLabel: string | null;

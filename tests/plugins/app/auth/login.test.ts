@@ -13,6 +13,8 @@ const { verifyPassword } = await import("../../../../src/lib/password.js");
 const verifyPasswordMock = vi.mocked(verifyPassword);
 
 const NOW = new Date("2026-09-21T12:00:00Z");
+const UUID_V4 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const USER = {
   id: 7,
   publicId: "11111111-1111-1111-1111-111111111111",
@@ -96,6 +98,7 @@ describe("login", () => {
       sessionToken: expect.any(String),
     });
     expect(deps.repo.createSession).toHaveBeenCalledWith({
+      publicId: expect.stringMatching(UUID_V4),
       userId: USER.id,
       tokenHash: hashSessionToken(sessionToken),
       deviceLabel: "Mozilla/5.0",

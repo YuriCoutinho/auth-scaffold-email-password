@@ -147,9 +147,13 @@ export function createDrizzleAuthRepository(
       return await db.transaction(async (tx) => {
         const users = await tx
           .insert(authUsers)
-          .values({ email: input.email, passwordHash: input.passwordHash })
-          .returning({ id: authUsers.id, publicId: authUsers.publicId });
-        const user = users[0] as { id: number; publicId: string };
+          .values({
+            publicId: input.publicId,
+            email: input.email,
+            passwordHash: input.passwordHash,
+          })
+          .returning({ id: authUsers.id });
+        const user = users[0] as { id: number };
         // Keyed by email, which is unique and never changes. The signup
         // session token rotates on every request, so a delete keyed by the
         // token the caller read could match zero rows and leave the pending
@@ -158,6 +162,7 @@ export function createDrizzleAuthRepository(
           .delete(pendingSignups)
           .where(eq(pendingSignups.email, input.email));
         await createDrizzleSessionRepository(tx).createSession({
+          publicId: input.sessionPublicId,
           userId: user.id,
           tokenHash: input.sessionTokenHash,
           deviceLabel: input.deviceLabel,
@@ -300,6 +305,7 @@ export function createDrizzleAuthRepository(
           .delete(passwordResets)
           .where(eq(passwordResets.resetSessionToken, input.resetSessionToken));
         await sessionRepository.createSession({
+          publicId: input.sessionPublicId,
           userId: input.userId,
           tokenHash: input.sessionTokenHash,
           deviceLabel: input.deviceLabel,

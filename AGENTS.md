@@ -53,7 +53,7 @@ O que existe hoje:
 * `src/routes/` guarda plugins de rota, autoloaded. O nome da pasta vira prefixo: `routes/auth/signup.ts` expõe `/auth/signup`, e `routes/sessions/` é a coleção que responde por `GET /sessions`, `DELETE /sessions` e `DELETE /sessions/current`. A camada é fina: valida com o schema, chama `fastify.auth` ou `fastify.sessions`, monta a resposta
 * `src/schemas/` guarda os schemas Zod compartilhados pelas rotas
 * `src/db/` guarda o schema Drizzle e `createDatabase`
-* `src/lib/` guarda só funções puras e constantes: hash, tokens, código, TTLs, rótulo de dispositivo e a política dos cookies
+* `src/lib/` guarda só funções puras e constantes: hash, tokens, código, identificador público, TTLs, rótulo de dispositivo e a política dos cookies
 * `src/config/` guarda a validação de ambiente com Zod
 * `tests/` espelha a árvore de `src/`, mais `tests/helpers/` com `app-options.ts` e `auth/in-memory-repository.ts`, o adaptador em memória de `AuthRepository`
 

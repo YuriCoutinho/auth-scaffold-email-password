@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger } from "fastify";
 import { hashPassword, verifyPassword } from "../../../lib/password.js";
+import { generatePublicId } from "../../../lib/public-id.js";
 import {
   generateSessionToken,
   MAX_CODE_ATTEMPTS,
@@ -95,6 +96,7 @@ export function createResetPasswordService(deps: ResetPasswordServiceDeps) {
         userId: reset.userId,
         passwordHash: await hashPassword(input.newPassword),
         resetSessionToken: input.sessionToken,
+        sessionPublicId: generatePublicId(),
         sessionTokenHash: hashSessionToken(sessionToken),
         deviceLabel: input.deviceLabel,
         sessionExpiresAt: new Date(
