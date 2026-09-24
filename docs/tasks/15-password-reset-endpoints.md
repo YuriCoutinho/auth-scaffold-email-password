@@ -56,11 +56,11 @@ Com a resposta fixa, o que sobra para o atacante medir é o tempo. Quando o ende
 
 Duas saídas foram consideradas e descartadas. A primeira é acrescentar um atraso aleatório ao caminho rápido. Ruído aleatório não remove a diferença entre as médias, apenas aumenta a variância, então um atacante que repete a medição algumas dezenas de vezes e tira a média recupera a separação intacta. A segunda é impor um piso fixo de tempo a toda resposta. Para funcionar, esse piso precisaria ser maior que o pior caso do provedor, que com a política de duas tentativas deste projeto chega perto de vinte segundos, o que tornaria o endpoint inutilizável para todo mundo em nome de esconder o caso raro.
 
-A saída adotada é tirar o envio da requisição. `sendPasswordResetCode` é chamado com `void`, não com `await`, e a resposta sai assim que a linha está gravada. O helper converte qualquer exceção em `false` e nunca rejeita, o que é o que torna seguro soltá-lo dessa forma, e a compensação de uma entrega falha roda na continuação, depois da resposta. Com isso, endereço conhecido e endereço desconhecido custam o mesmo, porque a única diferença de trabalho que sobra é uma escrita local.
+A saída adotada é tirar o envio da requisição. `sendPasswordResetCode` é chamado com `void`, não com `await`, e a resposta sai assim que a linha está gravada. O helper converte qualquer exceção em `false` e nunca rejeita, o que é o que torna seguro soltá-lo dessa forma, e a compensação de uma entrega falha roda na continuação, depois da resposta. Com isso o que separa um endereço conhecido de um desconhecido deixa de ser a conversa com o provedor e passa a ser um round-trip de banco mais a geração e o hash do código, ordens de grandeza abaixo do que um cronômetro do outro lado da rede consegue distinguir do ruído.
 
 Essa compensação tem uma particularidade em relação ao cadastro. Lá, uma entrega falha zera `code_send_count`, e zero significa "nenhum email foi entregue para o código atual". Aqui zerar seria devolver a cota inteira, porque este mesmo endpoint é o reenvio: uma falha no quarto envio devolveria os cinco. Por isso a compensação restaura o estado anterior inteiro, capturado antes da escrita, o que devolve a contagem ao valor que ela tinha, e não a zero. O pedido que nasce agora, seja o primeiro da conta ou o que substitui uma linha expirada, é o único restaurado para uma contagem de zero, porque nele não existe estado anterior e nenhum email chegou de fato.
 
-A rotação do token também resolve, de graça, um risco que a compensação tardia traria. Como ela roda depois da resposta, uma segunda chamada pode acontecer antes dela e sobrescrever um estado mais novo com um mais velho. Isso deixa de ser possível porque a compensação escreve endereçando a linha pelo token da chamada que a originou, e a chamada seguinte já substituiu esse token, então a escrita atrasada não encontra linha alguma e vira um no-op.
+A rotação muda o alcance dessa compensação. Ela escreve endereçando a linha pelo token da chamada que a originou, então, se outra chamada já rotacionou aquele token, a escrita atrasada não casa linha alguma e não tem efeito. Isso vale tanto para a compensação que chegaria depois de um pedido mais novo, que não passa por cima dele, quanto para duas chamadas simultâneas que leram o mesmo token, em que a segunda escrita se perde e o estado que fica é o da primeira.
 
 O mesmo raciocínio foi aplicado ao que já existia. `POST /auth/signup` deixou de responder `503` quando a entrega falha, e passa a responder `202` com cookie em qualquer caso, com o envio detached e a marcação de não entregue rodando na continuação. O motivo é idêntico: um endereço novo pagava o tempo do provedor enquanto um endereço já confirmado respondia na hora, o que separava os dois casos por cronômetro apesar da resposta genérica. O aviso de senha alterada em `POST /auth/change-password` também saiu do caminho da requisição, aqui não por enumeração, já que a rota exige sessão, mas porque a senha já mudou quando o email sai e não há motivo para o chamador esperar por ele.
 
@@ -71,6 +71,8 @@ O mesmo raciocínio foi aplicado ao que já existia. `POST /auth/signup` deixou 
 `reset-password` reaproveita `MAX_CODE_ATTEMPTS`, o mesmo teto de cinco do cadastro. Cada código errado incrementa `code_attempts`, e ao chegar a cinco o código deixa de valer mesmo que o correto apareça em seguida. A verificação do teto acontece antes da comparação, então um código esgotado nunca é comparado. As únicas saídas são pedir outro código, que zera o contador junto com o novo envio, ou esperar o pedido expirar.
 
 Sem esse teto, quinze minutos de validade contra um espaço de um milhão de combinações é um convite a força bruta automatizada.
+
+Os limites que os dois endpoints aplicam são todos por conta: o cooldown de sessenta segundos, o teto de cinco envios por pedido e esse teto de cinco tentativas por código. Limitação por origem é outra camada, vale para a API inteira e não para dois endpoints, e mora na infraestrutura que atende o serviço, não dentro do service.
 
 ### A senha nova segue as mesmas regras do resto do projeto
 
@@ -99,10 +101,6 @@ O motivo `password_reset` entra em `REVOKED_REASONS` ao lado de `password_change
 ### O aviso de senha alterada é reaproveitado
 
 O email de senha alterada, criado na etapa anterior, é enviado também aqui, com o mesmo template e o mesmo helper. Ele passou a ser enviado com `void` nos dois fluxos, e a linha final mudou: antes mandava procurar o suporte, porque não existia caminho de recuperação; agora aponta para a recuperação de senha, que é a ação que de fato devolve a conta a quem a perdeu. O email continua sem link, porque ensinar o leitor a clicar em links dentro de avisos de segurança é o hábito que o phishing explora.
-
-### Limite de taxa fica fora do escopo
-
-Nem `forgot-password` nem `reset-password` ganham limitação por IP nesta etapa. O que protege os dois hoje é o cooldown de sessenta segundos, o teto de cinco envios por pedido e o teto de cinco tentativas por código, todos por conta. Limitação por origem é uma preocupação de infraestrutura que vale para a API inteira e não para dois endpoints, e resolvê-la aqui, de forma parcial e em memória, seria resolver o problema no lugar errado.
 
 ## Definition of done
 
