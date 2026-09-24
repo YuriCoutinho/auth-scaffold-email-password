@@ -34,7 +34,7 @@ Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que 
 ### Normalização e idempotência
 
 * Email recebe `trim` e lowercase antes de qualquer consulta ou gravação, de modo que `Foo@Gmail.com` e `foo@gmail.com` sejam a mesma conta
-* Se já existe cadastro pendente não expirado para aquele email, nada é criado nem reenviado, e a resposta devolve o token já armazenado. Reenvio é responsabilidade explícita de outro endpoint
+* Se já existe cadastro pendente não expirado para aquele email, nada é criado nem reenviado, mas o token de sessão rotaciona: a resposta devolve um valor novo, gravado na linha por um `UPDATE` chaveado pelo email, e nenhum outro campo muda, nem código, nem tentativas, nem contagem de envios, nem expiração. O código que já está na caixa de entrada continua valendo, porque a validade dele mora no hash e no `expires_at` da linha, não no token. Reenvio é responsabilidade explícita de outro endpoint
 * Se o pendente existe mas expirou, ele é substituído atomicamente por `INSERT ... ON CONFLICT (email) DO UPDATE`, que troca senha, código, token e expiração, zera as tentativas e renova os contadores
 * O upsert resolve dois problemas de uma vez: a constraint `UNIQUE` de email nunca estoura como erro para quem está cadastrando, e duas requisições simultâneas do mesmo email não criam estado inconsistente
 * Uma sutileza do upsert vale registrar: valores `DEFAULT` da tabela só disparam em insert de verdade, então a cláusula de update precisa renovar `created_at`, `last_sent_at` e `code_send_count` explicitamente
@@ -49,7 +49,7 @@ Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que 
 ### Resposta e cookie
 
 * Cookie `signup_session` com `HttpOnly`, `Secure`, `SameSite=Strict`, `Path=/auth` e `Max-Age` de 900 segundos
-* A resposta é byte a byte idêntica nos três caminhos possíveis, incluindo a presença do cookie. Quando o email pertence a uma conta já confirmada, nenhum código é gerado e o cookie recebe um token descartável, justamente para que a resposta não se diferencie
+* A resposta é byte a byte idêntica nos três caminhos possíveis, incluindo a presença do cookie. Quando o email pertence a uma conta já confirmada, nenhum código é gerado e o cookie recebe um token descartável, justamente para que a resposta não se diferencie. A indistinguibilidade cobre também o valor do cookie, e é por isso que nenhum dos três caminhos pode devolver um valor que se repita entre chamadas: um valor estável para um endereço e variável para outro responderia, em duas requisições, quais endereços já têm conta
 * O `Path=/auth` mantém esse cookie restrito ao fluxo de cadastro, sem acompanhar requisições ao resto da API
 
 ### Organização do código
@@ -67,6 +67,6 @@ Esta etapa entrega `POST /auth/signup` completo, exceto o disparo do email, que 
 
 * Contrato publicado no OpenAPI, com os três status possíveis descritos
 * Request e response tipados e validados pelo mesmo schema Zod
-* Testes unitários cobrindo validação de email e senha, normalização, idempotência do pendente válido, substituição do pendente expirado, resposta genérica nos três caminhos, ordem de gravar antes de enviar e rejeição de senha vazada
+* Testes unitários cobrindo validação de email e senha, normalização, rotação do token no pendente válido sem criar nem reenviar nada, substituição do pendente expirado, resposta genérica nos três caminhos, ordem de gravar antes de enviar e rejeição de senha vazada
 * Teste do verificador de senha vazada cobrindo ocorrência encontrada, ausência e indisponibilidade do serviço com fail open
 * Teste de service com o repositório em memória e teste de rota com `app.inject`, e nenhum dos dois toca banco ou rede reais, porque os colaboradores chegam por `AppOptions`
