@@ -145,6 +145,23 @@ export function createDrizzleAuthRepository(
     // still-valid code) survives for a retry.
     async promotePendingSignup(input: PromotePendingSignupInput) {
       return await db.transaction(async (tx) => {
+        // Deleting first makes the pending row the serialization point. The
+        // caller read it outside this transaction, so two requests carrying
+        // the same code both get here; the second one blocks on this delete
+        // and then matches no row, instead of reaching the insert below and
+        // hitting the unique violation on email.
+        //
+        // Keyed by email, which is unique and never changes. The signup
+        // session token rotates on every request, so a delete keyed by the
+        // token the caller read could match zero rows and leave the pending
+        // row orphaned.
+        const consumed = await tx
+          .delete(pendingSignups)
+          .where(eq(pendingSignups.email, input.email))
+          .returning({ id: pendingSignups.id });
+        if (consumed.length === 0) {
+          return null;
+        }
         const users = await tx
           .insert(authUsers)
           .values({
@@ -154,13 +171,6 @@ export function createDrizzleAuthRepository(
           })
           .returning({ id: authUsers.id });
         const user = users[0] as { id: number };
-        // Keyed by email, which is unique and never changes. The signup
-        // session token rotates on every request, so a delete keyed by the
-        // token the caller read could match zero rows and leave the pending
-        // row orphaned.
-        await tx
-          .delete(pendingSignups)
-          .where(eq(pendingSignups.email, input.email));
         await createDrizzleSessionRepository(tx).createSession({
           publicId: input.sessionPublicId,
           userId: user.id,

@@ -113,6 +113,23 @@ describe("verifyCode", () => {
     expect(input.sessionTokenHash).not.toBe(sessionToken);
     expect(deps.repo.incrementCodeAttempts).not.toHaveBeenCalled();
   });
+  it("rejects the code when a concurrent request already consumed the signup", async () => {
+    const deps = makeDeps(makePending());
+    deps.repo.promotePendingSignup.mockResolvedValue(null);
+
+    const result = await createVerifyCodeService(deps).verifyCode(
+      TOKEN,
+      CODE,
+      null,
+    );
+
+    expect(result).toEqual({ outcome: "invalid" });
+    expect(deps.log.info).toHaveBeenCalledWith(
+      { pendingSignupId: 1 },
+      "pending signup already promoted by a concurrent request",
+    );
+  });
+
   it("logs an unrecognized signup session token", async () => {
     const deps = makeDeps(undefined);
     await createVerifyCodeService(deps).verifyCode(TOKEN, CODE, null);

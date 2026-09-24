@@ -83,6 +83,13 @@ export function createVerifyCodeService(deps: VerifyCodeServiceDeps) {
           currentTime.getTime() + SESSION_TTL_SECONDS * 1000,
         ),
       });
+      if (!user) {
+        deps.log?.info(
+          { pendingSignupId: pending.id },
+          "pending signup already promoted by a concurrent request",
+        );
+        return { outcome: "invalid" };
+      }
       deps.log?.info(
         { pendingSignupId: pending.id, userId: user.id },
         "pending signup promoted to auth user",
