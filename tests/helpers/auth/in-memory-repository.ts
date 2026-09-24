@@ -186,6 +186,9 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
     },
 
     async promotePendingSignup(input: PromotePendingSignupInput) {
+      if (!pendingSignups.delete(input.email)) {
+        return null;
+      }
       const user: StoredAuthUser = {
         id: nextUserId++,
         email: input.email,
@@ -193,7 +196,6 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
         passwordHash: input.passwordHash,
       };
       authUsers.set(input.email, user);
-      pendingSignups.delete(input.email);
       sessions.push({
         id: nextSessionId++,
         publicId: input.sessionPublicId,

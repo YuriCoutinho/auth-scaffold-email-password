@@ -118,7 +118,7 @@ describe("in-memory auth repository", () => {
       deviceLabel: "Mozilla/5.0",
       sessionExpiresAt: new Date(NOW.getTime() + 1_000),
     });
-    expect(user.id).toBe(1);
+    expect(user?.id).toBe(1);
     expect(await repo.findAuthUserByEmail("user@example.com")).toMatchObject({
       id: 1,
       publicId: "user-public-id",
@@ -246,6 +246,29 @@ describe("in-memory auth repository", () => {
     await repo.promotePendingSignup(input);
 
     expect(repo.pendingSignups.size).toBe(0);
+  });
+
+  it("promotes a pending signup once, returning null to whoever comes second", async () => {
+    const repo = createInMemoryAuthRepository();
+    await repo.upsertPendingSignup(pendingInput());
+    const input = {
+      email: "user@example.com",
+      publicId: "user-public-id",
+      passwordHash: "hash",
+      sessionPublicId: "session-public-id",
+      sessionTokenHash: "session-hash",
+      deviceLabel: null,
+      sessionExpiresAt: new Date(NOW.getTime() + 1_000),
+    };
+
+    expect(await repo.promotePendingSignup(input)).toEqual({ id: 1 });
+    expect(
+      await repo.promotePendingSignup({ ...input, publicId: "second" }),
+    ).toBeNull();
+
+    expect(repo.authUsers.size).toBe(1);
+    expect(repo.sessions).toHaveLength(1);
+    expect(repo.profiles).toEqual([{ userId: 1 }]);
   });
 
   it("rotates the pending signup token by email, leaving the rest alone", async () => {
