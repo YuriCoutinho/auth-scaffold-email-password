@@ -136,27 +136,48 @@ describe("signup service", () => {
     expect(upsertOrder).toBeLessThan(emailOrder);
   });
 
-  it("returns email-unavailable and marks the signup undelivered when delivery fails", async () => {
+  it("still accepts the signup when delivery fails, and refunds the send", async () => {
     const deps = makeDeps();
     deps.emailSender.send.mockRejectedValueOnce(new Error("smtp down"));
+
     const result = await createSignupService(deps).signup(
       "foo@gmail.com",
       PASSWORD,
     );
-    expect(result).toEqual({ outcome: "email-unavailable" });
-    expect(deps.repo.markPendingSignupUndelivered).toHaveBeenCalledWith(
-      "foo@gmail.com",
+
+    expect(result).toMatchObject({ outcome: "accepted" });
+    await vi.waitFor(() =>
+      expect(deps.repo.markPendingSignupUndelivered).toHaveBeenCalledWith(
+        "foo@gmail.com",
+      ),
     );
   });
 
-  it("still returns email-unavailable when the mark itself fails", async () => {
+  it("still accepts the signup when the mark itself fails", async () => {
     const deps = makeDeps();
     deps.emailSender.send.mockRejectedValueOnce(new Error("smtp down"));
     deps.repo.markPendingSignupUndelivered.mockRejectedValueOnce(
       new Error("db down"),
     );
+
     await expect(
       createSignupService(deps).signup("foo@gmail.com", PASSWORD),
-    ).resolves.toEqual({ outcome: "email-unavailable" });
+    ).resolves.toMatchObject({ outcome: "accepted" });
+  });
+
+  it("does not wait for the provider before returning", async () => {
+    const deps = makeDeps();
+    let release: () => void = () => {};
+    deps.emailSender.send.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve({ providerMessageId: "late" });
+        }),
+    );
+
+    await expect(
+      createSignupService(deps).signup("new@example.com", PASSWORD),
+    ).resolves.toMatchObject({ outcome: "accepted" });
+    release();
   });
 });

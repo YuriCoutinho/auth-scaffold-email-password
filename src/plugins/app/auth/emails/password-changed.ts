@@ -4,12 +4,12 @@ export interface PasswordChangedEmailContent {
   text: string;
 }
 
-// No link and no parameters: the password recovery flow does not exist yet,
-// so a "this wasn't me" action would have nowhere to go, and a template with
-// no dynamic value is a template with nothing to escape.
+// No link, even though the recovery flow now exists: a security notice that
+// trains the reader to click links inside it is the habit phishing exploits.
+// With no dynamic value, the template has nothing to escape.
 export function renderPasswordChangedEmail(): PasswordChangedEmailContent {
   const notice =
-    "Every other device was signed out. If this wasn't you, contact support right away.";
+    "Every other device was signed out. If this wasn't you, reset your password from the sign-in page right away to take the account back.";
 
   return {
     subject: "Your password was changed",

@@ -144,8 +144,10 @@ describe("changePassword", () => {
 
     await changePassword(input);
 
-    expect(deps.emailSender.send).toHaveBeenCalledWith(
-      expect.objectContaining({ to: "owner@example.com" }),
+    await vi.waitFor(() =>
+      expect(deps.emailSender.send).toHaveBeenCalledWith(
+        expect.objectContaining({ to: "owner@example.com" }),
+      ),
     );
   });
 

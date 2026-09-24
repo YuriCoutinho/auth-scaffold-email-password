@@ -13,8 +13,7 @@ import { sendSignupCode } from "./send-signup-code.js";
 
 export type SignupResult =
   | { outcome: "accepted"; sessionToken: string }
-  | { outcome: "pwned-password" }
-  | { outcome: "email-unavailable" };
+  | { outcome: "pwned-password" };
 
 interface SignupServiceDeps {
   repo: Pick<
@@ -71,22 +70,27 @@ export function createSignupService(deps: SignupServiceDeps) {
         now: currentTime,
       });
 
-      const delivered = await sendSignupCode(
+      // Detached, like /auth/forgot-password: the response is a fixed 202 that
+      // delivery cannot change, and awaiting the provider would make a new
+      // address slower than an already-confirmed one, which is account
+      // enumeration by stopwatch. Failed delivery must not consume resend
+      // quota, so the mark still runs, just after the response.
+      void sendSignupCode(
         { emailSender: deps.emailSender, log: deps.log },
         { to: email, code, pendingSignupId },
-      );
-      if (!delivered) {
-        // Failed delivery must not consume resend quota; the mark is best-effort.
-        try {
-          await deps.repo.markPendingSignupUndelivered(email);
-        } catch (markError) {
+      )
+        .then((delivered) => {
+          if (delivered) {
+            return;
+          }
+          return deps.repo.markPendingSignupUndelivered(email);
+        })
+        .catch((markError) => {
           deps.log?.warn(
             { err: markError },
             "failed to mark pending signup as undelivered",
           );
-        }
-        return { outcome: "email-unavailable" };
-      }
+        });
 
       return { outcome: "accepted", sessionToken };
     },

@@ -92,19 +92,17 @@ describe("POST /auth/signup", () => {
     expect(authRepository.pendingSignups.size).toBe(0);
   });
 
-  it("responds 503 with a generic message when email delivery fails", async () => {
+  it("still answers 202 with a cookie when delivery fails", async () => {
     const opts = makeAppOptions({
       emailSender: {
         send: vi.fn().mockRejectedValue(new Error("provider down")),
       },
     });
     const response = await post(VALID_BODY, opts);
-    expect(response.statusCode).toBe(503);
-    expect(response.json()).toEqual({
-      message:
-        "We could not send the confirmation email right now. Please try again shortly.",
-    });
-    expect(response.headers["set-cookie"]).toBeUndefined();
+    expect(response.statusCode).toBe(202);
+    expect(
+      response.cookies.find((c) => c.name === "signup_session")?.value,
+    ).toBeTruthy();
   });
 
   it("rejects a pwned password with 400 and no cookie", async () => {
