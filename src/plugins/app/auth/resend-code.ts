@@ -1,13 +1,14 @@
 import type { FastifyBaseLogger } from "fastify";
 import { generateOtpCode } from "../../../lib/otp.js";
-import { SIGNUP_TTL_SECONDS } from "../../../lib/session.js";
+import {
+  MAX_CODE_SEND_COUNT,
+  RESEND_COOLDOWN_SECONDS,
+  SIGNUP_TTL_SECONDS,
+} from "../../../lib/session.js";
 import { hashOtpCode } from "../../../lib/token-hash.js";
 import type { EmailSender } from "../email/sender.js";
 import type { AuthRepository } from "./repository.js";
 import { sendSignupCode } from "./send-signup-code.js";
-
-export const RESEND_COOLDOWN_SECONDS = 60;
-export const MAX_CODE_SEND_COUNT = 5;
 
 export type ResendCodeResult =
   | { outcome: "sent"; sessionToken: string }

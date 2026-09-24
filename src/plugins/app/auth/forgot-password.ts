@@ -2,12 +2,13 @@ import type { FastifyBaseLogger } from "fastify";
 import { generateOtpCode } from "../../../lib/otp.js";
 import {
   generatePasswordResetSessionToken,
+  MAX_CODE_SEND_COUNT,
   PASSWORD_RESET_TTL_SECONDS,
+  RESEND_COOLDOWN_SECONDS,
 } from "../../../lib/session.js";
 import { hashOtpCode } from "../../../lib/token-hash.js";
 import type { EmailSender } from "../email/sender.js";
 import type { AuthRepository, PasswordResetSendState } from "./repository.js";
-import { MAX_CODE_SEND_COUNT, RESEND_COOLDOWN_SECONDS } from "./resend-code.js";
 import { sendPasswordResetCode } from "./send-password-reset-code.js";
 
 interface ForgotPasswordServiceDeps {
