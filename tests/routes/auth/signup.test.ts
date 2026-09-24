@@ -189,10 +189,11 @@ describe("POST /auth/signup", () => {
     // real pending signup, so only it burned an attempt.
     expect(withFresh.statusCode).toBe(401);
     expect(withStale.statusCode).toBe(401);
-    expect(
-      (await authRepository.findPendingSignupByEmail("new@example.com"))
-        ?.codeAttempts,
-    ).toBe(1);
+    const pending =
+      await authRepository.findPendingSignupByEmail("new@example.com");
+    expect(pending?.signupSessionToken).toBe(fresh);
+    expect(pending?.signupSessionToken).not.toBe(stale);
+    expect(pending?.codeAttempts).toBe(1);
 
     await app.close();
   });
