@@ -244,6 +244,31 @@ describe("in-memory auth repository", () => {
       codeSendCount: 2,
     });
   });
+
+  it("does not let a caller see later writes through a value it already read", async () => {
+    const repo = createInMemoryAuthRepository({
+      pendingSignups: [
+        {
+          email: "new@example.com",
+          expiresAt: new Date("2026-01-01T00:15:00Z"),
+          codeAttempts: 0,
+          signupSessionToken: "tok",
+        },
+      ],
+    });
+
+    const readByEmail = await repo.findPendingSignupByEmail("new@example.com");
+    const readByToken = await repo.findPendingSignupBySessionToken("tok");
+    await repo.incrementCodeAttempts("tok");
+
+    // A real query hands back a snapshot, so the values read before the write
+    // keep the numbers they were read with.
+    expect(readByEmail?.codeAttempts).toBe(0);
+    expect(readByToken?.codeAttempts).toBe(0);
+    expect(
+      (await repo.findPendingSignupByEmail("new@example.com"))?.codeAttempts,
+    ).toBe(1);
+  });
 });
 
 describe("revokeSessionByTokenHash", () => {

@@ -114,8 +114,8 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
 
   // Reads hand out a copy, like a real query does. Returning the stored object
   // would let a caller see its own later writes through the value it read.
-  const copyReset = (reset: PasswordResetRecord | undefined) =>
-    reset ? { ...reset } : undefined;
+  const snapshot = <T>(record: T | undefined) =>
+    record ? { ...record } : undefined;
 
   const repository: AuthRepository & SessionRepository = {
     async findAuthUserByEmail(email) {
@@ -130,7 +130,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
     },
 
     async findPendingSignupByEmail(email) {
-      return pendingSignups.get(email);
+      return snapshot(pendingSignups.get(email));
     },
 
     async upsertPendingSignup(input: UpsertPendingSignupInput) {
@@ -158,7 +158,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
     },
 
     async findPendingSignupBySessionToken(token) {
-      return findByToken(token);
+      return snapshot(findByToken(token));
     },
 
     async updatePendingSignupResendState(
@@ -266,7 +266,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
     },
 
     async findPasswordResetByUserId(userId) {
-      return copyReset(passwordResets.get(userId));
+      return snapshot(passwordResets.get(userId));
     },
 
     async upsertPasswordReset(input: UpsertPasswordResetInput) {
@@ -289,7 +289,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
     },
 
     async findPasswordResetBySessionToken(token) {
-      return copyReset(findResetByToken(token));
+      return snapshot(findResetByToken(token));
     },
 
     async updatePasswordResetSendState(
