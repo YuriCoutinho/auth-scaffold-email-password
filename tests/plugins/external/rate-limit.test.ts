@@ -40,11 +40,14 @@ describe("rate limit", () => {
     await app.close();
   });
 
-  it("leaves an allowed response and its body untouched", async () => {
+  it("leaves a 204 response without a body", async () => {
     const app = buildApp(makeAppOptions());
-    const response = await app.inject({ method: "GET", url: "/health" });
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ status: "ok" });
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/sessions/current",
+    });
+    expect(response.statusCode).toBe(204);
+    expect(response.body).toBe("");
     await app.close();
   });
 });

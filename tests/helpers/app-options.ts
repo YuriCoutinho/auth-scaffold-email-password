@@ -46,9 +46,7 @@ export function makeAppOptions(
     logger: false,
     emailSender: new FakeEmailSender(),
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
-    credentialThrottleRepository:
-      overrides.credentialThrottleRepository ??
-      createInMemoryCredentialThrottleRepository(),
+    credentialThrottleRepository: createInMemoryCredentialThrottleRepository(),
     ...overrides,
     authRepository,
     sessionRepository: overrides.sessionRepository ?? authRepository,

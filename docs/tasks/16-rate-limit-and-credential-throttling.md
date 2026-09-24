@@ -72,7 +72,7 @@ Nos testes o limitador roda exatamente como roda em produção, e apenas o teto 
 
 O limitador identifica o chamador pelo IP que o Fastify reporta. Com `trustProxy` ligado, esse IP passa a sair do cabeçalho `X-Forwarded-For`, que é enviado pelo cliente e portanto forjável por ele. Num deploy sem proxy reverso, ligar essa opção significa deixar qualquer atacante escolher o próprio identificador a cada requisição e nunca alcançar teto nenhum, o que é o mesmo que não ter limitador.
 
-A opção só passa a fazer sentido quando existe de fato um proxy confiável na frente da aplicação, porque é ele que sobrescreve o cabeçalho com o endereço real da conexão. Como o projeto é um scaffold e não tem um ambiente de deploy definido, a configuração fica no padrão da biblioteca, desligada, e entra junto com a infraestrutura que a justificar.
+A decisão tem o outro lado, e ele importa tanto quanto. Num deploy que já esteja atrás de um proxy reverso, manter a opção desligada faz com que toda requisição chegue com o endereço do proxy, então o teto global de cem por minuto passa a valer para o serviço inteiro em vez de valer por cliente, e um único usuário ativo tranca todos os demais. A opção só passa a fazer sentido quando existe de fato um proxy confiável na frente da aplicação, porque é ele que sobrescreve o cabeçalho com o endereço real da conexão, e a partir daí ligá-la deixa de ser opcional. Como o projeto é um scaffold e não tem um ambiente de deploy definido, a configuração fica no padrão da biblioteca, desligada, e entra junto com a infraestrutura que a justificar.
 
 ### A tabela entra como migration incremental
 
