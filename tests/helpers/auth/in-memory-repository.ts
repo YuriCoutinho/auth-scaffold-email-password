@@ -285,9 +285,22 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       return copyReset(findResetByToken(token));
     },
 
-    async updatePasswordResetSendState(token, state: PasswordResetSendState) {
-      const reset = findResetByToken(token);
+    async updatePasswordResetSendState(
+      userId: number,
+      state: PasswordResetSendState,
+    ) {
+      const reset = passwordResets.get(userId);
       if (reset) {
+        Object.assign(reset, state);
+      }
+    },
+
+    async restorePasswordResetSendState(
+      userId: number,
+      state: PasswordResetSendState,
+    ) {
+      const reset = passwordResets.get(userId);
+      if (reset && reset.resetSessionToken === state.resetSessionToken) {
         Object.assign(reset, state);
       }
     },

@@ -144,7 +144,7 @@ describe("forgotPassword", () => {
       expiresAt: new Date(NOW.getTime() + 60_000),
       now: new Date(NOW.getTime() - 600_000),
     });
-    await repo.updatePasswordResetSendState("tok", {
+    await repo.updatePasswordResetSendState(1, {
       resetSessionToken: "tok",
       codeHash: "old-code",
       expiresAt: new Date(NOW.getTime() + 60_000),
@@ -192,7 +192,7 @@ describe("forgotPassword", () => {
       expiresAt: new Date(NOW.getTime() + 60_000),
       now: previousSentAt,
     });
-    await repo.updatePasswordResetSendState("tok", {
+    await repo.updatePasswordResetSendState(1, {
       resetSessionToken: "tok",
       codeHash: "third-code",
       expiresAt: new Date(NOW.getTime() + 60_000),
@@ -251,5 +251,61 @@ describe("forgotPassword", () => {
     expect(
       await repo.findPasswordResetBySessionToken(second.sessionToken),
     ).toMatchObject({ userId: 1 });
+  });
+
+  it("lands both writes when two calls overlap, leaving no caller with a dead cookie", async () => {
+    const { repo, forgotPassword } = setup();
+    await repo.upsertPasswordReset({
+      userId: 1,
+      codeHash: "old-code",
+      resetSessionToken: "tok",
+      expiresAt: new Date(NOW.getTime() + 600_000),
+      now: new Date(NOW.getTime() - 600_000),
+    });
+
+    const [first, second] = await Promise.all([
+      forgotPassword("reset@example.com"),
+      forgotPassword("reset@example.com"),
+    ]);
+
+    expect(first.sessionToken).not.toBe(second.sessionToken);
+    // One row, so the last write wins; what must not happen is a write
+    // vanishing, which is what leaves its caller holding a dead cookie.
+    const stored = await repo.findPasswordResetByUserId(1);
+    expect(stored).toBeDefined();
+    expect([first.sessionToken, second.sessionToken]).toContain(
+      stored?.resetSessionToken,
+    );
+    expect(repo.passwordResets.size).toBe(1);
+  });
+
+  it("does not restore over a newer request when a late delivery fails", async () => {
+    const { repo } = setup();
+    const emailSender = { send: vi.fn().mockRejectedValue(new Error("down")) };
+    const { forgotPassword } = createForgotPasswordService({
+      repo,
+      emailSender,
+      log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      now: () => NOW,
+    });
+
+    await forgotPassword("reset@example.com");
+    // A second request rotates past the first before its compensation runs.
+    await repo.updatePasswordResetSendState(1, {
+      resetSessionToken: "newer-token",
+      codeHash: "newer-code",
+      expiresAt: new Date(NOW.getTime() + 600_000),
+      codeAttempts: 0,
+      lastSentAt: NOW,
+      codeSendCount: 9,
+    });
+
+    await vi.waitFor(() => expect(emailSender.send).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const stored = await repo.findPasswordResetByUserId(1);
+    expect(stored?.resetSessionToken).toBe("newer-token");
+    expect(stored?.codeHash).toBe("newer-code");
+    expect(stored?.codeSendCount).toBe(9);
   });
 });

@@ -732,7 +732,7 @@ describe("password resets", () => {
     });
   });
 
-  it("increments attempts and writes send state by token", async () => {
+  it("increments attempts by token and writes send state by user", async () => {
     const repo = seeded();
     await repo.upsertPasswordReset({
       userId: 1,
@@ -747,7 +747,7 @@ describe("password resets", () => {
       codeAttempts: 1,
     });
 
-    await repo.updatePasswordResetSendState("tok", {
+    await repo.updatePasswordResetSendState(1, {
       resetSessionToken: "tok",
       codeHash: "restored",
       expiresAt,
@@ -799,5 +799,57 @@ describe("password resets", () => {
     ).toHaveLength(2);
     const fresh = repo.sessions.find((s) => s.tokenHash === "fresh-session");
     expect(fresh?.revokedAt).toBeNull();
+  });
+
+  it("writes send state by user, and restores only while the token still matches", async () => {
+    const repo = seeded();
+    await repo.upsertPasswordReset({
+      userId: 1,
+      codeHash: "first",
+      resetSessionToken: "tok-1",
+      expiresAt,
+      now,
+    });
+
+    await repo.updatePasswordResetSendState(1, {
+      resetSessionToken: "tok-2",
+      codeHash: "second",
+      expiresAt,
+      codeAttempts: 0,
+      lastSentAt: now,
+      codeSendCount: 2,
+    });
+    expect(await repo.findPasswordResetByUserId(1)).toMatchObject({
+      resetSessionToken: "tok-2",
+      codeHash: "second",
+    });
+
+    // Guard matches: the restore applies.
+    await repo.restorePasswordResetSendState(1, {
+      resetSessionToken: "tok-2",
+      codeHash: "first",
+      expiresAt,
+      codeAttempts: 0,
+      lastSentAt: now,
+      codeSendCount: 1,
+    });
+    expect(await repo.findPasswordResetByUserId(1)).toMatchObject({
+      codeHash: "first",
+      codeSendCount: 1,
+    });
+
+    // Guard does not match: the restore is a no-op.
+    await repo.restorePasswordResetSendState(1, {
+      resetSessionToken: "stale-token",
+      codeHash: "clobbered",
+      expiresAt,
+      codeAttempts: 0,
+      lastSentAt: now,
+      codeSendCount: 0,
+    });
+    expect(await repo.findPasswordResetByUserId(1)).toMatchObject({
+      codeHash: "first",
+      codeSendCount: 1,
+    });
   });
 });

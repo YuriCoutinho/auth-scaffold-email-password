@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   authUsers,
   passwordResets,
@@ -245,14 +245,25 @@ export function createDrizzleAuthRepository(
       return rows[0];
     },
 
-    // Also used to restore the previous state when delivery fails. The state
-    // carries the new token while the WHERE still matches the old one, which
-    // is what rotates the identifier in a single write.
-    async updatePasswordResetSendState(token, state: PasswordResetSendState) {
+    // The state carries the new token while the WHERE matches the row by user,
+    // which is what rotates the identifier in a single write that cannot miss.
+    async updatePasswordResetSendState(userId, state: PasswordResetSendState) {
       await db
         .update(passwordResets)
         .set(state)
-        .where(eq(passwordResets.resetSessionToken, token));
+        .where(eq(passwordResets.userId, userId));
+    },
+
+    async restorePasswordResetSendState(userId, state: PasswordResetSendState) {
+      await db
+        .update(passwordResets)
+        .set(state)
+        .where(
+          and(
+            eq(passwordResets.userId, userId),
+            eq(passwordResets.resetSessionToken, state.resetSessionToken),
+          ),
+        );
     },
 
     async incrementPasswordResetAttempts(token) {

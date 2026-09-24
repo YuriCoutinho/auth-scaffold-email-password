@@ -178,7 +178,7 @@ describe("POST /auth/reset-password", () => {
 
   it("answers the same 401 once the reset has expired", async () => {
     const { app, authRepository } = await setup();
-    await authRepository.updatePasswordResetSendState("tok", {
+    await authRepository.updatePasswordResetSendState(1, {
       resetSessionToken: "tok",
       codeHash: hashOtpCode(CODE),
       expiresAt: new Date(Date.now() - 1_000),
@@ -200,7 +200,7 @@ describe("POST /auth/reset-password", () => {
 
   it("answers the same 401 for an exhausted code, even when it is the right one", async () => {
     const { app, authRepository } = await setup();
-    await authRepository.updatePasswordResetSendState("tok", {
+    await authRepository.updatePasswordResetSendState(1, {
       resetSessionToken: "tok",
       codeHash: hashOtpCode(CODE),
       expiresAt: new Date(Date.now() + 600_000),

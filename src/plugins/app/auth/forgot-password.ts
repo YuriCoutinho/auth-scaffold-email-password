@@ -18,6 +18,7 @@ interface ForgotPasswordServiceDeps {
     | "findPasswordResetByUserId"
     | "upsertPasswordReset"
     | "updatePasswordResetSendState"
+    | "restorePasswordResetSendState"
   >;
   emailSender: EmailSender;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
@@ -59,7 +60,7 @@ export function createForgotPasswordService(deps: ForgotPasswordServiceDeps) {
           // refuses to answer. The code already in the mailbox keeps working
           // because its validity lives in codeHash, not in the token.
           const rotated = generatePasswordResetSessionToken();
-          await deps.repo.updatePasswordResetSendState(live.resetSessionToken, {
+          await deps.repo.updatePasswordResetSendState(user.id, {
             resetSessionToken: rotated,
             codeHash: live.codeHash,
             expiresAt: live.expiresAt,
@@ -105,7 +106,7 @@ export function createForgotPasswordService(deps: ForgotPasswordServiceDeps) {
 
       if (live) {
         passwordResetId = live.id;
-        await deps.repo.updatePasswordResetSendState(live.resetSessionToken, {
+        await deps.repo.updatePasswordResetSendState(user.id, {
           resetSessionToken: sessionToken,
           codeHash,
           expiresAt,
@@ -137,7 +138,7 @@ export function createForgotPasswordService(deps: ForgotPasswordServiceDeps) {
           if (delivered) {
             return;
           }
-          return deps.repo.updatePasswordResetSendState(sessionToken, previous);
+          return deps.repo.restorePasswordResetSendState(user.id, previous);
         })
         .catch((restoreError) => {
           deps.log?.warn(

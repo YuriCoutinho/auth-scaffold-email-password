@@ -95,8 +95,8 @@ export interface UpsertPasswordResetInput {
 }
 
 export interface PasswordResetSendState {
-  // Rotated on every request, so the write addresses the row by the token it
-  // is replacing and hands out a new one.
+  // Rotated on every request: the write addresses the row by user and sets
+  // this to the new value.
   resetSessionToken: string;
   codeHash: string;
   expiresAt: Date;
@@ -146,8 +146,18 @@ export interface AuthRepository {
   findPasswordResetBySessionToken(
     token: string,
   ): Promise<PasswordResetRecord | undefined>;
+  // Keyed by user, not by token: the token is the column being replaced, and
+  // using it as the key makes a concurrent writer match zero rows and lose its
+  // write without anyone noticing.
   updatePasswordResetSendState(
-    token: string,
+    userId: number,
+    state: PasswordResetSendState,
+  ): Promise<void>;
+  // Compensation for a delivery that failed. Applies only while the row still
+  // carries the token in `state`, so a restore that arrives after a newer
+  // request has rotated past it writes nothing.
+  restorePasswordResetSendState(
+    userId: number,
     state: PasswordResetSendState,
   ): Promise<void>;
   incrementPasswordResetAttempts(token: string): Promise<void>;
