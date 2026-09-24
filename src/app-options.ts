@@ -1,5 +1,6 @@
 import type { FastifyServerOptions } from "fastify";
 import type { Env } from "./config/env.js";
+import type { RateLimitOverrides } from "./lib/rate-limit.js";
 import type { AuthRepository } from "./plugins/app/auth/repository.js";
 import type { CredentialThrottleRepository } from "./plugins/app/credential-throttle/repository.js";
 import type { EmailSender } from "./plugins/app/email/sender.js";
@@ -14,4 +15,5 @@ export interface AppOptions {
   emailSender?: EmailSender;
   checkPwnedPassword?: CheckPwnedPassword;
   credentialThrottleRepository?: CredentialThrottleRepository;
+  rateLimit?: RateLimitOverrides;
 }
