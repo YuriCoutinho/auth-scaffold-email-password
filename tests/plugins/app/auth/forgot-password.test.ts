@@ -253,7 +253,7 @@ describe("forgotPassword", () => {
     ).toMatchObject({ userId: 1 });
   });
 
-  it("lands both writes when two calls overlap, leaving no caller with a dead cookie", async () => {
+  it("lands the write even when the token it read was rotated by someone else first", async () => {
     const { repo, forgotPassword } = setup();
     await repo.upsertPasswordReset({
       userId: 1,
@@ -263,20 +263,28 @@ describe("forgotPassword", () => {
       now: new Date(NOW.getTime() - 600_000),
     });
 
-    const [first, second] = await Promise.all([
-      forgotPassword("reset@example.com"),
-      forgotPassword("reset@example.com"),
-    ]);
+    // The service reads the row, and before it writes, another request
+    // rotates the token out from under it. Keyed by token the write would
+    // match nothing and vanish; keyed by user it lands.
+    const read = repo.findPasswordResetByUserId.bind(repo);
+    repo.findPasswordResetByUserId = async (userId: number) => {
+      const record = await read(userId);
+      await repo.updatePasswordResetSendState(1, {
+        resetSessionToken: "rotated-by-someone-else",
+        codeHash: "someone-elses-code",
+        expiresAt: new Date(NOW.getTime() + 600_000),
+        codeAttempts: 0,
+        lastSentAt: NOW,
+        codeSendCount: 2,
+      });
+      return record;
+    };
 
-    expect(first.sessionToken).not.toBe(second.sessionToken);
-    // One row, so the last write wins; what must not happen is a write
-    // vanishing, which is what leaves its caller holding a dead cookie.
+    const { sessionToken } = await forgotPassword("reset@example.com");
+
     const stored = await repo.findPasswordResetByUserId(1);
-    expect(stored).toBeDefined();
-    expect([first.sessionToken, second.sessionToken]).toContain(
-      stored?.resetSessionToken,
-    );
-    expect(repo.passwordResets.size).toBe(1);
+    expect(stored?.resetSessionToken).toBe(sessionToken);
+    expect(stored?.codeHash).not.toBe("someone-elses-code");
   });
 
   it("does not restore over a newer request when a late delivery fails", async () => {
