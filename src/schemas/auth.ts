@@ -18,6 +18,10 @@ export const signupBodySchema = z.object({
   password: passwordSchema,
 });
 
+export const forgotPasswordBodySchema = z.object({
+  email: z.email().max(254),
+});
+
 export const verifyCodeBodySchema = z.object({
   code: z.string().regex(/^\d{6}$/),
 });

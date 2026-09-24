@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   changePasswordBodySchema,
   currentUserResponseSchema,
+  forgotPasswordBodySchema,
   loginBodySchema,
   messageSchema,
   signupBodySchema,
@@ -109,5 +110,19 @@ describe("changePasswordBodySchema", () => {
         newPassword: weak,
       }).success,
     );
+  });
+
+  it("accepts a valid address on forgot password and rejects a malformed one", () => {
+    expect(
+      forgotPasswordBodySchema.safeParse({ email: "user@example.com" }).success,
+    ).toBe(true);
+    expect(
+      forgotPasswordBodySchema.safeParse({ email: "not-an-email" }).success,
+    ).toBe(false);
+    expect(
+      forgotPasswordBodySchema.safeParse({
+        email: `${"a".repeat(250)}@example.com`,
+      }).success,
+    ).toBe(false);
   });
 });
