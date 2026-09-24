@@ -5,6 +5,7 @@ import {
   forgotPasswordBodySchema,
   loginBodySchema,
   messageSchema,
+  resetPasswordBodySchema,
   signupBodySchema,
   verifyCodeBodySchema,
 } from "../../src/schemas/auth.js";
@@ -122,6 +123,33 @@ describe("changePasswordBodySchema", () => {
     expect(
       forgotPasswordBodySchema.safeParse({
         email: `${"a".repeat(250)}@example.com`,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires six digits and a long enough password on reset", () => {
+    expect(
+      resetPasswordBodySchema.safeParse({
+        code: "123456",
+        newPassword: "a perfectly fine passphrase",
+      }).success,
+    ).toBe(true);
+    expect(
+      resetPasswordBodySchema.safeParse({
+        code: "12345",
+        newPassword: "a perfectly fine passphrase",
+      }).success,
+    ).toBe(false);
+    expect(
+      resetPasswordBodySchema.safeParse({
+        code: "12a456",
+        newPassword: "a perfectly fine passphrase",
+      }).success,
+    ).toBe(false);
+    expect(
+      resetPasswordBodySchema.safeParse({
+        code: "123456",
+        newPassword: "a".repeat(14),
       }).success,
     ).toBe(false);
   });

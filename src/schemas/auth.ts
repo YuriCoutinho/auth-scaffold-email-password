@@ -26,6 +26,11 @@ export const verifyCodeBodySchema = z.object({
   code: z.string().regex(/^\d{6}$/),
 });
 
+export const resetPasswordBodySchema = z.object({
+  code: z.string().regex(/^\d{6}$/),
+  newPassword: passwordSchema,
+});
+
 export const loginBodySchema = z.object({
   email: z.email().max(254),
   password: z.string().min(1).max(128),
