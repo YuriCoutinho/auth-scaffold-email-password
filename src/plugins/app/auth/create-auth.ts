@@ -46,6 +46,7 @@ export function createAuth(deps: AuthDeps) {
     ...shared,
     emailSender: deps.emailSender,
     checkPwnedPassword: deps.checkPwnedPassword,
+    throttle: deps.credentialThrottle,
   });
   const { verifyCode } = createVerifyCodeService(shared);
   const { login } = createLoginService({

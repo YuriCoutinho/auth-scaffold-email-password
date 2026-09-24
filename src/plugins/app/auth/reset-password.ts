@@ -6,6 +6,7 @@ import {
   SESSION_TTL_SECONDS,
 } from "../../../lib/session.js";
 import { hashOtpCode, hashSessionToken } from "../../../lib/token-hash.js";
+import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
 import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import type { AuthRepository } from "./repository.js";
@@ -33,6 +34,7 @@ interface ResetPasswordServiceDeps {
   >;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
+  throttle: CredentialThrottle;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }
@@ -101,6 +103,10 @@ export function createResetPasswordService(deps: ResetPasswordServiceDeps) {
         revokedAt: currentTime,
         revokedReason: "password_reset",
       });
+      // Proving possession of the email outranks the failed-attempt count, so
+      // a reset frees the account the way a successful login does. Without it
+      // the owner would finish the reset and still be locked out.
+      await deps.throttle.reset(reset.email);
       deps.log?.info({ userId: reset.userId }, "password reset");
 
       // Detached: the password is already changed, so delivery cannot decide
