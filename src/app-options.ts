@@ -4,6 +4,7 @@ import type { Executor } from "./db/client.js";
 import type { RateLimitOverrides } from "./lib/rate-limit.js";
 import type { TtlPolicy } from "./lib/ttl.js";
 import type { CredentialThrottleRepository } from "./modules/credential-throttle/repository.js";
+import type { OtpRepository } from "./modules/otp/repository.js";
 import type { SessionsRepository } from "./modules/sessions/repository.js";
 import type { UsersRepository } from "./modules/users/repository.js";
 import type { AuthRepository } from "./plugins/app/auth/repository.js";
@@ -18,6 +19,7 @@ import type { TransactionRunner } from "./plugins/transaction.js";
 export interface RepositoryFactories {
   users: (executor: Executor) => UsersRepository;
   sessions: (executor: Executor) => SessionsRepository;
+  otp: (executor: Executor) => OtpRepository;
   credentialThrottle: (executor: Executor) => CredentialThrottleRepository;
 }
 

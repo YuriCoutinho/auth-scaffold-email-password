@@ -6,6 +6,7 @@ import type {
   CredentialThrottleRepository,
   ThrottleRecord,
 } from "../../src/modules/credential-throttle/repository.js";
+import type { OtpRepository } from "../../src/modules/otp/repository.js";
 import type { SessionsRepository } from "../../src/modules/sessions/repository.js";
 import type { UsersRepository } from "../../src/modules/users/repository.js";
 import type {
@@ -405,6 +406,31 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
     },
   };
 
+  // The new-style otp port shares the legacy verification code rows, joined
+  // to their owner like the Drizzle reads, and adds consume and purgeExpired,
+  // which the legacy port never exposed on their own.
+  const otpRepository: OtpRepository = {
+    find: legacy.findVerificationCode,
+    findByTokenHash: legacy.findVerificationCodeByTokenHash,
+    save: legacy.saveVerificationCode,
+    rotateToken: legacy.rotateVerificationToken,
+    restore: legacy.restoreVerificationCode,
+    incrementAttempts: legacy.incrementVerificationAttempts,
+    async consume(purpose, input) {
+      return consumeCode(purpose, input);
+    },
+    async purgeExpired(at) {
+      let purgedCount = 0;
+      for (const [key, code] of verificationCodes) {
+        if (code.expiresAt.getTime() <= at.getTime()) {
+          verificationCodes.delete(key);
+          purgedCount++;
+        }
+      }
+      return purgedCount;
+    },
+  };
+
   // Backed by the same map the legacy port used to write, so a test that
   // seeds or reads `store.throttle` sees whichever side wrote it.
   const credentialThrottleRepository: CredentialThrottleRepository = {
@@ -438,6 +464,7 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
   const repositories: RepositoryFactories = {
     users: () => usersRepository,
     sessions: () => sessionsRepository,
+    otp: () => otpRepository,
     credentialThrottle: () => credentialThrottleRepository,
   };
 

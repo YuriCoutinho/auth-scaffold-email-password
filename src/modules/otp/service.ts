@@ -1,23 +1,26 @@
 import type { FastifyBaseLogger } from "fastify";
-import { generateOtpCode } from "../../../lib/otp.js";
+import { generateOtpCode } from "../../lib/otp.js";
 import {
   generateToken,
   MAX_CODE_ATTEMPTS,
   MAX_CODE_SEND_COUNT,
   RESEND_COOLDOWN_SECONDS,
-} from "../../../lib/session.js";
-import { hashOtpCode, hashVerificationToken } from "../../../lib/token-hash.js";
+} from "../../lib/session.js";
+import { hashOtpCode, hashVerificationToken } from "../../lib/token-hash.js";
 import {
   expiresAt as expiryFrom,
   hasExpired,
   type TtlPolicy,
-} from "../../../lib/ttl.js";
-import { renderPasswordResetCodeEmail } from "../../../modules/otp/emails/password-reset-code.js";
-import { renderSignupCodeEmail } from "../../../modules/otp/emails/signup-code.js";
-import { EmailProviderError, type EmailSender } from "../../email/sender.js";
+} from "../../lib/ttl.js";
+import {
+  EmailProviderError,
+  type EmailSender,
+} from "../../plugins/email/sender.js";
+import { renderPasswordResetCodeEmail } from "./emails/password-reset-code.js";
+import { renderSignupCodeEmail } from "./emails/signup-code.js";
 import type {
-  AuthRepository,
-  UpsertUnverifiedUserInput,
+  ConsumeVerificationCodeInput,
+  OtpRepository,
   VerificationCodeKey,
   VerificationCodeRecord,
   VerificationCodeState,
@@ -35,17 +38,21 @@ export type VerifyOutcome =
   | { outcome: "valid"; code: VerificationCodeRecord }
   | { outcome: "invalid" };
 
-interface VerificationCodesDeps {
-  repo: Pick<
-    AuthRepository,
-    | "startSignup"
-    | "findVerificationCode"
-    | "findVerificationCodeByTokenHash"
-    | "saveVerificationCode"
-    | "rotateVerificationToken"
-    | "restoreVerificationCode"
-    | "incrementVerificationAttempts"
-  >;
+export interface IssuedCode {
+  userId: string;
+  token: string;
+  // Null when a live code was only rotated: nothing new goes to the mailbox.
+  delivery: {
+    key: VerificationCodeKey;
+    to: string;
+    code: string;
+    codeHash: string;
+    previous: VerificationCodeState;
+  } | null;
+}
+
+export interface OtpServiceDeps {
+  repo: OtpRepository;
   emailSender: EmailSender;
   ttl: TtlPolicy;
   hmacSecret: string;
@@ -78,7 +85,7 @@ type NextCode =
       previous: VerificationCodeState;
     };
 
-export function createVerificationCodes(deps: VerificationCodesDeps) {
+export function createOtpService(deps: OtpServiceDeps) {
   const now = deps.now ?? (() => new Date());
   const ttlFor = (purpose: VerificationPurpose) =>
     PURPOSES[purpose].ttl(deps.ttl);
@@ -173,87 +180,64 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
     }
   }
 
-  // Detached on purpose: the responses that start a code are fixed, so
-  // awaiting the provider buys nothing and makes a known address slower than
-  // an unknown one, which is account enumeration by stopwatch. Failed delivery
-  // must not consume quota, so the compensation runs after the response.
-  function deliverDetached(
-    key: VerificationCodeKey,
-    to: string,
-    next: Extract<NextCode, { kind: "issue" }>,
-  ): void {
-    void deliver(key, to, next.code)
-      .then((delivered) => {
-        if (delivered) {
-          return;
-        }
-        return deps.repo.restoreVerificationCode(
-          key,
-          next.state.codeHash,
-          next.previous,
-        );
-      })
-      .catch((restoreError) => {
-        deps.log?.warn(
-          { err: restoreError, purpose: key.purpose },
-          "failed to restore verification code after delivery failure",
-        );
-      });
-  }
-
   return {
     // Every call rotates the token, whether or not a code goes out: a value
     // that stayed the same across calls would answer, in two requests,
     // whether the address has an account. A code already in the mailbox keeps
     // working because its validity lives in the code, not in the token.
-    // Null when the address belongs to a confirmed account.
-    async startSignup(
-      user: UpsertUnverifiedUserInput,
-    ): Promise<{ userId: string; token: string } | null> {
-      const currentTime = now();
-      const existing = await deps.repo.findVerificationCode({
-        userId: user.id,
-        purpose: "signup",
-      });
-      const next = nextCode("signup", existing, currentTime);
-      const token = generateToken();
-      const started = await deps.repo.startSignup(user, {
-        tokenHash: hashVerificationToken(token),
-        ...next.state,
-      });
-      if (!started) {
-        return null;
-      }
-      if (next.kind === "issue") {
-        deliverDetached(
-          { userId: started.userId, purpose: "signup" },
-          user.email,
-          next,
-        );
-      }
-      return { userId: started.userId, token };
-    },
-
-    async request(
-      user: { id: string; email: string },
+    // Runs inside the caller's transaction, so nothing is sent from here.
+    async issue(
+      owner: { id: string; email: string },
       purpose: VerificationPurpose,
-    ): Promise<string> {
-      const key = { userId: user.id, purpose };
-      const existing = await deps.repo.findVerificationCode(key);
+    ): Promise<IssuedCode> {
+      const key = { userId: owner.id, purpose };
+      const existing = await deps.repo.find(key);
       const next = nextCode(purpose, existing, now());
       const token = generateToken();
       const tokenHash = hashVerificationToken(token);
       if (next.kind === "rotate") {
-        await deps.repo.rotateVerificationToken(key, tokenHash);
-        return token;
+        await deps.repo.rotateToken(key, tokenHash);
+        return { userId: owner.id, token, delivery: null };
       }
-      await deps.repo.saveVerificationCode({
-        ...key,
-        tokenHash,
-        ...next.state,
-      });
-      deliverDetached(key, user.email, next);
-      return token;
+      await deps.repo.save({ ...key, tokenHash, ...next.state });
+      return {
+        userId: owner.id,
+        token,
+        delivery: {
+          key,
+          to: owner.email,
+          code: next.code,
+          codeHash: next.state.codeHash,
+          previous: next.previous,
+        },
+      };
+    },
+
+    // Detached on purpose: the responses that start a code are fixed, so
+    // awaiting the provider buys nothing and makes a known address slower than
+    // an unknown one, which is account enumeration by stopwatch. Failed delivery
+    // must not consume quota, so the compensation runs after the response.
+    // Called after the transaction commits, on the module bound to the
+    // database, so the compensation never runs on a transaction already closed.
+    dispatch(issued: IssuedCode): void {
+      const delivery = issued.delivery;
+      if (!delivery) {
+        return;
+      }
+      const { key, to, code, codeHash, previous } = delivery;
+      void deliver(key, to, code)
+        .then((delivered) => {
+          if (delivered) {
+            return;
+          }
+          return deps.repo.restore(key, codeHash, previous);
+        })
+        .catch((restoreError) => {
+          deps.log?.warn(
+            { err: restoreError, purpose: key.purpose },
+            "failed to restore verification code after delivery failure",
+          );
+        });
     },
 
     // Awaited, unlike the detached sends: the caller already holds a working
@@ -263,7 +247,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
       token: string,
     ): Promise<ResendOutcome> {
       const currentTime = now();
-      const record = await deps.repo.findVerificationCodeByTokenHash(
+      const record = await deps.repo.findByTokenHash(
         purpose,
         hashVerificationToken(token),
       );
@@ -285,7 +269,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
         issuedAt: currentTime,
         expiresAt: expiryFrom(currentTime, ttlFor(purpose)),
       };
-      await deps.repo.saveVerificationCode({
+      await deps.repo.save({
         ...key,
         tokenHash: record.tokenHash,
         ...state,
@@ -295,7 +279,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
         // Failed delivery must not consume quota nor start a cooldown; the
         // previous code becomes valid again. Restore is best-effort.
         try {
-          await deps.repo.restoreVerificationCode(key, state.codeHash, {
+          await deps.repo.restore(key, state.codeHash, {
             codeHash: record.codeHash,
             codeAttempts: record.codeAttempts,
             codeSendCount: record.codeSendCount,
@@ -324,7 +308,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
         return { outcome: "invalid" };
       }
       const label = PURPOSES[purpose].label;
-      const record = await deps.repo.findVerificationCodeByTokenHash(
+      const record = await deps.repo.findByTokenHash(
         purpose,
         hashVerificationToken(token),
       );
@@ -345,7 +329,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
       }
 
       if (hashOtpCode(deps.hmacSecret, code) !== record.codeHash) {
-        await deps.repo.incrementVerificationAttempts({
+        await deps.repo.incrementAttempts({
           userId: record.userId,
           purpose,
         });
@@ -361,7 +345,18 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
 
       return { outcome: "valid", code: record };
     },
+
+    async consume(
+      purpose: VerificationPurpose,
+      input: ConsumeVerificationCodeInput,
+    ): Promise<boolean> {
+      return deps.repo.consume(purpose, input);
+    },
+
+    async purgeExpired(at: Date): Promise<number> {
+      return deps.repo.purgeExpired(at);
+    },
   };
 }
 
-export type VerificationCodes = ReturnType<typeof createVerificationCodes>;
+export type OtpService = ReturnType<typeof createOtpService>;

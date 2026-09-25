@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderPasswordResetCodeEmail } from "../../../../../src/plugins/app/auth/emails/password-reset-code.js";
+import { renderPasswordResetCodeEmail } from "../../../../src/modules/otp/emails/password-reset-code.js";
 
 describe("renderPasswordResetCodeEmail", () => {
   const content = renderPasswordResetCodeEmail({

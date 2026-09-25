@@ -688,3 +688,153 @@ describe("repositories.credentialThrottle", () => {
     expect(store.throttle.has("fresh-hash")).toBe(true);
   });
 });
+
+describe("repositories.otp", () => {
+  const db = {} as never;
+  const key = { userId: OWNER, purpose: "signup" as const };
+
+  it("reads a code with its owner's email and password hash", async () => {
+    const repo = repoWithPendingSignup().repositories.otp(db);
+
+    expect(await repo.find(key)).toEqual({
+      ...CODE,
+      ...key,
+      email: "user@example.com",
+      passwordHash: "seeded-hash",
+    });
+    expect(
+      await repo.find({ userId: OWNER, purpose: "password_reset" }),
+    ).toBeUndefined();
+  });
+
+  it("finds a code by token hash only within the given purpose", async () => {
+    const repo = repoWithPendingSignup().repositories.otp(db);
+
+    expect(
+      await repo.findByTokenHash("password_reset", "token-hash"),
+    ).toBeUndefined();
+    expect(await repo.findByTokenHash("signup", "token-hash")).toMatchObject({
+      userId: OWNER,
+      email: "user@example.com",
+    });
+  });
+
+  it("saves a new code and replaces the one on file for the same key", async () => {
+    const store = createInMemoryStore({
+      users: [{ id: OWNER, email: "user@example.com" }],
+    });
+    const repo = store.repositories.otp(db);
+
+    await repo.save({ ...key, ...CODE });
+    await repo.save({ ...key, ...CODE, codeHash: "newer", codeSendCount: 2 });
+
+    expect(store.verificationCodes.size).toBe(1);
+    expect(await repo.find(key)).toMatchObject({
+      codeHash: "newer",
+      codeSendCount: 2,
+    });
+  });
+
+  it("rotates the token and keeps the code", async () => {
+    const repo = repoWithPendingSignup().repositories.otp(db);
+
+    await repo.rotateToken(key, "rotated");
+
+    expect(await repo.find(key)).toMatchObject({
+      tokenHash: "rotated",
+      codeHash: "code-hash",
+    });
+  });
+
+  describe("restore", () => {
+    const previous = {
+      codeHash: "previous-code",
+      codeAttempts: 2,
+      codeSendCount: 3,
+      issuedAt: new Date(NOW.getTime() - 60_000),
+      expiresAt: new Date(NOW.getTime() + 14 * 60 * 1000),
+    };
+
+    it("restores the previous state while the failed code is still there, and keeps the token", async () => {
+      const repo = repoWithPendingSignup().repositories.otp(db);
+      await repo.rotateToken(key, "newer-token");
+
+      await repo.restore(key, "code-hash", previous);
+
+      expect(await repo.find(key)).toMatchObject({
+        ...previous,
+        tokenHash: "newer-token",
+      });
+    });
+
+    it("does nothing once the code was replaced by a newer request", async () => {
+      const repo = repoWithPendingSignup().repositories.otp(db);
+
+      await repo.restore(key, "some-other-code", previous);
+
+      expect(await repo.find(key)).toMatchObject({
+        codeHash: "code-hash",
+        codeSendCount: 1,
+      });
+    });
+  });
+
+  it("counts one more attempt", async () => {
+    const repo = repoWithPendingSignup().repositories.otp(db);
+
+    await repo.incrementAttempts(key);
+
+    expect(await repo.find(key)).toMatchObject({ codeAttempts: 1 });
+  });
+
+  describe("consume", () => {
+    const input = {
+      userId: OWNER,
+      tokenHash: "token-hash",
+      codeHash: "code-hash",
+    };
+
+    it("deletes the code when both hashes match", async () => {
+      const store = repoWithPendingSignup();
+
+      await expect(
+        store.repositories.otp(db).consume("signup", input),
+      ).resolves.toBe(true);
+      expect(store.verificationCodes.size).toBe(0);
+    });
+
+    it("keeps the code when the token, the code or the purpose differ", async () => {
+      const store = repoWithPendingSignup();
+      const repo = store.repositories.otp(db);
+
+      await expect(
+        repo.consume("signup", { ...input, tokenHash: "rotated" }),
+      ).resolves.toBe(false);
+      await expect(
+        repo.consume("signup", { ...input, codeHash: "reissued" }),
+      ).resolves.toBe(false);
+      await expect(repo.consume("password_reset", input)).resolves.toBe(false);
+      expect(store.verificationCodes.size).toBe(1);
+    });
+  });
+
+  it("purges the codes expired at the instant, the boundary included", async () => {
+    const store = createInMemoryStore({
+      users: [{ id: OWNER, email: "user@example.com" }],
+      verificationCodes: [
+        { ...key, issuedAt: NOW, expiresAt: NOW },
+        {
+          userId: OWNER,
+          purpose: "password_reset",
+          issuedAt: NOW,
+          expiresAt: new Date(NOW.getTime() + 1),
+        },
+      ],
+    });
+
+    await expect(store.repositories.otp(db).purgeExpired(NOW)).resolves.toBe(1);
+    expect([...store.verificationCodes.keys()]).toEqual([
+      `${OWNER}:password_reset`,
+    ]);
+  });
+});
