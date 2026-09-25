@@ -41,9 +41,9 @@ export const noopRetentionRepository: RetentionRepository = {
   }),
 };
 
-// The in-memory store backs every legacy port over the same maps, so a test
-// that overrides the store gets the same rows on both sides instead of the
-// route reading one store while the session hook reads another.
+// The in-memory store backs every repository over the same maps, so a test
+// that overrides the store gets the same rows everywhere instead of the route
+// reading one store while the session hook reads another.
 type AppOptionsOverrides = Partial<AppOptions> & {
   store?: InMemoryStore;
 };
@@ -60,8 +60,6 @@ export function makeAppOptions(
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
     retentionRepository: noopRetentionRepository,
     transaction: store.transaction,
-    authRepository: store.legacy,
-    sessionRepository: store.legacy,
     ...rest,
     // Merged rather than replaced, so a test overriding only one factory
     // keeps the store backing every other module it did not mean to touch.

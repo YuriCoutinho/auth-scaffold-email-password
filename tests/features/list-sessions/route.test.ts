@@ -79,7 +79,7 @@ describe("GET /sessions", () => {
 
   it("leaves out an expired session of the same user", async () => {
     const store = repoWithTwoSessions();
-    await store.legacy.createSession({
+    await store.repositories.sessions({} as never).createSession({
       id: "33333333-3333-4333-8333-333333333333",
       userId: USER_ID,
       tokenHash: "expired-session",

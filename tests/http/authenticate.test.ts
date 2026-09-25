@@ -133,7 +133,9 @@ describe("authenticate hook", () => {
 
   it("refuses a session whose row was deleted, as after a logout", async () => {
     const store = repositoryWithSession(secondsAgo(60));
-    await store.legacy.deleteSessionByTokenHash(hashSessionToken(TOKEN));
+    await store.repositories
+      .sessions({} as never)
+      .deleteSessionByTokenHash(hashSessionToken(TOKEN));
     const app = buildApp(makeAppOptions({ store }));
     protectedRoute(app, "GET", async () => ({ ok: true }));
 

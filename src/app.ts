@@ -11,6 +11,7 @@ import {
   type ZodTypeProvider,
 } from "fastify-type-provider-zod";
 import type { AppOptions } from "./app-options.js";
+import changePasswordRoute from "./features/change-password/route.js";
 import forgotPasswordRoute from "./features/forgot-password/route.js";
 import healthRoute from "./features/health/route.js";
 import listSessionsRoute from "./features/list-sessions/route.js";
@@ -19,6 +20,7 @@ import logoutRoute from "./features/logout/route.js";
 import logoutAllRoute from "./features/logout-all/route.js";
 import meRoute from "./features/me/route.js";
 import resendSignupCodeRoute from "./features/resend-signup-code/route.js";
+import resetPasswordRoute from "./features/reset-password/route.js";
 import revokeSessionRoute from "./features/revoke-session/route.js";
 import signupRoute from "./features/signup/route.js";
 import verifySignupRoute from "./features/verify-signup/route.js";
@@ -38,8 +40,6 @@ import swagger from "./plugins/external/swagger.js";
 import swaggerUi from "./plugins/external/swagger-ui.js";
 import pwnedPassword from "./plugins/pwned-password/index.js";
 import transaction from "./plugins/transaction.js";
-import changePasswordRoute from "./routes/auth/change-password.js";
-import resetPasswordRoute from "./routes/auth/reset-password.js";
 
 export type { AppOptions } from "./app-options.js";
 
@@ -66,7 +66,7 @@ const appPlugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
   await fastify.register(healthRoute);
   await fastify.register(meRoute);
 
-  // Temporary: emptied feature by feature, removed in the last task.
+  // Temporary: only the retention sweep is still loaded this way.
   const load = (dir: string) =>
     fastify.register(autoload, {
       dir: join(import.meta.dirname, dir),
@@ -76,7 +76,7 @@ const appPlugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
   await load("plugins/app");
 
   // Registered in the order the route table was pinned in before this
-  // migration, legacy route modules and features interleaved.
+  // migration.
   const auth = { ...opts, prefix: "/auth" };
   await fastify.register(changePasswordRoute, auth);
   await fastify.register(forgotPasswordRoute, auth);

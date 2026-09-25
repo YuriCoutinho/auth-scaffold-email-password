@@ -4,38 +4,29 @@ import { cookiePolicy } from "../../lib/cookies.js";
 import { deviceLabelFromUserAgent } from "../../lib/device-label.js";
 import { rateLimitFor } from "../../lib/rate-limit.js";
 import { resolveTtl } from "../../lib/ttl.js";
-import {
-  messageSchema,
-  noContentSchema,
-  resetPasswordBodySchema,
-} from "../../schemas/auth.js";
+import { resetPasswordSchema } from "./schema.js";
+import { createResetPassword } from "./use-case.js";
 
-const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
+const route: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
   const cookies = cookiePolicy(resolveTtl(opts.ttl));
+  const resetPassword = createResetPassword({
+    transaction: app.transaction,
+    otp: app.otp,
+    users: app.users,
+    sessions: app.sessions,
+    credentialThrottle: app.credentialThrottle,
+    checkPwnedPassword: app.checkPwnedPassword,
+    log: app.log,
+  });
+
   app.post(
     "/reset-password",
     {
       config: { rateLimit: rateLimitFor("resetPassword", opts.rateLimit) },
-      schema: {
-        tags: ["auth"],
-        summary: "Finish a password reset and sign in",
-        description:
-          "Verifies the 6-digit code for the reset identified by the " +
-          "password_reset cookie, stores the new password, ends every " +
-          "session of the account and starts a new one. Everything about the " +
-          "code answers with the same generic 401, because telling the cases " +
-          "apart would reveal which addresses have accounts.",
-        body: resetPasswordBodySchema,
-        response: {
-          204: noContentSchema,
-          400: messageSchema,
-          401: messageSchema,
-          429: messageSchema,
-        },
-      },
+      schema: resetPasswordSchema,
     },
     async (request, reply) => {
-      const result = await app.auth.resetPassword({
+      const result = await resetPassword({
         sessionToken: request.cookies[cookies.passwordReset.name],
         code: request.body.code,
         newPassword: request.body.newPassword,
@@ -69,4 +60,4 @@ const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
   );
 };
 
-export default routes;
+export default route;

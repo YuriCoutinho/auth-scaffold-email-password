@@ -78,4 +78,13 @@ describe("sessions module", () => {
     expect(typeof scoped.issue).toBe("function");
     await app.close();
   });
+
+  it("refuses to start with an invalid ttl", async () => {
+    const opts = makeAppOptions({ ttl: { sessionSeconds: 0 } });
+    const app = Fastify();
+    app.register(databasePlugin, opts).register(sessionsPlugin, opts);
+
+    await expect(app.ready()).rejects.toThrow("sessionSeconds");
+    await app.close();
+  });
 });

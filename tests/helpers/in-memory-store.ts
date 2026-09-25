@@ -6,21 +6,20 @@ import type {
   CredentialThrottleRepository,
   ThrottleRecord,
 } from "../../src/modules/credential-throttle/repository.js";
-import type { OtpRepository } from "../../src/modules/otp/repository.js";
-import type { SessionsRepository } from "../../src/modules/sessions/repository.js";
-import type { UsersRepository } from "../../src/modules/users/repository.js";
 import type {
-  AuthRepository,
-  ConsumeVerificationCodeInput,
+  OtpRepository,
   SaveVerificationCodeInput,
-  UserRecord,
   VerificationCodeKey,
   VerificationPurpose,
-} from "../../src/plugins/app/auth/repository.js";
+} from "../../src/modules/otp/repository.js";
 import type {
   CreateSessionInput,
-  SessionRepository,
-} from "../../src/plugins/app/sessions/repository.js";
+  SessionsRepository,
+} from "../../src/modules/sessions/repository.js";
+import type {
+  UserRecord,
+  UsersRepository,
+} from "../../src/modules/users/repository.js";
 import {
   Rollback,
   type TransactionRunner,
@@ -52,9 +51,6 @@ export interface InMemoryStore {
   throttle: Map<string, ThrottleRecord>;
   repositories: RepositoryFactories;
   transaction: TransactionRunner;
-  // Every port a service or route still asks for by name, until task 15
-  // finishes moving them to `repositories`.
-  legacy: AuthRepository & SessionRepository;
 }
 
 const codeKey = (key: VerificationCodeKey) => `${key.userId}:${key.purpose}`;
@@ -134,100 +130,7 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
       : undefined;
   };
 
-  const consumeCode = (
-    purpose: VerificationPurpose,
-    input: ConsumeVerificationCodeInput,
-  ) => {
-    const key = codeKey({ userId: input.userId, purpose });
-    const code = verificationCodes.get(key);
-    if (
-      !code ||
-      code.tokenHash !== input.tokenHash ||
-      code.codeHash !== input.codeHash
-    ) {
-      return false;
-    }
-    verificationCodes.delete(key);
-    return true;
-  };
-
-  const deleteUserSessions = (userId: string, exceptSessionId?: string) => {
-    let deletedCount = 0;
-    for (const [id, session] of sessions) {
-      if (session.userId === userId && id !== exceptSessionId) {
-        sessions.delete(id);
-        deletedCount++;
-      }
-    }
-    return deletedCount;
-  };
-
-  const legacy: AuthRepository & SessionRepository = {
-    async findUserById(id) {
-      return toUserRecord(users.get(id));
-    },
-
-    async findVerificationCode(key) {
-      return withOwner(verificationCodes.get(codeKey(key)));
-    },
-
-    async findVerificationCodeByTokenHash(purpose, tokenHash) {
-      return withOwner(
-        [...verificationCodes.values()].find(
-          (code) => code.purpose === purpose && code.tokenHash === tokenHash,
-        ),
-      );
-    },
-
-    async saveVerificationCode(input) {
-      verificationCodes.set(codeKey(input), { ...input });
-    },
-
-    async rotateVerificationToken(key, tokenHash) {
-      const code = verificationCodes.get(codeKey(key));
-      if (code) {
-        code.tokenHash = tokenHash;
-      }
-    },
-
-    async restoreVerificationCode(key, failedCodeHash, previous) {
-      const code = verificationCodes.get(codeKey(key));
-      if (code && code.codeHash === failedCodeHash) {
-        Object.assign(code, previous);
-      }
-    },
-
-    async incrementVerificationAttempts(key) {
-      const code = verificationCodes.get(codeKey(key));
-      if (code) {
-        code.codeAttempts++;
-      }
-    },
-
-    async changePassword(input) {
-      deleteUserSessions(input.userId, input.exceptSessionId);
-      const user = users.get(input.userId);
-      if (user) {
-        user.passwordHash = input.passwordHash;
-      }
-    },
-
-    async resetPassword(input) {
-      if (!consumeCode("password_reset", input)) {
-        return false;
-      }
-      deleteUserSessions(input.userId);
-      const user = users.get(input.userId);
-      if (user) {
-        user.passwordHash = input.passwordHash;
-      }
-      sessions.set(input.session.id, {
-        ...input.session,
-        userId: input.userId,
-      });
-      return true;
-    },
-
+  const sessionsRepository: SessionsRepository = {
     async createSession(input) {
       sessions.set(input.id, { ...input });
     },
@@ -254,9 +157,14 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
     },
 
     async deleteUserSessions(input) {
-      return {
-        deletedCount: deleteUserSessions(input.userId, input.exceptSessionId),
-      };
+      let deletedCount = 0;
+      for (const [id, session] of sessions) {
+        if (session.userId === input.userId && id !== input.exceptSessionId) {
+          sessions.delete(id);
+          deletedCount++;
+        }
+      }
+      return { deletedCount };
     },
 
     async deleteUserSession(input) {
@@ -287,17 +195,7 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
           expiresAt: session.expiresAt,
         }));
     },
-  };
 
-  // The new-style sessions port shares the legacy implementation over the
-  // same map and adds purgeExpired, which the legacy port never needed.
-  const sessionsRepository: SessionsRepository = {
-    createSession: legacy.createSession,
-    findSessionByTokenHash: legacy.findSessionByTokenHash,
-    deleteSessionByTokenHash: legacy.deleteSessionByTokenHash,
-    deleteUserSessions: legacy.deleteUserSessions,
-    deleteUserSession: legacy.deleteUserSession,
-    listUserSessions: legacy.listUserSessions,
     async purgeExpired(at) {
       let purgedCount = 0;
       for (const [id, session] of sessions) {
@@ -310,8 +208,6 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
     },
   };
 
-  // The new-style users port shares the legacy user rows and adds the writes
-  // the users module owns, which the legacy port never exposed on their own.
   const usersRepository: UsersRepository = {
     async findByEmail(email) {
       return toUserRecord(findUserByEmail(email));
@@ -366,19 +262,59 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
     },
   };
 
-  // The new-style otp port shares the legacy verification code rows, joined
-  // to their owner like the Drizzle reads, and adds consume and purgeExpired,
-  // which the legacy port never exposed on their own.
+  // Codes are read joined to their owner, like the Drizzle reads.
   const otpRepository: OtpRepository = {
-    find: legacy.findVerificationCode,
-    findByTokenHash: legacy.findVerificationCodeByTokenHash,
-    save: legacy.saveVerificationCode,
-    rotateToken: legacy.rotateVerificationToken,
-    restore: legacy.restoreVerificationCode,
-    incrementAttempts: legacy.incrementVerificationAttempts,
-    async consume(purpose, input) {
-      return consumeCode(purpose, input);
+    async find(key) {
+      return withOwner(verificationCodes.get(codeKey(key)));
     },
+
+    async findByTokenHash(purpose, tokenHash) {
+      return withOwner(
+        [...verificationCodes.values()].find(
+          (code) => code.purpose === purpose && code.tokenHash === tokenHash,
+        ),
+      );
+    },
+
+    async save(input) {
+      verificationCodes.set(codeKey(input), { ...input });
+    },
+
+    async rotateToken(key, tokenHash) {
+      const code = verificationCodes.get(codeKey(key));
+      if (code) {
+        code.tokenHash = tokenHash;
+      }
+    },
+
+    async restore(key, failedCodeHash, previous) {
+      const code = verificationCodes.get(codeKey(key));
+      if (code && code.codeHash === failedCodeHash) {
+        Object.assign(code, previous);
+      }
+    },
+
+    async incrementAttempts(key) {
+      const code = verificationCodes.get(codeKey(key));
+      if (code) {
+        code.codeAttempts++;
+      }
+    },
+
+    async consume(purpose, input) {
+      const key = codeKey({ userId: input.userId, purpose });
+      const code = verificationCodes.get(key);
+      if (
+        !code ||
+        code.tokenHash !== input.tokenHash ||
+        code.codeHash !== input.codeHash
+      ) {
+        return false;
+      }
+      verificationCodes.delete(key);
+      return true;
+    },
+
     async purgeExpired(at) {
       let purgedCount = 0;
       for (const [key, code] of verificationCodes) {
@@ -391,8 +327,8 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
     },
   };
 
-  // Backed by the same map the legacy port used to write, so a test that
-  // seeds or reads `store.throttle` sees whichever side wrote it.
+  // Backed by the `store.throttle` map, so a test can seed or read the trail
+  // directly.
   const credentialThrottleRepository: CredentialThrottleRepository = {
     async findThrottleByKeyHash(keyHash) {
       return throttle.get(keyHash);
@@ -485,6 +421,5 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
     throttle,
     repositories,
     transaction,
-    legacy,
   };
 }

@@ -95,6 +95,25 @@ describe("POST /auth/reset-password", () => {
     await app.close();
   });
 
+  it("stamps the session it opens with the configured session ttl", async () => {
+    const { app, store } = await setup({ ttl: { sessionSeconds: 60 } });
+    const before = Date.now();
+
+    const response = await inject(app, {
+      code: CODE,
+      newPassword: NEW_PASSWORD,
+    });
+
+    expect(response.cookies.find((c) => c.name === "session")?.maxAge).toBe(60);
+    const [session] = [...store.sessions.values()];
+    expect(
+      (session?.expiresAt.getTime() ?? 0) - (session?.createdAt.getTime() ?? 0),
+    ).toBe(60_000);
+    expect(session?.createdAt.getTime()).toBeGreaterThanOrEqual(before);
+
+    await app.close();
+  });
+
   it("leaves the caller signed in, so GET /me answers with the account", async () => {
     const { app } = await setup();
 

@@ -17,16 +17,6 @@ const CODE = {
 
 const SESSION_EXPIRES_AT = new Date(NOW.getTime() + 60 * 60 * 1000);
 
-function session(id: string) {
-  return {
-    id,
-    tokenHash: `session-${id}`,
-    deviceLabel: null,
-    createdAt: NOW,
-    expiresAt: SESSION_EXPIRES_AT,
-  };
-}
-
 function repoWithPendingSignup() {
   return createInMemoryStore({
     users: [{ id: OWNER, email: "user@example.com", emailVerifiedAt: null }],
@@ -38,28 +28,6 @@ function repoWithPendingSignup() {
         codeHash: "code-hash",
         issuedAt: NOW,
       },
-    ],
-  });
-}
-
-function repoWithResetCode() {
-  return createInMemoryStore({
-    users: [
-      { id: OWNER, email: "user@example.com", passwordHash: "old-hash" },
-      { id: OTHER, email: "other@example.com" },
-    ],
-    verificationCodes: [
-      {
-        userId: OWNER,
-        purpose: "password_reset",
-        tokenHash: "token-hash",
-        codeHash: "code-hash",
-        issuedAt: NOW,
-      },
-    ],
-    sessions: [
-      { id: "s-1", userId: OWNER, tokenHash: "phone", createdAt: NOW },
-      { id: "s-2", userId: OTHER, tokenHash: "stranger", createdAt: NOW },
     ],
   });
 }
@@ -122,152 +90,9 @@ describe("transaction", () => {
   });
 });
 
-describe("legacy.findVerificationCodeByTokenHash", () => {
-  it("only matches a code of the given purpose", async () => {
-    const { legacy: repo } = repoWithPendingSignup();
+describe("repositories.sessions", () => {
+  const db = {} as never;
 
-    expect(
-      await repo.findVerificationCodeByTokenHash(
-        "password_reset",
-        "token-hash",
-      ),
-    ).toBeUndefined();
-    expect(
-      await repo.findVerificationCodeByTokenHash("signup", "token-hash"),
-    ).toMatchObject({ email: "user@example.com" });
-  });
-});
-
-describe("legacy.rotateVerificationToken", () => {
-  it("replaces the token and keeps the code", async () => {
-    const { legacy: repo } = repoWithPendingSignup();
-    const key = { userId: OWNER, purpose: "signup" as const };
-
-    await repo.rotateVerificationToken(key, "rotated");
-
-    expect(await repo.findVerificationCode(key)).toMatchObject({
-      tokenHash: "rotated",
-      codeHash: "code-hash",
-    });
-  });
-});
-
-describe("legacy.restoreVerificationCode", () => {
-  const key = { userId: OWNER, purpose: "signup" as const };
-  const previous = {
-    codeHash: "previous-code",
-    codeAttempts: 2,
-    codeSendCount: 3,
-    issuedAt: new Date(NOW.getTime() - 60_000),
-    expiresAt: new Date(NOW.getTime() + 14 * 60 * 1000),
-  };
-
-  it("restores the previous state while the failed code is still there, and keeps the token", async () => {
-    const { legacy: repo } = repoWithPendingSignup();
-    await repo.rotateVerificationToken(key, "newer-token");
-
-    await repo.restoreVerificationCode(key, "code-hash", previous);
-
-    expect(await repo.findVerificationCode(key)).toMatchObject({
-      ...previous,
-      tokenHash: "newer-token",
-    });
-  });
-
-  it("does nothing once the code was replaced by a newer request", async () => {
-    const { legacy: repo } = repoWithPendingSignup();
-
-    await repo.restoreVerificationCode(key, "some-other-code", previous);
-
-    expect(await repo.findVerificationCode(key)).toMatchObject({
-      codeHash: "code-hash",
-      codeSendCount: 1,
-    });
-  });
-});
-
-describe("legacy.incrementVerificationAttempts", () => {
-  it("counts one more attempt", async () => {
-    const { legacy: repo } = repoWithPendingSignup();
-    const key = { userId: OWNER, purpose: "signup" as const };
-
-    await repo.incrementVerificationAttempts(key);
-
-    expect(await repo.findVerificationCode(key)).toMatchObject({
-      codeAttempts: 1,
-    });
-  });
-});
-
-describe("legacy.resetPassword", () => {
-  const input = {
-    userId: OWNER,
-    tokenHash: "token-hash",
-    codeHash: "code-hash",
-    passwordHash: "new-hash",
-    session: session("s-new"),
-  };
-
-  it("consumes the code, swaps the password and replaces every session of the user", async () => {
-    const store = repoWithResetCode();
-    const repo = store.legacy;
-
-    await expect(repo.resetPassword(input)).resolves.toBe(true);
-
-    expect(await repo.findUserById(OWNER)).toMatchObject({
-      passwordHash: "new-hash",
-    });
-    expect(store.verificationCodes.size).toBe(0);
-    expect(await repo.findSessionByTokenHash("phone")).toBeUndefined();
-    expect(await repo.findSessionByTokenHash("session-s-new")).toMatchObject({
-      userId: OWNER,
-    });
-    expect(await repo.findSessionByTokenHash("stranger")).toBeDefined();
-  });
-
-  it.each([
-    ["a rotated token", { tokenHash: "stale-token" }],
-    ["a code that was reissued", { codeHash: "stale-code" }],
-  ])("changes nothing against %s", async (_name, override) => {
-    const store = repoWithResetCode();
-    const repo = store.legacy;
-
-    await expect(repo.resetPassword({ ...input, ...override })).resolves.toBe(
-      false,
-    );
-
-    expect(await repo.findUserById(OWNER)).toMatchObject({
-      passwordHash: "old-hash",
-    });
-    expect(await repo.findSessionByTokenHash("phone")).toBeDefined();
-    expect(store.verificationCodes.size).toBe(1);
-  });
-});
-
-describe("legacy.changePassword", () => {
-  it("swaps the password and deletes every other session of the user", async () => {
-    const store = createInMemoryStore({
-      users: [{ id: OWNER, email: "user@example.com" }],
-      sessions: [
-        { id: "current", userId: OWNER, tokenHash: "current" },
-        { id: "laptop", userId: OWNER, tokenHash: "laptop" },
-      ],
-    });
-
-    await store.legacy.changePassword({
-      userId: OWNER,
-      passwordHash: "new-hash",
-      exceptSessionId: "current",
-    });
-
-    expect(await store.legacy.findUserById(OWNER)).toMatchObject({
-      passwordHash: "new-hash",
-    });
-    expect([...store.sessions.keys()]).toEqual(["current"]);
-  });
-});
-
-describe("legacy sessions", () => {
   function repoWithSessions() {
     return createInMemoryStore({
       sessions: [
@@ -305,7 +130,7 @@ describe("legacy sessions", () => {
 
   it("deletes the session behind a token hash and ignores an unknown one", async () => {
     const store = repoWithSessions();
-    const repo = store.legacy;
+    const repo = store.repositories.sessions(db);
 
     await repo.deleteSessionByTokenHash("laptop");
     await repo.deleteSessionByTokenHash("unknown");
@@ -318,7 +143,7 @@ describe("legacy sessions", () => {
     const store = repoWithSessions();
 
     await expect(
-      store.legacy.deleteUserSessions({
+      store.repositories.sessions(db).deleteUserSessions({
         userId: OWNER,
         exceptSessionId: "current",
       }),
@@ -331,7 +156,7 @@ describe("legacy sessions", () => {
     const store = repoWithSessions();
 
     await expect(
-      store.legacy.deleteUserSessions({ userId: OWNER }),
+      store.repositories.sessions(db).deleteUserSessions({ userId: OWNER }),
     ).resolves.toEqual({
       deletedCount: 3,
     });
@@ -341,7 +166,7 @@ describe("legacy sessions", () => {
 
   it("deletes one session only for its owner", async () => {
     const store = repoWithSessions();
-    const repo = store.legacy;
+    const repo = store.repositories.sessions(db);
 
     await expect(
       repo.deleteUserSession({ id: "stranger", userId: OWNER }),
@@ -359,7 +184,7 @@ describe("legacy sessions", () => {
   it("lists the user's sessions still active at the instant, newest first", async () => {
     const store = repoWithSessions();
 
-    const listed = await store.legacy.listUserSessions({
+    const listed = await store.repositories.sessions(db).listUserSessions({
       userId: OWNER,
       activeAt: NOW,
     });
@@ -474,6 +299,27 @@ describe("repositories.users", () => {
       const repo = store.repositories.users(db);
 
       await expect(repo.markVerified(OWNER, NOW)).resolves.toBe(false);
+    });
+  });
+
+  describe("setPasswordHash", () => {
+    it("replaces the password of the account and of no other", async () => {
+      const store = createInMemoryStore({
+        users: [
+          { id: OWNER, email: "user@example.com", passwordHash: "old-hash" },
+          { id: OTHER, email: "other@example.com", passwordHash: "other-hash" },
+        ],
+      });
+      const repo = store.repositories.users(db);
+
+      await repo.setPasswordHash(OWNER, "new-hash");
+
+      expect(await repo.findById(OWNER)).toMatchObject({
+        passwordHash: "new-hash",
+      });
+      expect(store.users.get(OTHER)).toMatchObject({
+        passwordHash: "other-hash",
+      });
     });
   });
 

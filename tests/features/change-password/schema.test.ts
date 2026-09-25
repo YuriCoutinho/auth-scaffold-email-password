@@ -1,16 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { signupBodySchema } from "../../src/features/signup/schema.js";
-import {
-  changePasswordBodySchema,
-  messageSchema,
-  resetPasswordBodySchema,
-} from "../../src/schemas/auth.js";
-
-describe("auth schemas", () => {
-  it("describes a message envelope", () => {
-    expect(messageSchema.safeParse({ message: "ok" }).success).toBe(true);
-  });
-});
+import { changePasswordBodySchema } from "../../../src/features/change-password/schema.js";
+import { signupBodySchema } from "../../../src/features/signup/schema.js";
 
 describe("changePasswordBodySchema", () => {
   it("accepts a current password and a strong new password", () => {
@@ -60,34 +50,5 @@ describe("changePasswordBodySchema", () => {
         newPassword: weak,
       }).success,
     );
-  });
-});
-
-describe("resetPasswordBodySchema", () => {
-  it("requires six digits and a long enough password", () => {
-    expect(
-      resetPasswordBodySchema.safeParse({
-        code: "123456",
-        newPassword: "a perfectly fine passphrase",
-      }).success,
-    ).toBe(true);
-    expect(
-      resetPasswordBodySchema.safeParse({
-        code: "12345",
-        newPassword: "a perfectly fine passphrase",
-      }).success,
-    ).toBe(false);
-    expect(
-      resetPasswordBodySchema.safeParse({
-        code: "12a456",
-        newPassword: "a perfectly fine passphrase",
-      }).success,
-    ).toBe(false);
-    expect(
-      resetPasswordBodySchema.safeParse({
-        code: "123456",
-        newPassword: "a".repeat(14),
-      }).success,
-    ).toBe(false);
   });
 });
