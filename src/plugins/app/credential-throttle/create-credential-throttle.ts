@@ -12,6 +12,7 @@ export type ThrottleCheck =
 
 export interface CredentialThrottleDeps {
   repository: CredentialThrottleRepository;
+  hmacSecret: string;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }
@@ -22,7 +23,7 @@ export function createCredentialThrottle(deps: CredentialThrottleDeps) {
   return {
     async check(key: string): Promise<ThrottleCheck> {
       const record = await deps.repository.findThrottleByKeyHash(
-        hashThrottleKey(key),
+        hashThrottleKey(deps.hmacSecret, key),
       );
       const currentTime = now();
       const until = record
@@ -40,7 +41,7 @@ export function createCredentialThrottle(deps: CredentialThrottleDeps) {
     },
 
     async registerFailure(key: string): Promise<void> {
-      const keyHash = hashThrottleKey(key);
+      const keyHash = hashThrottleKey(deps.hmacSecret, key);
       const currentTime = now();
       const record = await deps.repository.findThrottleByKeyHash(keyHash);
       // A run of failures is what looks like a machine. Once the trail goes
@@ -69,7 +70,9 @@ export function createCredentialThrottle(deps: CredentialThrottleDeps) {
     },
 
     async reset(key: string): Promise<void> {
-      await deps.repository.clearThrottle(hashThrottleKey(key));
+      await deps.repository.clearThrottle(
+        hashThrottleKey(deps.hmacSecret, key),
+      );
     },
   };
 }

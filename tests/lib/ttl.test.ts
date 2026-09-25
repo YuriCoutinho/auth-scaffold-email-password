@@ -2,8 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TTL,
   expiresAt,
-  isExpired,
-  issuedAfter,
+  hasExpired,
   resolveTtl,
 } from "../../src/lib/ttl.js";
 
@@ -45,21 +44,12 @@ describe("expiresAt", () => {
   });
 });
 
-describe("isExpired", () => {
+describe("hasExpired", () => {
   it("is false before the expiry", () => {
-    expect(isExpired(NOW, 60, new Date(NOW.getTime() + 59_999))).toBe(false);
+    expect(hasExpired(NOW, new Date(NOW.getTime() - 1))).toBe(false);
   });
 
   it("is true exactly at the expiry", () => {
-    expect(isExpired(NOW, 60, new Date(NOW.getTime() + 60_000))).toBe(true);
-  });
-});
-
-describe("issuedAfter", () => {
-  it("returns the oldest issue instant still valid at now", () => {
-    const cutoff = issuedAfter(60, NOW);
-    expect(cutoff).toEqual(new Date("2026-09-24T11:59:00Z"));
-    expect(isExpired(cutoff, 60, NOW)).toBe(true);
-    expect(isExpired(new Date(cutoff.getTime() + 1), 60, NOW)).toBe(false);
+    expect(hasExpired(NOW, NOW)).toBe(true);
   });
 });

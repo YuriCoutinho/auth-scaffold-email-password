@@ -10,7 +10,7 @@ const SESSION_ID = "22222222-2222-4222-8222-222222222222";
 const EMAIL = "foo@gmail.com";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function repoWithSession(createdAt = new Date()) {
+function repoWithSession(createdAt = new Date(), expiresAt?: Date) {
   return createInMemoryAuthRepository({
     users: [{ id: USER_ID, email: EMAIL, passwordHash: "$argon2id$hash" }],
     sessions: [
@@ -19,6 +19,7 @@ function repoWithSession(createdAt = new Date()) {
         userId: USER_ID,
         tokenHash: hashSessionToken(TOKEN),
         createdAt,
+        ...(expiresAt ? { expiresAt } : {}),
       },
     ],
   });
@@ -72,16 +73,24 @@ describe("GET /me", () => {
     expect(response.json()).toEqual({ message: "Unauthorized." });
   });
 
-  it("measures expiry against a configured session ttl", async () => {
+  it("trusts the stored expiry over the configured session ttl", async () => {
     const createdAt = new Date(Date.now() - 2 * 60 * 1000);
 
+    // Issued under a one-minute TTL: raising the TTL later must not revive it.
     const expired = await me({
-      authRepository: repoWithSession(createdAt),
-      ttl: { sessionSeconds: 60 },
+      authRepository: repoWithSession(
+        createdAt,
+        new Date(Date.now() - 60 * 1000),
+      ),
+      ttl: { sessionSeconds: 30 * 24 * 60 * 60 },
     });
+    // Issued under a longer TTL: lowering it later must not cut it short.
     const live = await me({
-      authRepository: repoWithSession(createdAt),
-      ttl: { sessionSeconds: 180 },
+      authRepository: repoWithSession(
+        createdAt,
+        new Date(Date.now() + 60 * 1000),
+      ),
+      ttl: { sessionSeconds: 60 },
     });
 
     expect(expired.statusCode).toBe(401);

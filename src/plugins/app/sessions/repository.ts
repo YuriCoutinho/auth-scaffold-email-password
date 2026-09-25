@@ -4,12 +4,13 @@ export interface CreateSessionInput {
   tokenHash: string;
   deviceLabel: string | null;
   createdAt: Date;
+  expiresAt: Date;
 }
 
 export interface SessionRecord {
   id: string;
   userId: string;
-  createdAt: Date;
+  expiresAt: Date;
 }
 
 export interface DeleteUserSessionsInput {
@@ -26,13 +27,14 @@ export interface DeleteUserSessionInput {
 
 export interface ListUserSessionsInput {
   userId: string;
-  createdAfter: Date;
+  activeAt: Date;
 }
 
 export interface ActiveSessionRecord {
   id: string;
   deviceLabel: string | null;
   createdAt: Date;
+  expiresAt: Date;
 }
 
 export interface SessionRepository {

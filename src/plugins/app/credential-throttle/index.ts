@@ -20,6 +20,7 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
       repository:
         opts.credentialThrottleRepository ??
         createDrizzleCredentialThrottleRepository(fastify.db),
+      hmacSecret: opts.config.HMAC_SECRET,
       log: fastify.log,
     }),
   );

@@ -9,8 +9,10 @@ import type { VerificationCodes } from "../../../../src/plugins/app/auth/verific
 import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
 import { createVerifyCodeService } from "../../../../src/plugins/app/auth/verify-code.js";
 import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
+import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 
+const SESSION_TTL_SECONDS = 60 * 60;
 const NOW = new Date("2026-09-24T12:00:00Z");
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const EMAIL = "user@example.com";
@@ -43,7 +45,7 @@ function setup(
         userId: USER_ID,
         purpose: "signup",
         tokenHash: hashVerificationToken(TOKEN),
-        codeHash: hashOtpCode(CODE),
+        codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
         codeAttempts: options.codeAttempts ?? 0,
         issuedAt: options.issuedAt ?? NOW,
       },
@@ -51,6 +53,7 @@ function setup(
   });
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const codes = createVerificationCodes({
+    hmacSecret: TEST_HMAC_SECRET,
     repo,
     emailSender: new FakeEmailSender(),
     ttl: DEFAULT_TTL,
@@ -60,6 +63,7 @@ function setup(
   const { verifyCode } = createVerifyCodeService({
     repo,
     codes: options.wrapCodes ? options.wrapCodes(codes) : codes,
+    sessionTtlSeconds: SESSION_TTL_SECONDS,
     log,
     now: () => NOW,
   });
@@ -87,6 +91,7 @@ describe("verifyCode", () => {
         tokenHash: hashSessionToken(result.sessionToken),
         deviceLabel: "Firefox on macOS",
         createdAt: NOW,
+        expiresAt: new Date(NOW.getTime() + SESSION_TTL_SECONDS * 1000),
       },
     ]);
   });

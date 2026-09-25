@@ -26,6 +26,7 @@ const verificationCodeColumns = {
   codeAttempts: verificationCodes.codeAttempts,
   codeSendCount: verificationCodes.codeSendCount,
   issuedAt: verificationCodes.issuedAt,
+  expiresAt: verificationCodes.expiresAt,
   email: users.email,
   passwordHash: users.passwordHash,
 };

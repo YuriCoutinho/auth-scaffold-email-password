@@ -1,43 +1,21 @@
 import { THROTTLE_MAX_BLOCK_SECONDS } from "./throttle.js";
-import { issuedAfter, type TtlPolicy } from "./ttl.js";
 
 export const RETENTION_INTERVAL_SECONDS = 60 * 60;
 
-// An expired session is dead the moment it expires; the extra day only keeps
-// the sweep from racing a request that read the row an instant before.
-export const SESSION_GRACE_SECONDS = 24 * 60 * 60;
-
-// Codes, unconfirmed accounts and throttle trails outlive their validity by
-// this factor, which leaves room to count them after they stop working.
-export const RETENTION_MULTIPLIER = 3;
-
+// Rows go the moment they stop working: nothing is kept around to be counted
+// later, because this database holds state, not history.
 export interface RetentionCutoffs {
-  sessionsCreatedBefore: Date;
-  signupCodesIssuedBefore: Date;
-  passwordResetCodesIssuedBefore: Date;
-  unverifiedUsersCreatedBefore: Date;
+  // Sessions and codes whose expiry is at or before this instant.
+  expiredAt: Date;
+  // A trail this cold no longer extends a block: the next failure starts over.
   throttleFailedBefore: Date;
 }
 
-export function retentionCutoffs(ttl: TtlPolicy, now: Date): RetentionCutoffs {
-  const signupCutoff = issuedAfter(
-    ttl.signupCodeSeconds * RETENTION_MULTIPLIER,
-    now,
-  );
+export function retentionCutoffs(now: Date): RetentionCutoffs {
   return {
-    sessionsCreatedBefore: issuedAfter(
-      ttl.sessionSeconds + SESSION_GRACE_SECONDS,
-      now,
-    ),
-    signupCodesIssuedBefore: signupCutoff,
-    passwordResetCodesIssuedBefore: issuedAfter(
-      ttl.passwordResetCodeSeconds * RETENTION_MULTIPLIER,
-      now,
-    ),
-    unverifiedUsersCreatedBefore: signupCutoff,
-    throttleFailedBefore: issuedAfter(
-      THROTTLE_MAX_BLOCK_SECONDS * RETENTION_MULTIPLIER,
-      now,
+    expiredAt: now,
+    throttleFailedBefore: new Date(
+      now.getTime() - THROTTLE_MAX_BLOCK_SECONDS * 1000,
     ),
   };
 }

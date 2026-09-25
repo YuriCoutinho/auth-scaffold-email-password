@@ -5,6 +5,7 @@ import { createForgotPasswordService } from "../../../../src/plugins/app/auth/fo
 import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
 import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
 import type { EmailSender } from "../../../../src/plugins/app/email/sender.js";
+import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
@@ -32,6 +33,7 @@ function setup(
   // reading a list that a detached send may not have filled yet.
   const send = vi.spyOn(emailSender, "send");
   const codes = createVerificationCodes({
+    hmacSecret: TEST_HMAC_SECRET,
     repo,
     emailSender,
     ttl: DEFAULT_TTL,

@@ -11,6 +11,7 @@ const CODE = {
   codeAttempts: 0,
   codeSendCount: 1,
   issuedAt: NOW,
+  expiresAt: new Date(NOW.getTime() + 15 * 60 * 1000),
 };
 
 function newUser(
@@ -20,13 +21,20 @@ function newUser(
     id: OWNER,
     email: "user@example.com",
     passwordHash: "hash-1",
-    createdAt: NOW,
     ...overrides,
   };
 }
 
+const SESSION_EXPIRES_AT = new Date(NOW.getTime() + 60 * 60 * 1000);
+
 function session(id: string) {
-  return { id, tokenHash: `session-${id}`, deviceLabel: null, createdAt: NOW };
+  return {
+    id,
+    tokenHash: `session-${id}`,
+    deviceLabel: null,
+    createdAt: NOW,
+    expiresAt: SESSION_EXPIRES_AT,
+  };
 }
 
 function repoWithPendingSignup() {
@@ -164,6 +172,7 @@ describe("restoreVerificationCode", () => {
     codeAttempts: 2,
     codeSendCount: 3,
     issuedAt: new Date(NOW.getTime() - 60_000),
+    expiresAt: new Date(NOW.getTime() + 14 * 60 * 1000),
   };
 
   it("restores the previous state while the failed code is still there, and keeps the token", async () => {
@@ -224,7 +233,7 @@ describe("verifyEmail", () => {
     expect(await repo.findSessionByTokenHash("session-s-new")).toEqual({
       id: "s-new",
       userId: OWNER,
-      createdAt: NOW,
+      expiresAt: SESSION_EXPIRES_AT,
     });
   });
 
@@ -340,6 +349,7 @@ describe("sessions", () => {
           userId: OWNER,
           tokenHash: "old",
           createdAt: new Date(NOW.getTime() - 120_000),
+          expiresAt: NOW,
         },
         {
           id: "current",
@@ -347,12 +357,14 @@ describe("sessions", () => {
           tokenHash: "current",
           deviceLabel: "Chrome",
           createdAt: NOW,
+          expiresAt: SESSION_EXPIRES_AT,
         },
         {
           id: "laptop",
           userId: OWNER,
           tokenHash: "laptop",
           createdAt: new Date(NOW.getTime() - 30_000),
+          expiresAt: SESSION_EXPIRES_AT,
         },
         {
           id: "stranger",
@@ -410,20 +422,26 @@ describe("sessions", () => {
     expect(repo.sessions.has("stranger")).toBe(true);
   });
 
-  it("lists the user's sessions created after the cutoff, newest first", async () => {
+  it("lists the user's sessions still active at the instant, newest first", async () => {
     const repo = repoWithSessions();
 
     const listed = await repo.listUserSessions({
       userId: OWNER,
-      createdAfter: new Date(NOW.getTime() - 60_000),
+      activeAt: NOW,
     });
 
     expect(listed).toEqual([
-      { id: "current", deviceLabel: "Chrome", createdAt: NOW },
+      {
+        id: "current",
+        deviceLabel: "Chrome",
+        createdAt: NOW,
+        expiresAt: SESSION_EXPIRES_AT,
+      },
       {
         id: "laptop",
         deviceLabel: null,
         createdAt: new Date(NOW.getTime() - 30_000),
+        expiresAt: SESSION_EXPIRES_AT,
       },
     ]);
   });

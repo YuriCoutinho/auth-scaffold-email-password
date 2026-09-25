@@ -3,6 +3,7 @@ import { generateId } from "../../../lib/id.js";
 import { hashPassword, verifyPassword } from "../../../lib/password.js";
 import { generateToken } from "../../../lib/session.js";
 import { hashSessionToken } from "../../../lib/token-hash.js";
+import { expiresAt } from "../../../lib/ttl.js";
 import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
 import type { EmailSender } from "../email/sender.js";
 import type { CheckPwnedPassword } from "../pwned-password/checker.js";
@@ -29,6 +30,7 @@ interface ResetPasswordServiceDeps {
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
   throttle: CredentialThrottle;
+  sessionTtlSeconds: number;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }
@@ -63,6 +65,7 @@ export function createResetPasswordService(deps: ResetPasswordServiceDeps) {
       }
 
       const sessionToken = generateToken();
+      const currentTime = now();
       const applied = await deps.repo.resetPassword({
         userId: reset.userId,
         tokenHash: reset.tokenHash,
@@ -72,7 +75,8 @@ export function createResetPasswordService(deps: ResetPasswordServiceDeps) {
           id: generateId(),
           tokenHash: hashSessionToken(sessionToken),
           deviceLabel: input.deviceLabel,
-          createdAt: now(),
+          createdAt: currentTime,
+          expiresAt: expiresAt(currentTime, deps.sessionTtlSeconds),
         },
       });
       if (!applied) {

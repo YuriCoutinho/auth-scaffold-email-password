@@ -1,47 +1,17 @@
 import { describe, expect, it } from "vitest";
-import {
-  RETENTION_MULTIPLIER,
-  retentionCutoffs,
-  SESSION_GRACE_SECONDS,
-} from "../../src/lib/retention.js";
+import { retentionCutoffs } from "../../src/lib/retention.js";
 import { THROTTLE_MAX_BLOCK_SECONDS } from "../../src/lib/throttle.js";
-import type { TtlPolicy } from "../../src/lib/ttl.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
-const TTL: TtlPolicy = {
-  sessionSeconds: 1000,
-  signupCodeSeconds: 100,
-  passwordResetCodeSeconds: 200,
-};
-
-function secondsAgo(seconds: number): Date {
-  return new Date(NOW.getTime() - seconds * 1000);
-}
 
 describe("retentionCutoffs", () => {
-  it("keeps sessions one day past their ttl", () => {
-    expect(SESSION_GRACE_SECONDS).toBe(24 * 60 * 60);
-    expect(retentionCutoffs(TTL, NOW).sessionsCreatedBefore).toEqual(
-      secondsAgo(1000 + 24 * 60 * 60),
-    );
+  it("drops sessions and codes the moment they expire", () => {
+    expect(retentionCutoffs(NOW).expiredAt).toEqual(NOW);
   });
 
-  it("keeps codes three times their own ttl", () => {
-    expect(RETENTION_MULTIPLIER).toBe(3);
-    const cutoffs = retentionCutoffs(TTL, NOW);
-    expect(cutoffs.signupCodesIssuedBefore).toEqual(secondsAgo(300));
-    expect(cutoffs.passwordResetCodesIssuedBefore).toEqual(secondsAgo(600));
-  });
-
-  it("keeps unverified users three times the signup code ttl", () => {
-    expect(retentionCutoffs(TTL, NOW).unverifiedUsersCreatedBefore).toEqual(
-      secondsAgo(300),
-    );
-  });
-
-  it("keeps throttle trails three times the longest block", () => {
-    expect(retentionCutoffs(TTL, NOW).throttleFailedBefore).toEqual(
-      secondsAgo(THROTTLE_MAX_BLOCK_SECONDS * 3),
+  it("drops a throttle trail once it has gone cold", () => {
+    expect(retentionCutoffs(NOW).throttleFailedBefore).toEqual(
+      new Date(NOW.getTime() - THROTTLE_MAX_BLOCK_SECONDS * 1000),
     );
   });
 });

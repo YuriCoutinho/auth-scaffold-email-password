@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { DEFAULT_TTL, expiresAt as expiryFrom } from "../../../src/lib/ttl.js";
 import type {
   AuthRepository,
   ConsumeVerificationCodeInput,
@@ -18,7 +19,6 @@ export interface InMemorySeed {
     id?: string;
     passwordHash?: string;
     emailVerifiedAt?: Date | null;
-    createdAt?: Date;
   }>;
   verificationCodes?: Array<
     Partial<SaveVerificationCodeInput> & {
@@ -32,14 +32,10 @@ export interface InMemorySeed {
   >;
 }
 
-export interface StoredUser extends UserRecord {
-  createdAt: Date;
-}
-
 const codeKey = (key: VerificationCodeKey) => `${key.userId}:${key.purpose}`;
 
 export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
-  const users = new Map<string, StoredUser>();
+  const users = new Map<string, UserRecord>();
   const verificationCodes = new Map<string, SaveVerificationCodeInput>();
   const sessions = new Map<string, CreateSessionInput>();
 
@@ -53,7 +49,6 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       // that is what almost every flow needs to start from.
       emailVerifiedAt:
         user.emailVerifiedAt === undefined ? new Date(0) : user.emailVerifiedAt,
-      createdAt: user.createdAt ?? new Date(0),
     });
   }
 
@@ -66,17 +61,30 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       codeAttempts: code.codeAttempts ?? 0,
       codeSendCount: code.codeSendCount ?? 1,
       issuedAt: code.issuedAt,
+      // Seeds that only care about age get the expiry a default issue gives.
+      expiresAt:
+        code.expiresAt ??
+        expiryFrom(
+          code.issuedAt,
+          code.purpose === "signup"
+            ? DEFAULT_TTL.signupCodeSeconds
+            : DEFAULT_TTL.passwordResetCodeSeconds,
+        ),
     });
   }
 
   for (const session of seed.sessions ?? []) {
     const id = session.id ?? randomUUID();
+    const createdAt = session.createdAt ?? new Date();
     sessions.set(id, {
       id,
       userId: session.userId,
       tokenHash: session.tokenHash,
       deviceLabel: session.deviceLabel ?? null,
-      createdAt: session.createdAt ?? new Date(),
+      createdAt,
+      // Seeds that only care about age get the expiry a default issue gives.
+      expiresAt:
+        session.expiresAt ?? expiryFrom(createdAt, DEFAULT_TTL.sessionSeconds),
     });
   }
 
@@ -85,7 +93,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
 
   // Reads hand out a copy, like a real query does. Returning the stored object
   // would let a caller see its own later writes through the value it read.
-  const toUserRecord = (user: StoredUser | undefined): UserRecord | undefined =>
+  const toUserRecord = (user: UserRecord | undefined): UserRecord | undefined =>
     user && {
       id: user.id,
       email: user.email,
@@ -245,7 +253,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
         session && {
           id: session.id,
           userId: session.userId,
-          createdAt: session.createdAt,
+          expiresAt: session.expiresAt,
         }
       );
     },
@@ -278,7 +286,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
         .filter(
           (session) =>
             session.userId === input.userId &&
-            session.createdAt.getTime() > input.createdAfter.getTime(),
+            session.expiresAt.getTime() > input.activeAt.getTime(),
         )
         .sort(
           (a, b) =>
@@ -289,6 +297,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
           id: session.id,
           deviceLabel: session.deviceLabel,
           createdAt: session.createdAt,
+          expiresAt: session.expiresAt,
         }));
     },
   };

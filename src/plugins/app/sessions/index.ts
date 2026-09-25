@@ -1,7 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import type { AppOptions } from "../../../app-options.js";
-import { resolveTtl } from "../../../lib/ttl.js";
 import { createSessions, type Sessions } from "./create-sessions.js";
 import { createDrizzleSessionRepository } from "./drizzle-repository.js";
 
@@ -17,7 +16,6 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
     createSessions({
       repository:
         opts.sessionRepository ?? createDrizzleSessionRepository(fastify.db),
-      ttl: resolveTtl(opts.ttl),
       log: fastify.log,
     }),
   );

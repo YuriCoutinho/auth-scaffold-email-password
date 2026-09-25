@@ -1,4 +1,4 @@
-import { and, eq, isNull, lt, notExists, or } from "drizzle-orm";
+import { and, eq, isNull, lt, lte, notExists } from "drizzle-orm";
 import type { Database } from "../../../db/client.js";
 import {
   credentialThrottle,
@@ -15,26 +15,12 @@ export function createDrizzleRetentionRepository(
     async purge(cutoffs) {
       const deletedSessions = await db
         .delete(sessions)
-        .where(lt(sessions.createdAt, cutoffs.sessionsCreatedBefore))
+        .where(lte(sessions.expiresAt, cutoffs.expiredAt))
         .returning({ id: sessions.id });
 
       const deletedCodes = await db
         .delete(verificationCodes)
-        .where(
-          or(
-            and(
-              eq(verificationCodes.purpose, "signup"),
-              lt(verificationCodes.issuedAt, cutoffs.signupCodesIssuedBefore),
-            ),
-            and(
-              eq(verificationCodes.purpose, "password_reset"),
-              lt(
-                verificationCodes.issuedAt,
-                cutoffs.passwordResetCodesIssuedBefore,
-              ),
-            ),
-          ),
-        )
+        .where(lte(verificationCodes.expiresAt, cutoffs.expiredAt))
         .returning({ userId: verificationCodes.userId });
 
       // Runs after the codes above so an abandoned signup has none left. An
@@ -45,7 +31,6 @@ export function createDrizzleRetentionRepository(
         .where(
           and(
             isNull(users.emailVerifiedAt),
-            lt(users.createdAt, cutoffs.unverifiedUsersCreatedBefore),
             notExists(
               db
                 .select({ userId: verificationCodes.userId })

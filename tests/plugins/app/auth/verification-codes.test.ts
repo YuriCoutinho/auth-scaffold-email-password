@@ -14,6 +14,7 @@ import { createVerificationCodes } from "../../../../src/plugins/app/auth/verifi
 import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
 import type { EmailSender } from "../../../../src/plugins/app/email/sender.js";
 import { EmailProviderError } from "../../../../src/plugins/app/email/sender.js";
+import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import {
   createInMemoryAuthRepository,
   type InMemorySeed,
@@ -45,6 +46,7 @@ function setup(
   const send = vi.spyOn(emailSender, "send");
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const codes = createVerificationCodes({
+    hmacSecret: TEST_HMAC_SECRET,
     repo,
     emailSender,
     ttl: options.ttl ?? DEFAULT_TTL,
@@ -63,6 +65,7 @@ function seedWithCode(
     codeAttempts: number;
     codeSendCount: number;
     issuedAt: Date;
+    expiresAt: Date;
     codeHash: string;
   }> = {},
   emailVerifiedAt: Date | null = new Date(0),
@@ -74,7 +77,7 @@ function seedWithCode(
         userId: USER_ID,
         purpose,
         tokenHash: hashVerificationToken(TOKEN),
-        codeHash: hashOtpCode(CODE),
+        codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
         codeAttempts: 0,
         codeSendCount: 1,
         issuedAt: NOW,
@@ -119,7 +122,7 @@ describe("verification codes: request", () => {
     expect(fake.sent[0]?.to).toBe(EMAIL);
     const code = codeIn(fake.sent[0]?.subject);
     expect(code).toMatch(/^\d{6}$/);
-    expect(row?.codeHash).toBe(hashOtpCode(code));
+    expect(row?.codeHash).toBe(hashOtpCode(TEST_HMAC_SECRET, code));
     expect(Object.values(row ?? {})).not.toContain(code);
   });
 
@@ -158,10 +161,13 @@ describe("verification codes: request", () => {
       userId: USER_ID,
       purpose: "password_reset",
       tokenHash: hashVerificationToken(token),
-      codeHash: hashOtpCode(CODE),
+      codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
       codeAttempts: 2,
       codeSendCount: 1,
       issuedAt,
+      expiresAt: new Date(
+        issuedAt.getTime() + DEFAULT_TTL.passwordResetCodeSeconds * 1000,
+      ),
     });
   });
 
@@ -182,7 +188,7 @@ describe("verification codes: request", () => {
       codeAttempts: 0,
       issuedAt: NOW,
     });
-    expect(row?.codeHash).not.toBe(hashOtpCode(CODE));
+    expect(row?.codeHash).not.toBe(hashOtpCode(TEST_HMAC_SECRET, CODE));
     await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
   });
 
@@ -200,7 +206,7 @@ describe("verification codes: request", () => {
     expect(send).not.toHaveBeenCalled();
     expect(stored("password_reset")).toMatchObject({
       tokenHash: hashVerificationToken(token),
-      codeHash: hashOtpCode(CODE),
+      codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
       codeSendCount: MAX_CODE_SEND_COUNT,
       issuedAt,
     });
@@ -242,26 +248,55 @@ describe("verification codes: request", () => {
     await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
   });
 
-  it("judges a code live or expired by the configured ttl", async () => {
-    const seed = () =>
+  it("judges a code live or expired by its stored expiry, not the ttl", async () => {
+    const seed = (expiresAt: Date) =>
       seedWithCode("password_reset", {
         issuedAt: secondsAgo(20 * 60),
+        expiresAt,
         codeSendCount: MAX_CODE_SEND_COUNT,
       });
-    const withDefault = setup({ seed: seed() });
-    const withLongerTtl = setup({
-      seed: seed(),
+    // Both run under a TTL that disagrees with what each code was issued with.
+    const expired = setup({
+      seed: seed(secondsAgo(5 * 60)),
       ttl: { ...DEFAULT_TTL, passwordResetCodeSeconds: 60 * 60 },
     });
+    const live = setup({
+      seed: seed(new Date(NOW.getTime() + 5 * 60 * 1000)),
+      ttl: { ...DEFAULT_TTL, passwordResetCodeSeconds: 60 },
+    });
 
-    await withDefault.codes.request(USER, "password_reset");
-    await withLongerTtl.codes.request(USER, "password_reset");
+    await expired.codes.request(USER, "password_reset");
+    await live.codes.request(USER, "password_reset");
 
-    expect(withDefault.stored("password_reset")?.codeSendCount).toBe(1);
-    expect(withLongerTtl.stored("password_reset")?.codeSendCount).toBe(
+    expect(expired.stored("password_reset")?.codeSendCount).toBe(1);
+    expect(live.stored("password_reset")?.codeSendCount).toBe(
       MAX_CODE_SEND_COUNT,
     );
-    expect(withLongerTtl.send).not.toHaveBeenCalled();
+    expect(live.send).not.toHaveBeenCalled();
+  });
+
+  it("stamps a new code with its purpose ttl", async () => {
+    const { codes, stored } = setup();
+
+    await codes.request(USER, "password_reset");
+
+    expect(stored("password_reset")?.expiresAt).toEqual(
+      new Date(NOW.getTime() + DEFAULT_TTL.passwordResetCodeSeconds * 1000),
+    );
+  });
+
+  it("keeps the expiry when only the token rotates", async () => {
+    const expiresAt = new Date(NOW.getTime() + 10 * 60 * 1000);
+    const { codes, stored } = setup({
+      seed: seedWithCode("password_reset", {
+        issuedAt: secondsAgo(10),
+        expiresAt,
+      }),
+    });
+
+    await codes.request(USER, "password_reset");
+
+    expect(stored("password_reset")?.expiresAt).toEqual(expiresAt);
   });
 
   it("does not wait for the provider before returning", async () => {
@@ -294,10 +329,14 @@ describe("verification codes: request", () => {
       userId: USER_ID,
       purpose: "password_reset",
       tokenHash: hashVerificationToken(token),
-      codeHash: hashOtpCode(CODE),
+      codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
       codeAttempts: 2,
       codeSendCount: 3,
       issuedAt: previousIssuedAt,
+      expiresAt: new Date(
+        previousIssuedAt.getTime() +
+          DEFAULT_TTL.passwordResetCodeSeconds * 1000,
+      ),
     });
   });
 
@@ -332,6 +371,7 @@ describe("verification codes: request", () => {
       codeAttempts: 0,
       codeSendCount: 4,
       issuedAt: NOW,
+      expiresAt: new Date(NOW.getTime() + 15 * 60 * 1000),
     });
     fail(new Error("down"));
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -439,7 +479,7 @@ describe("verification codes: startSignup", () => {
     await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
     expect(fake.sent[0]?.to).toBe(EMAIL);
     expect(stored("signup")?.codeHash).toBe(
-      hashOtpCode(codeIn(fake.sent[0]?.subject)),
+      hashOtpCode(TEST_HMAC_SECRET, codeIn(fake.sent[0]?.subject)),
     );
   });
 
@@ -453,7 +493,7 @@ describe("verification codes: startSignup", () => {
     expect(repo.users.get(USER_ID)?.passwordHash).toBe("newer-hash");
     expect(stored("signup")).toMatchObject({
       tokenHash: hashVerificationToken(started?.token ?? ""),
-      codeHash: hashOtpCode(CODE),
+      codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
       codeSendCount: 1,
       issuedAt: secondsAgo(5),
     });
@@ -570,10 +610,11 @@ describe("verification codes: resend", () => {
       userId: USER_ID,
       purpose: "signup",
       tokenHash: hashVerificationToken(TOKEN),
-      codeHash: hashOtpCode(code),
+      codeHash: hashOtpCode(TEST_HMAC_SECRET, code),
       codeAttempts: 0,
       codeSendCount: 3,
       issuedAt: NOW,
+      expiresAt: new Date(NOW.getTime() + DEFAULT_TTL.signupCodeSeconds * 1000),
     });
   });
 
@@ -592,10 +633,11 @@ describe("verification codes: resend", () => {
 
   it("restores the previous code and reports the email as unavailable when delivery fails", async () => {
     const issuedAt = secondsAgo(120);
+    const expiresAt = new Date(NOW.getTime() + 60 * 1000);
     const { codes, stored } = setup({
       seed: seedWithCode(
         "signup",
-        { issuedAt, codeSendCount: 2, codeAttempts: 1 },
+        { issuedAt, expiresAt, codeSendCount: 2, codeAttempts: 1 },
         null,
       ),
       emailSender: { send: vi.fn().mockRejectedValue(new Error("down")) },
@@ -606,10 +648,11 @@ describe("verification codes: resend", () => {
       userId: USER_ID,
       purpose: "signup",
       tokenHash: hashVerificationToken(TOKEN),
-      codeHash: hashOtpCode(CODE),
+      codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
       codeAttempts: 1,
       codeSendCount: 2,
       issuedAt,
+      expiresAt,
     });
   });
 
@@ -679,14 +722,30 @@ describe("verification codes: verify", () => {
     );
   });
 
-  it("uses the configured ttl to decide expiry", async () => {
+  it("rejects a code exactly at its stored expiry", async () => {
     const { codes } = setup({
-      seed: seedWithCode("signup", { issuedAt: secondsAgo(20 * 60) }),
+      seed: seedWithCode("signup", {
+        issuedAt: secondsAgo(60),
+        expiresAt: NOW,
+      }),
+    });
+
+    expect(await codes.verify("signup", TOKEN, CODE)).toEqual({
+      outcome: "invalid",
+    });
+  });
+
+  it("trusts the stored expiry over the configured ttl", async () => {
+    const { codes } = setup({
+      seed: seedWithCode("signup", {
+        issuedAt: secondsAgo(120),
+        expiresAt: secondsAgo(60),
+      }),
       ttl: { ...DEFAULT_TTL, signupCodeSeconds: 60 * 60 },
     });
 
-    expect(await codes.verify("signup", TOKEN, CODE)).toMatchObject({
-      outcome: "valid",
+    expect(await codes.verify("signup", TOKEN, CODE)).toEqual({
+      outcome: "invalid",
     });
   });
 
@@ -746,10 +805,13 @@ describe("verification codes: verify", () => {
         userId: USER_ID,
         purpose: "signup",
         tokenHash: hashVerificationToken(TOKEN),
-        codeHash: hashOtpCode(CODE),
+        codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
         codeAttempts: 2,
         codeSendCount: 1,
         issuedAt: NOW,
+        expiresAt: new Date(
+          NOW.getTime() + DEFAULT_TTL.signupCodeSeconds * 1000,
+        ),
         email: EMAIL,
         passwordHash: "seeded-hash",
       },

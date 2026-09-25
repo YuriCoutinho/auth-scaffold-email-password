@@ -1,6 +1,7 @@
+import type { VERIFICATION_PURPOSES } from "../../../db/schema.js";
 import type { CreateSessionInput } from "../sessions/repository.js";
 
-export type VerificationPurpose = "signup" | "password_reset";
+export type VerificationPurpose = (typeof VERIFICATION_PURPOSES)[number];
 
 // A null emailVerifiedAt is an account whose signup was never confirmed.
 export interface UserRecord {
@@ -14,7 +15,6 @@ export interface UpsertUnverifiedUserInput {
   id: string;
   email: string;
   passwordHash: string;
-  createdAt: Date;
 }
 
 export interface VerificationCodeState {
@@ -24,6 +24,9 @@ export interface VerificationCodeState {
   // cooldown and does not count against the send cap.
   codeSendCount: number;
   issuedAt: Date;
+  // Moves with issuedAt on every send and stays put when only the token
+  // rotates, so a code in the mailbox keeps the deadline it was sent with.
+  expiresAt: Date;
 }
 
 export interface VerificationCodeKey {

@@ -5,6 +5,7 @@ const baseEnv = {
   DATABASE_URL: "postgres://u:p@localhost:5432/db",
   NODE_ENV: "development",
   EMAIL_DRIVER: "fake",
+  HMAC_SECRET: "x".repeat(32),
 };
 
 const productionEnv = {
@@ -29,6 +30,17 @@ describe("parseEnv", () => {
   it("rejects env without DATABASE_URL with a clear message", () => {
     const { DATABASE_URL: _, ...env } = baseEnv;
     expect(() => parseEnv(env)).toThrowError(/DATABASE_URL/);
+  });
+
+  it("rejects env without HMAC_SECRET", () => {
+    const { HMAC_SECRET: _, ...env } = baseEnv;
+    expect(() => parseEnv(env)).toThrowError(/HMAC_SECRET/);
+  });
+
+  it("rejects an HMAC_SECRET shorter than 32 characters", () => {
+    expect(() =>
+      parseEnv({ ...baseEnv, HMAC_SECRET: "x".repeat(31) }),
+    ).toThrowError(/HMAC_SECRET/);
   });
 
   it("rejects env without NODE_ENV", () => {

@@ -2,7 +2,6 @@ import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import type { AppOptions } from "../../../app-options.js";
 import { RETENTION_INTERVAL_SECONDS } from "../../../lib/retention.js";
-import { resolveTtl } from "../../../lib/ttl.js";
 import { createRetention, type Retention } from "./create-retention.js";
 import { createDrizzleRetentionRepository } from "./drizzle-repository.js";
 
@@ -18,7 +17,6 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
   const retention = createRetention({
     repository:
       opts.retentionRepository ?? createDrizzleRetentionRepository(fastify.db),
-    ttl: resolveTtl(opts.ttl),
     log: fastify.log,
   });
   fastify.decorate("retention", retention);

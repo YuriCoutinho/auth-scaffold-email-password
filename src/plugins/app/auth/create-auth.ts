@@ -22,6 +22,7 @@ export interface AuthDeps {
   checkPwnedPassword: CheckPwnedPassword;
   credentialThrottle: CredentialThrottle;
   ttl: TtlPolicy;
+  hmacSecret: string;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }
@@ -36,6 +37,7 @@ export function createAuth(deps: AuthDeps) {
     ...shared,
     emailSender: deps.emailSender,
     ttl: deps.ttl,
+    hmacSecret: deps.hmacSecret,
   });
   const { signup } = createSignupService({
     ...shared,
@@ -50,11 +52,17 @@ export function createAuth(deps: AuthDeps) {
     emailSender: deps.emailSender,
     checkPwnedPassword: deps.checkPwnedPassword,
     throttle: deps.credentialThrottle,
+    sessionTtlSeconds: deps.ttl.sessionSeconds,
   });
-  const { verifyCode } = createVerifyCodeService({ ...shared, codes });
+  const { verifyCode } = createVerifyCodeService({
+    ...shared,
+    codes,
+    sessionTtlSeconds: deps.ttl.sessionSeconds,
+  });
   const { login } = createLoginService({
     ...shared,
     throttle: deps.credentialThrottle,
+    sessionTtlSeconds: deps.ttl.sessionSeconds,
     repo: {
       findUserByEmail: deps.repository.findUserByEmail,
       createSession: deps.sessionRepository.createSession,
@@ -63,7 +71,6 @@ export function createAuth(deps: AuthDeps) {
   const { authenticate } = createAuthenticateService({
     ...shared,
     repo: deps.sessionRepository,
-    sessionTtlSeconds: deps.ttl.sessionSeconds,
   });
   const { changePassword } = createChangePasswordService({
     ...shared,

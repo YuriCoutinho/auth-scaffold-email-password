@@ -10,8 +10,10 @@ import { createResetPasswordService } from "../../../../src/plugins/app/auth/res
 import type { VerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
 import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
 import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
+import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 
+const SESSION_TTL_SECONDS = 60 * 60;
 const NOW = new Date("2026-09-24T12:00:00Z");
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_USER_ID = "22222222-2222-4222-8222-222222222222";
@@ -45,7 +47,7 @@ async function setup(
         userId: USER_ID,
         purpose: "password_reset",
         tokenHash: hashVerificationToken(TOKEN),
-        codeHash: hashOtpCode(CODE),
+        codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
         codeAttempts: options.codeAttempts ?? 0,
         issuedAt: options.issuedAt ?? NOW,
       },
@@ -69,6 +71,7 @@ async function setup(
   };
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const codes = createVerificationCodes({
+    hmacSecret: TEST_HMAC_SECRET,
     repo,
     emailSender,
     ttl: DEFAULT_TTL,
@@ -77,6 +80,7 @@ async function setup(
   });
   const { resetPassword } = createResetPasswordService({
     repo,
+    sessionTtlSeconds: SESSION_TTL_SECONDS,
     codes: options.wrapCodes ? options.wrapCodes(codes) : codes,
     emailSender,
     checkPwnedPassword,
@@ -137,6 +141,7 @@ describe("resetPassword", () => {
         tokenHash: hashSessionToken(result.sessionToken),
         deviceLabel: "Safari on iOS",
         createdAt: NOW,
+        expiresAt: new Date(NOW.getTime() + SESSION_TTL_SECONDS * 1000),
       },
     ]);
     expect(sessionsOf(OTHER_USER_ID)).toHaveLength(1);

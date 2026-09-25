@@ -8,7 +8,7 @@ import {
   hashVerificationToken,
 } from "../../../src/lib/token-hash.js";
 import { FakeEmailSender } from "../../../src/plugins/app/email/drivers/fake.js";
-import { makeAppOptions } from "../../helpers/app-options.js";
+import { makeAppOptions, TEST_HMAC_SECRET } from "../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
 
 const CODE = "123456";
@@ -34,7 +34,7 @@ async function setup(
         userId: USER_ID,
         purpose: "password_reset",
         tokenHash: hashVerificationToken("tok"),
-        codeHash: hashOtpCode(CODE),
+        codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
         codeAttempts: code.codeAttempts ?? 0,
         issuedAt: code.issuedAt ?? new Date(),
       },
