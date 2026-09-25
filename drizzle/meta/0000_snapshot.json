@@ -1,5 +1,5 @@
 {
-  "id": "2fc79edf-701b-4590-ad40-0a8893d0d2d9",
+  "id": "5292e1cd-f40b-42b6-8b33-26205f154e6a",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -84,6 +84,12 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
         }
       },
       "indexes": {
@@ -102,11 +108,11 @@
           "method": "btree",
           "with": {}
         },
-        "sessions_created_at_idx": {
-          "name": "sessions_created_at_idx",
+        "sessions_expires_at_idx": {
+          "name": "sessions_expires_at_idx",
           "columns": [
             {
-              "expression": "created_at",
+              "expression": "expires_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -183,8 +189,7 @@
         },
         "role": {
           "name": "role",
-          "type": "user_role",
-          "typeSchema": "public",
+          "type": "text",
           "primaryKey": false,
           "notNull": true,
           "default": "'user'"
@@ -232,7 +237,16 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "users_role_check": {
+          "name": "users_role_check",
+          "value": "\"users\".\"role\" in ('user', 'admin')"
+        },
+        "users_email_normalized_check": {
+          "name": "users_email_normalized_check",
+          "value": "\"users\".\"email\" = lower(btrim(\"users\".\"email\"))"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.verification_codes": {
@@ -247,8 +261,7 @@
         },
         "purpose": {
           "name": "purpose",
-          "type": "verification_purpose",
-          "typeSchema": "public",
+          "type": "text",
           "primaryKey": false,
           "notNull": true
         },
@@ -283,14 +296,20 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
         }
       },
       "indexes": {
-        "verification_codes_issued_at_idx": {
-          "name": "verification_codes_issued_at_idx",
+        "verification_codes_expires_at_idx": {
+          "name": "verification_codes_expires_at_idx",
           "columns": [
             {
-              "expression": "issued_at",
+              "expression": "expires_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -336,28 +355,16 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "verification_codes_purpose_check": {
+          "name": "verification_codes_purpose_check",
+          "value": "\"verification_codes\".\"purpose\" in ('signup', 'password_reset')"
+        }
+      },
       "isRLSEnabled": false
     }
   },
-  "enums": {
-    "public.user_role": {
-      "name": "user_role",
-      "schema": "public",
-      "values": [
-        "user",
-        "admin"
-      ]
-    },
-    "public.verification_purpose": {
-      "name": "verification_purpose",
-      "schema": "public",
-      "values": [
-        "signup",
-        "password_reset"
-      ]
-    }
-  },
+  "enums": {},
   "schemas": {},
   "sequences": {},
   "roles": {},
