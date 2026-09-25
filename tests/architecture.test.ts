@@ -35,22 +35,75 @@ function importsOf(file: string): string[] {
   return matches.map((m) => resolve(dirname(file), m[1] as string));
 }
 
-// Import specifiers from the "fastify" package itself, e.g. `FastifyInstance`
-// out of `import type { FastifyInstance } from "fastify"`.
-function fastifyImportSpecifiers(file: string): string[] {
+interface FastifyImportFinding {
+  imported: string;
+  rule: string;
+}
+
+// Every way a module file can reach into the "fastify" package: a named
+// specifier (whole-clause `import type { X }`, per-specifier `{ type X }`,
+// or plain `{ X }`), a default or namespace import (which hands out the
+// whole module, bypassing the allowlist entirely), and a re-export.
+function fastifyImportFindings(file: string): FastifyImportFinding[] {
   const content = readFileSync(file, "utf8");
-  const specifiers: string[] = [];
+  const findings: FastifyImportFinding[] = [];
+
   for (const match of content.matchAll(
-    /import\s+type\s*\{([^}]+)\}\s*from\s*["']fastify["']/g,
+    /(import|export)\s+([^;]*?)from\s*["']fastify["']/g,
   )) {
-    specifiers.push(
-      ...(match[1] as string)
+    const keyword = match[1] as string;
+    const rawClause = (match[2] as string).trim();
+
+    if (keyword === "export") {
+      findings.push({
+        imported: `fastify:${rawClause || "*"}`,
+        rule: "a module file must not re-export from fastify",
+      });
+      continue;
+    }
+
+    // Strip a leading whole-clause `type` modifier: `import type { X, Y }`.
+    const clause = rawClause.replace(/^type\s+/, "");
+
+    if (/^\*\s+as\s+\S+/.test(clause)) {
+      findings.push({
+        imported: `fastify:${clause}`,
+        rule: "a module file must not import fastify as a namespace",
+      });
+      continue;
+    }
+
+    const braceMatch = clause.match(/\{([^}]*)\}/);
+    const beforeBrace = braceMatch
+      ? clause.slice(0, braceMatch.index).trim()
+      : clause;
+    const defaultSpecifier = beforeBrace.replace(/,\s*$/, "").trim();
+
+    if (defaultSpecifier.length > 0) {
+      findings.push({
+        imported: `fastify:${defaultSpecifier}`,
+        rule: "a module file must not import fastify's default export",
+      });
+    }
+
+    if (braceMatch) {
+      const specifiers = (braceMatch[1] as string)
         .split(",")
         .map((s) => s.trim())
-        .filter(Boolean),
-    );
+        .filter(Boolean)
+        .map((s) => s.replace(/^type\s+/, "").split(/\s+as\s+/)[0] as string);
+
+      for (const specifier of specifiers) {
+        if (allowedFastifySpecifiers.has(specifier)) continue;
+        findings.push({
+          imported: `fastify:${specifier}`,
+          rule: "a module file may only import FastifyBaseLogger, FastifyInstance or FastifyPluginAsync types from fastify",
+        });
+      }
+    }
   }
-  return specifiers;
+
+  return findings;
 }
 
 function hasFastifyPluginImport(file: string): boolean {
@@ -183,13 +236,8 @@ describe("architecture: dependency direction between layers", () => {
 
     if (relPath.startsWith("modules/")) {
       const isIndex = relPath.endsWith("/index.ts");
-      for (const specifier of fastifyImportSpecifiers(file)) {
-        if (allowedFastifySpecifiers.has(specifier)) continue;
-        violations.push({
-          file: relPath,
-          imported: `fastify:${specifier}`,
-          rule: "a module file may only import FastifyBaseLogger, FastifyInstance or FastifyPluginAsync types from fastify",
-        });
+      for (const finding of fastifyImportFindings(file)) {
+        violations.push({ file: relPath, ...finding });
       }
       if (!isIndex && hasFastifyPluginImport(file)) {
         violations.push({
