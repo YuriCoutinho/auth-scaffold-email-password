@@ -11,10 +11,6 @@ describe("createSessions", () => {
       repository: createInMemoryStore().legacy,
     });
 
-    await expect(sessions.logout("unknown-token")).resolves.toBeUndefined();
-    expect(
-      await sessions.logoutAll({ userId: USER, currentSessionId: "s-1" }),
-    ).toEqual({ revokedCount: 0 });
     expect(
       await sessions.listSessions({ userId: USER, currentSessionId: "s-1" }),
     ).toEqual([]);

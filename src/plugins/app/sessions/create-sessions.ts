@@ -1,7 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
 import { createListSessionsService } from "./list-sessions.js";
-import { createLogoutService } from "./logout.js";
-import { createLogoutAllService } from "./logout-all.js";
 import type { SessionRepository } from "./repository.js";
 import { createRevokeSessionService } from "./revoke-session.js";
 
@@ -16,15 +14,13 @@ export function createSessions(deps: SessionsDeps) {
     repo: deps.repository,
     ...(deps.log ? { log: deps.log } : {}),
   };
-  const { logout } = createLogoutService(shared);
-  const { logoutAll } = createLogoutAllService(shared);
   const { listSessions } = createListSessionsService({
     ...shared,
     ...(deps.now ? { now: deps.now } : {}),
   });
   const { revokeSession } = createRevokeSessionService(shared);
 
-  return { logout, logoutAll, listSessions, revokeSession };
+  return { listSessions, revokeSession };
 }
 
 export type Sessions = ReturnType<typeof createSessions>;

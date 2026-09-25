@@ -37,7 +37,3 @@ export const changePasswordBodySchema = z.object({
   currentPassword: z.string().min(1).max(128),
   newPassword: passwordSchema,
 });
-
-export const currentUserResponseSchema = z.object({
-  user: z.object({ id: z.uuid(), email: z.email() }),
-});

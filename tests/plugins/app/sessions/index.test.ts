@@ -13,9 +13,8 @@ describe("legacy sessions plugin", () => {
     await app.register(sessionsPlugin, opts);
     await app.ready();
 
-    expect(typeof app.legacySessions.logout).toBe("function");
-    expect(typeof app.legacySessions.logoutAll).toBe("function");
     expect(typeof app.legacySessions.listSessions).toBe("function");
+    expect(typeof app.legacySessions.revokeSession).toBe("function");
     await app.close();
   });
 
@@ -26,7 +25,7 @@ describe("legacy sessions plugin", () => {
     await app.register(sessionsPlugin, opts);
     await app.ready();
 
-    expect(typeof app.legacySessions.logout).toBe("function");
+    expect(typeof app.legacySessions.listSessions).toBe("function");
     await app.close();
   });
 });

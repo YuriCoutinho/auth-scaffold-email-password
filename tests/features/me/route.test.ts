@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildApp } from "../../src/app.js";
-import { hashSessionToken } from "../../src/lib/token-hash.js";
-import { makeAppOptions } from "../helpers/app-options.js";
-import { createInMemoryStore } from "../helpers/in-memory-store.js";
+import { buildApp } from "../../../src/app.js";
+import { hashSessionToken } from "../../../src/lib/token-hash.js";
+import { makeAppOptions } from "../../helpers/app-options.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
 const TOKEN = "a-session-token";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
