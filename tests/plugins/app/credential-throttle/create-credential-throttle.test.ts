@@ -2,16 +2,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { THROTTLE_MAX_BLOCK_SECONDS } from "../../../../src/lib/throttle.js";
 import { hashThrottleKey } from "../../../../src/lib/token-hash.js";
 import { createCredentialThrottle } from "../../../../src/plugins/app/credential-throttle/create-credential-throttle.js";
+import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import { createInMemoryCredentialThrottleRepository } from "../../../helpers/credential-throttle/in-memory-repository.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
 const KEY = "foo@gmail.com";
-const KEY_HASH = hashThrottleKey(KEY);
+const KEY_HASH = hashThrottleKey(TEST_HMAC_SECRET, KEY);
 
 let repo: ReturnType<typeof createInMemoryCredentialThrottleRepository>;
 
 function makeThrottle(now: Date = NOW) {
-  return createCredentialThrottle({ repository: repo, now: () => now });
+  return createCredentialThrottle({
+    hmacSecret: TEST_HMAC_SECRET,
+    repository: repo,
+    now: () => now,
+  });
 }
 
 beforeEach(() => {
@@ -76,6 +81,7 @@ describe("registerFailure", () => {
   it("counts the first failure without opening a block", async () => {
     const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const throttle = createCredentialThrottle({
+      hmacSecret: TEST_HMAC_SECRET,
       repository: repo,
       log,
       now: () => NOW,
@@ -92,6 +98,7 @@ describe("registerFailure", () => {
   it("opens a one-minute block on the fourth consecutive failure", async () => {
     const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const throttle = createCredentialThrottle({
+      hmacSecret: TEST_HMAC_SECRET,
       repository: repo,
       log,
       now: () => NOW,
@@ -131,7 +138,9 @@ describe("registerFailure", () => {
 
   it("counts a key that belongs to no account, so the block is blind to existence", async () => {
     await makeThrottle().registerFailure("nobody@gmail.com");
-    expect(repo.rows.get(hashThrottleKey("nobody@gmail.com"))).toMatchObject({
+    expect(
+      repo.rows.get(hashThrottleKey(TEST_HMAC_SECRET, "nobody@gmail.com")),
+    ).toMatchObject({
       failedCount: 1,
     });
   });

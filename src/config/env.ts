@@ -13,6 +13,7 @@ export type Env = {
   EMAIL_FROM?: string | undefined;
   RESEND_API_KEY?: string | undefined;
   FRONTEND_ORIGIN?: string | undefined;
+  HMAC_SECRET: string;
 };
 
 // A positive rule: the value has to *be* an origin. Comparing against
@@ -54,6 +55,9 @@ function envSchemaFor(raw: NodeJS.ProcessEnv) {
       raw.EMAIL_DRIVER === "resend"
         ? z.string("required when EMAIL_DRIVER is resend").min(1)
         : z.string().optional(),
+    // Keys the digests of guessable values (OTP codes, throttled emails), so a
+    // leaked table alone cannot be reversed by trying every candidate.
+    HMAC_SECRET: z.string().min(32),
     // The versioned .env.sample ships the key empty, and the README tells
     // everyone to copy it, so outside production an empty value has to mean
     // "not configured" instead of failing the boot.

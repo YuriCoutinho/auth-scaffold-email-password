@@ -44,6 +44,7 @@ interface VerificationCodesDeps {
   >;
   emailSender: EmailSender;
   ttl: TtlPolicy;
+  hmacSecret: string;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }
@@ -113,7 +114,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
     }
 
     const code = generateOtpCode();
-    const codeHash = hashOtpCode(code);
+    const codeHash = hashOtpCode(deps.hmacSecret, code);
     return {
       kind: "issue",
       code,
@@ -270,7 +271,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
       const key = { userId: record.userId, purpose };
       const code = generateOtpCode();
       const state: VerificationCodeState = {
-        codeHash: hashOtpCode(code),
+        codeHash: hashOtpCode(deps.hmacSecret, code),
         codeAttempts: 0,
         codeSendCount: record.codeSendCount + 1,
         issuedAt: currentTime,
@@ -333,7 +334,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
         return { outcome: "invalid" };
       }
 
-      if (hashOtpCode(code) !== record.codeHash) {
+      if (hashOtpCode(deps.hmacSecret, code) !== record.codeHash) {
         await deps.repo.incrementVerificationAttempts({
           userId: record.userId,
           purpose,

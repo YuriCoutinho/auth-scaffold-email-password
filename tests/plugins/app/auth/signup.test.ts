@@ -8,6 +8,7 @@ import { createSignupService } from "../../../../src/plugins/app/auth/signup.js"
 import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
 import { createVerifyCodeService } from "../../../../src/plugins/app/auth/verify-code.js";
 import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
+import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import {
   createInMemoryAuthRepository,
   type InMemorySeed,
@@ -42,6 +43,7 @@ function setup(seed: InMemorySeed = {}) {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const checkPwnedPassword = vi.fn().mockResolvedValue(false);
   const codes = createVerificationCodes({
+    hmacSecret: TEST_HMAC_SECRET,
     repo,
     emailSender,
     ttl: DEFAULT_TTL,
@@ -113,7 +115,7 @@ describe("signup service", () => {
     await vi.waitFor(() => expect(emailSender.sent).toHaveLength(1));
     expect(emailSender.sent[0]?.to).toBe(EMAIL);
     const sentCode = emailSender.sent[0]?.subject.match(/\d{6}/)?.[0] ?? "";
-    expect(code?.codeHash).toBe(hashOtpCode(sentCode));
+    expect(code?.codeHash).toBe(hashOtpCode(TEST_HMAC_SECRET, sentCode));
   });
 
   it("normalizes the email before any lookup or write", async () => {
@@ -217,6 +219,7 @@ describe("signup service", () => {
   it("still accepts the signup when delivery fails", async () => {
     const repo = createInMemoryAuthRepository();
     const codes = createVerificationCodes({
+      hmacSecret: TEST_HMAC_SECRET,
       repo,
       emailSender: { send: vi.fn().mockRejectedValue(new Error("down")) },
       ttl: DEFAULT_TTL,

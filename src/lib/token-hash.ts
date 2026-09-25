@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 
 const HASH_ALGORITHM = "sha256";
 const DIGEST_ENCODING = "hex";
@@ -7,20 +7,28 @@ function sha256Hex(value: string): string {
   return createHash(HASH_ALGORITHM).update(value).digest(DIGEST_ENCODING);
 }
 
-// SHA-256 is enough for OTP codes and session tokens: brute-force protection
-// comes from attempts/expiry and token entropy, not hash cost.
-export function hashOtpCode(code: string): string {
-  return sha256Hex(code);
+function hmacSha256Hex(secret: string, value: string): string {
+  return createHmac(HASH_ALGORITHM, secret)
+    .update(value)
+    .digest(DIGEST_ENCODING);
 }
 
+// Six digits are a million candidates, so a plain digest is reversed by trying
+// them all. The server secret is what a leaked row does not carry.
+export function hashOtpCode(secret: string, code: string): string {
+  return hmacSha256Hex(secret, code);
+}
+
+// Tokens carry 256 random bits: there is no candidate list to try, so a plain
+// digest is enough.
 export function hashSessionToken(token: string): string {
   return sha256Hex(token);
 }
 
-// The throttle table keys its rows by this rather than by the address, so a
-// table about abuse never holds an email at rest.
-export function hashThrottleKey(value: string): string {
-  return sha256Hex(value);
+// Emails are guessable, so the throttle key is keyed like an OTP code, and the
+// table holds no digest a dictionary of addresses could match.
+export function hashThrottleKey(secret: string, value: string): string {
+  return hmacSha256Hex(secret, value);
 }
 
 // The verification token rides in a cookie like a session token, so it is

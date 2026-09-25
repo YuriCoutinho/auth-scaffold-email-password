@@ -14,6 +14,7 @@ import { createVerificationCodes } from "../../../../src/plugins/app/auth/verifi
 import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
 import type { EmailSender } from "../../../../src/plugins/app/email/sender.js";
 import { EmailProviderError } from "../../../../src/plugins/app/email/sender.js";
+import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import {
   createInMemoryAuthRepository,
   type InMemorySeed,
@@ -45,6 +46,7 @@ function setup(
   const send = vi.spyOn(emailSender, "send");
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const codes = createVerificationCodes({
+    hmacSecret: TEST_HMAC_SECRET,
     repo,
     emailSender,
     ttl: options.ttl ?? DEFAULT_TTL,
@@ -74,7 +76,7 @@ function seedWithCode(
         userId: USER_ID,
         purpose,
         tokenHash: hashVerificationToken(TOKEN),
-        codeHash: hashOtpCode(CODE),
+        codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
         codeAttempts: 0,
         codeSendCount: 1,
         issuedAt: NOW,
@@ -119,7 +121,7 @@ describe("verification codes: request", () => {
     expect(fake.sent[0]?.to).toBe(EMAIL);
     const code = codeIn(fake.sent[0]?.subject);
     expect(code).toMatch(/^\d{6}$/);
-    expect(row?.codeHash).toBe(hashOtpCode(code));
+    expect(row?.codeHash).toBe(hashOtpCode(TEST_HMAC_SECRET, code));
     expect(Object.values(row ?? {})).not.toContain(code);
   });
 
@@ -158,7 +160,7 @@ describe("verification codes: request", () => {
       userId: USER_ID,
       purpose: "password_reset",
       tokenHash: hashVerificationToken(token),
-      codeHash: hashOtpCode(CODE),
+      codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
       codeAttempts: 2,
       codeSendCount: 1,
       issuedAt,
@@ -182,7 +184,7 @@ describe("verification codes: request", () => {
       codeAttempts: 0,
       issuedAt: NOW,
     });
-    expect(row?.codeHash).not.toBe(hashOtpCode(CODE));
+    expect(row?.codeHash).not.toBe(hashOtpCode(TEST_HMAC_SECRET, CODE));
     await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
   });
 
@@ -200,7 +202,7 @@ describe("verification codes: request", () => {
     expect(send).not.toHaveBeenCalled();
     expect(stored("password_reset")).toMatchObject({
       tokenHash: hashVerificationToken(token),
-      codeHash: hashOtpCode(CODE),
+      codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
       codeSendCount: MAX_CODE_SEND_COUNT,
       issuedAt,
     });
@@ -294,7 +296,7 @@ describe("verification codes: request", () => {
       userId: USER_ID,
       purpose: "password_reset",
       tokenHash: hashVerificationToken(token),
-      codeHash: hashOtpCode(CODE),
+      codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
       codeAttempts: 2,
       codeSendCount: 3,
       issuedAt: previousIssuedAt,
@@ -439,7 +441,7 @@ describe("verification codes: startSignup", () => {
     await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
     expect(fake.sent[0]?.to).toBe(EMAIL);
     expect(stored("signup")?.codeHash).toBe(
-      hashOtpCode(codeIn(fake.sent[0]?.subject)),
+      hashOtpCode(TEST_HMAC_SECRET, codeIn(fake.sent[0]?.subject)),
     );
   });
 
@@ -453,7 +455,7 @@ describe("verification codes: startSignup", () => {
     expect(repo.users.get(USER_ID)?.passwordHash).toBe("newer-hash");
     expect(stored("signup")).toMatchObject({
       tokenHash: hashVerificationToken(started?.token ?? ""),
-      codeHash: hashOtpCode(CODE),
+      codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
       codeSendCount: 1,
       issuedAt: secondsAgo(5),
     });
@@ -570,7 +572,7 @@ describe("verification codes: resend", () => {
       userId: USER_ID,
       purpose: "signup",
       tokenHash: hashVerificationToken(TOKEN),
-      codeHash: hashOtpCode(code),
+      codeHash: hashOtpCode(TEST_HMAC_SECRET, code),
       codeAttempts: 0,
       codeSendCount: 3,
       issuedAt: NOW,
@@ -606,7 +608,7 @@ describe("verification codes: resend", () => {
       userId: USER_ID,
       purpose: "signup",
       tokenHash: hashVerificationToken(TOKEN),
-      codeHash: hashOtpCode(CODE),
+      codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
       codeAttempts: 1,
       codeSendCount: 2,
       issuedAt,
@@ -746,7 +748,7 @@ describe("verification codes: verify", () => {
         userId: USER_ID,
         purpose: "signup",
         tokenHash: hashVerificationToken(TOKEN),
-        codeHash: hashOtpCode(CODE),
+        codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
         codeAttempts: 2,
         codeSendCount: 1,
         issuedAt: NOW,

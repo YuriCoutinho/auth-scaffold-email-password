@@ -15,6 +15,7 @@ const baseEnv: Env = {
   PORT: 3000,
   NODE_ENV: "test",
   EMAIL_DRIVER: "fake",
+  HMAC_SECRET: "x".repeat(32),
 };
 
 describe("createEmailSender", () => {

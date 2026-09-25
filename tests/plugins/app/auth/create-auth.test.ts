@@ -4,6 +4,7 @@ import { DEFAULT_TTL, type TtlPolicy } from "../../../../src/lib/ttl.js";
 import { createAuth } from "../../../../src/plugins/app/auth/create-auth.js";
 import { createCredentialThrottle } from "../../../../src/plugins/app/credential-throttle/create-credential-throttle.js";
 import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
+import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import {
   createInMemoryAuthRepository,
   type InMemorySeed,
@@ -17,11 +18,13 @@ function setup(seed: InMemorySeed = {}, ttl: TtlPolicy = DEFAULT_TTL) {
   const repository = createInMemoryAuthRepository(seed);
   const emailSender = new FakeEmailSender();
   const auth = createAuth({
+    hmacSecret: TEST_HMAC_SECRET,
     repository,
     sessionRepository: repository,
     emailSender,
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
     credentialThrottle: createCredentialThrottle({
+      hmacSecret: TEST_HMAC_SECRET,
       repository: createInMemoryCredentialThrottleRepository(),
     }),
     ttl,

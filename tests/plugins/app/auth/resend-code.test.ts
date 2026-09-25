@@ -12,6 +12,7 @@ import { createResendCodeService } from "../../../../src/plugins/app/auth/resend
 import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
 import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
 import type { EmailSender } from "../../../../src/plugins/app/email/sender.js";
+import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
@@ -30,7 +31,7 @@ function setup(
         userId: USER_ID,
         purpose: "signup",
         tokenHash: hashVerificationToken(TOKEN),
-        codeHash: hashOtpCode("123456"),
+        codeHash: hashOtpCode(TEST_HMAC_SECRET, "123456"),
         codeSendCount: code.codeSendCount ?? 1,
         issuedAt:
           code.issuedAt ??
@@ -40,6 +41,7 @@ function setup(
   });
   const send = vi.spyOn(emailSender, "send");
   const codes = createVerificationCodes({
+    hmacSecret: TEST_HMAC_SECRET,
     repo,
     emailSender,
     ttl: DEFAULT_TTL,
@@ -112,7 +114,7 @@ describe("resendCode", () => {
 
     expect(await resendCode(TOKEN)).toEqual({ outcome: "email-unavailable" });
     expect(stored()).toMatchObject({
-      codeHash: hashOtpCode("123456"),
+      codeHash: hashOtpCode(TEST_HMAC_SECRET, "123456"),
       codeSendCount: 1,
     });
   });

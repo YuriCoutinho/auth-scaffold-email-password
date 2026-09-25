@@ -24,6 +24,7 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
       checkPwnedPassword: fastify.checkPwnedPassword,
       credentialThrottle: fastify.credentialThrottle,
       ttl: resolveTtl(opts.ttl),
+      hmacSecret: opts.config.HMAC_SECRET,
       log: fastify.log,
     }),
   );

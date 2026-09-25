@@ -22,6 +22,7 @@ export interface AuthDeps {
   checkPwnedPassword: CheckPwnedPassword;
   credentialThrottle: CredentialThrottle;
   ttl: TtlPolicy;
+  hmacSecret: string;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }
@@ -36,6 +37,7 @@ export function createAuth(deps: AuthDeps) {
     ...shared,
     emailSender: deps.emailSender,
     ttl: deps.ttl,
+    hmacSecret: deps.hmacSecret,
   });
   const { signup } = createSignupService({
     ...shared,

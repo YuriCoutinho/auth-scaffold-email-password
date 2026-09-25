@@ -5,7 +5,7 @@ import {
   hashSessionToken,
   hashVerificationToken,
 } from "../../../src/lib/token-hash.js";
-import { makeAppOptions } from "../../helpers/app-options.js";
+import { makeAppOptions, TEST_HMAC_SECRET } from "../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -36,7 +36,7 @@ function makeRepository(
         userId: USER_ID,
         purpose: "signup",
         tokenHash: hashVerificationToken(TOKEN),
-        codeHash: hashOtpCode(CODE),
+        codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
         codeAttempts: options.codeAttempts ?? 0,
         issuedAt: options.issuedAt ?? new Date(),
       },

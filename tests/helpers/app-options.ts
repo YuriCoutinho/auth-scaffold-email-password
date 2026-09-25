@@ -9,12 +9,15 @@ import type { SessionRepository } from "../../src/plugins/app/sessions/repositor
 import { createInMemoryAuthRepository } from "./auth/in-memory-repository.js";
 import { createInMemoryCredentialThrottleRepository } from "./credential-throttle/in-memory-repository.js";
 
+export const TEST_HMAC_SECRET = "test-hmac-secret-with-32-characters!";
+
 // Never reaches a server: postgres.js only connects on the first query.
 export const TEST_ENV: Env = {
   DATABASE_URL: "postgres://localhost:5432/test",
   PORT: 0,
   NODE_ENV: "test",
   EMAIL_DRIVER: "fake",
+  HMAC_SECRET: TEST_HMAC_SECRET,
 };
 
 // The limiter runs in tests exactly as it runs in production; only the ceiling

@@ -10,6 +10,7 @@ import { createResetPasswordService } from "../../../../src/plugins/app/auth/res
 import type { VerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
 import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
 import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
+import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
@@ -45,7 +46,7 @@ async function setup(
         userId: USER_ID,
         purpose: "password_reset",
         tokenHash: hashVerificationToken(TOKEN),
-        codeHash: hashOtpCode(CODE),
+        codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
         codeAttempts: options.codeAttempts ?? 0,
         issuedAt: options.issuedAt ?? NOW,
       },
@@ -69,6 +70,7 @@ async function setup(
   };
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const codes = createVerificationCodes({
+    hmacSecret: TEST_HMAC_SECRET,
     repo,
     emailSender,
     ttl: DEFAULT_TTL,
