@@ -30,9 +30,6 @@ export const users = pgTable(
     emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
     fullName: text("full_name"),
     role: text("role", { enum: USER_ROLES }).notNull().default("user"),
-    // Written by the application clock, like every instant the retention
-    // cutoffs are compared against.
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     // Owned by the database: DEFAULT on insert and the users_set_updated_at
     // trigger on update, so writes from outside the ORM keep it right too.
     updatedAt: timestamp("updated_at", { withTimezone: true })
@@ -40,7 +37,6 @@ export const users = pgTable(
       .defaultNow(),
   },
   (table) => [
-    index("users_created_at_idx").on(table.createdAt),
     check("users_role_check", sql`${table.role} in (${sqlList(USER_ROLES)})`),
     // The application normalizes; the database refuses anything that skipped it.
     check(

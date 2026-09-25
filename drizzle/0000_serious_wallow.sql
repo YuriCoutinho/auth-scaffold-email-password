@@ -21,7 +21,6 @@ CREATE TABLE "users" (
 	"email_verified_at" timestamp with time zone,
 	"full_name" text,
 	"role" text DEFAULT 'user' NOT NULL,
-	"created_at" timestamp with time zone NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "users_email_unique" UNIQUE("email"),
 	CONSTRAINT "users_role_check" CHECK ("users"."role" in ('user', 'admin')),
@@ -47,8 +46,8 @@ ALTER TABLE "verification_codes" ADD CONSTRAINT "verification_codes_user_id_user
 CREATE INDEX "credential_throttle_last_failed_at_idx" ON "credential_throttle" USING btree ("last_failed_at");--> statement-breakpoint
 CREATE INDEX "sessions_user_id_idx" ON "sessions" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "sessions_expires_at_idx" ON "sessions" USING btree ("expires_at");--> statement-breakpoint
-CREATE INDEX "users_created_at_idx" ON "users" USING btree ("created_at");--> statement-breakpoint
-CREATE INDEX "verification_codes_expires_at_idx" ON "verification_codes" USING btree ("expires_at");--> statement-breakpoint
+CREATE INDEX "verification_codes_expires_at_idx" ON "verification_codes" USING btree ("expires_at");
+--> statement-breakpoint
 -- Hand-written: drizzle-kit does not generate triggers. Append this block again
 -- whenever the baseline is regenerated.
 CREATE FUNCTION "set_updated_at"() RETURNS trigger

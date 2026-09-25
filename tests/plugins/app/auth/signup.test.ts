@@ -55,7 +55,6 @@ function setup(seed: InMemorySeed = {}) {
     codes,
     checkPwnedPassword,
     log,
-    now: () => NOW,
   });
   const { verifyCode } = createVerifyCodeService({
     repo,
@@ -104,7 +103,6 @@ describe("signup service", () => {
 
     const user = userByEmail(repo, EMAIL);
     expect(user?.emailVerifiedAt).toBeNull();
-    expect(user?.createdAt).toEqual(NOW);
     expect(user?.passwordHash).not.toContain(PASSWORD);
     expect(await verifyPassword(user?.passwordHash ?? "", PASSWORD)).toBe(true);
 
@@ -230,7 +228,6 @@ describe("signup service", () => {
       repo,
       codes,
       checkPwnedPassword: vi.fn().mockResolvedValue(false),
-      now: () => NOW,
     });
 
     expect((await signup(EMAIL, PASSWORD)).outcome).toBe("accepted");

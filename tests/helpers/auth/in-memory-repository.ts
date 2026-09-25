@@ -19,7 +19,6 @@ export interface InMemorySeed {
     id?: string;
     passwordHash?: string;
     emailVerifiedAt?: Date | null;
-    createdAt?: Date;
   }>;
   verificationCodes?: Array<
     Partial<SaveVerificationCodeInput> & {
@@ -33,14 +32,10 @@ export interface InMemorySeed {
   >;
 }
 
-export interface StoredUser extends UserRecord {
-  createdAt: Date;
-}
-
 const codeKey = (key: VerificationCodeKey) => `${key.userId}:${key.purpose}`;
 
 export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
-  const users = new Map<string, StoredUser>();
+  const users = new Map<string, UserRecord>();
   const verificationCodes = new Map<string, SaveVerificationCodeInput>();
   const sessions = new Map<string, CreateSessionInput>();
 
@@ -54,7 +49,6 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       // that is what almost every flow needs to start from.
       emailVerifiedAt:
         user.emailVerifiedAt === undefined ? new Date(0) : user.emailVerifiedAt,
-      createdAt: user.createdAt ?? new Date(0),
     });
   }
 
@@ -99,7 +93,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
 
   // Reads hand out a copy, like a real query does. Returning the stored object
   // would let a caller see its own later writes through the value it read.
-  const toUserRecord = (user: StoredUser | undefined): UserRecord | undefined =>
+  const toUserRecord = (user: UserRecord | undefined): UserRecord | undefined =>
     user && {
       id: user.id,
       email: user.email,

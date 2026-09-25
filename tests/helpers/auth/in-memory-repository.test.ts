@@ -21,7 +21,6 @@ function newUser(
     id: OWNER,
     email: "user@example.com",
     passwordHash: "hash-1",
-    createdAt: NOW,
     ...overrides,
   };
 }

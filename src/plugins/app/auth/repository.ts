@@ -15,7 +15,6 @@ export interface UpsertUnverifiedUserInput {
   id: string;
   email: string;
   passwordHash: string;
-  createdAt: Date;
 }
 
 export interface VerificationCodeState {
