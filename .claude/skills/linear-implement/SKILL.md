@@ -28,9 +28,8 @@ O CLI acima (via Bash) para status/comment/create; Bash e Git para worktree, edi
 2. Criar a worktree: `git worktree add` num branch **nomeado por você**, nunca o `branchName` que o Linear sugere. Aquele carrega o identificador do board e o usuário do dono, e o nome da branch aparece na página da PR num repo público. O nome é **sempre em inglês e semântico**, no formato `<tipo>/<escopo>-<slug>`, onde `<tipo>` é o mesmo do Conventional Commit (`feat`, `fix`, `refactor`, `docs`) e o resto descreve a entrega: `feat/auth-change-password`, `fix/sessions-expired-cookie`. Sem identificador de issue, sem nome ou email de pessoa, sem português.
 3. Executar o plano passo a passo, editando o código na worktree.
 4. Rodar os checks do projeto; corrigir até passarem.
-5. Gravar o documento da task em `docs/tasks/NN-slug-em-ingles.md` (`NN` = ordem cronológica), autocontido e sem citar o board, com as seções `## Introdução`, `## Requisitos técnicos` e `## Definition of done`; atualizar o índice `docs/tasks/README.md`.
-6. Abrir a PR seguindo `.github/PULL_REQUEST_TEMPLATE.md`, com `--assignee YuriCoutinho` e a label de tipo (`feature`, `fix` ou `documentation`).
-7. `comment --id <IDENTIFIER> --body` com o resumo do que foi feito e o link da PR.
-8. Para tech-debt descoberto: `create` uma issue de follow-up.
-9. `status --id <IDENTIFIER> --state "In Review"` (ou "Done"), conforme o fluxo.
-10. Devolver ao orquestrador o resumo das mudanças e o estado final da issue.
+5. Abrir a PR seguindo `.github/PULL_REQUEST_TEMPLATE.md`, com `--assignee YuriCoutinho` e a label de tipo (`feature`, `fix` ou `documentation`).
+6. `comment --id <IDENTIFIER> --body` com o resumo do que foi feito e o link da PR.
+7. Para tech-debt descoberto: `create` uma issue de follow-up.
+8. `status --id <IDENTIFIER> --state "In Review"` (ou "Done"), conforme o fluxo.
+9. Devolver ao orquestrador o resumo das mudanças e o estado final da issue.

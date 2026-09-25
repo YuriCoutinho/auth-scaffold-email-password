@@ -8,8 +8,6 @@ Backend de autenticação com email e senha, servindo de scaffold reaproveitáve
 
 Stack: Node 24, TypeScript em modo strict, Fastify 5, Drizzle ORM sobre Postgres 16, Zod para validação, Vitest para testes e Biome para lint e formatação.
 
-O raciocínio por trás de cada decisão técnica está em `docs/tasks/`, em ordem cronológica de implementação. O índice fica em `docs/tasks/README.md`.
-
 ## Comandos
 
 O gerenciador de pacotes é **pnpm**, gerenciado por corepack. Não use npm nem yarn.
@@ -92,17 +90,11 @@ Exemplo: `feat(auth): add post /auth/login endpoint with timing-safe credential 
 * Sempre com `--assignee YuriCoutinho` e com a label de tipo (`feature`, `fix` ou `documentation`)
 * Merge sempre por squash, que o ruleset da `main` já impõe
 
-## Documentação de tasks
+## Board de planejamento
 
-O planejamento vive num board interno que não é acessível a terceiros. Ele é o guia do fluxo de trabalho, não do repositório: a task é criada e refinada lá, e o que chega ao repositório é o resultado dela, em código e em documento.
+O planejamento vive num board interno que não é acessível a terceiros. Ele é o guia do fluxo de trabalho, não do repositório: a task é criada e refinada lá, e o que chega ao repositório é o resultado dela, em código.
 
 Por isso **nada do board entra no repositório**: nem identificador, nem URL, nem em commit, nem em corpo de PR, nem em documento.
-
-* Cada task implementada vira um documento em `docs/tasks/NN-slug-em-ingles.md`, onde `NN` é a ordem cronológica
-* Esses documentos são autocontidos e servem de guia para reconstruir o projeto do zero, trazendo cada decisão técnica com o motivo dela
-* Estrutura fixa: `## Introdução`, `## Requisitos técnicos`, `## Definition of done`. Sem seção de limitação conhecida, débito técnico ou "fica para a próxima task"
-* Redação sem travessões, usando conectivos
-* A PR que implementa uma task inclui o documento dela e atualiza o índice `docs/tasks/README.md`
 
 ## Skills
 
