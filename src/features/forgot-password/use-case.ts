@@ -1,5 +1,5 @@
 import { normalizeEmail } from "../../lib/email.js";
-import { generateToken } from "../../lib/session.js";
+import { generateToken } from "../../lib/token.js";
 import type { OtpModule } from "../../modules/otp/index.js";
 import type { UsersModule } from "../../modules/users/index.js";
 

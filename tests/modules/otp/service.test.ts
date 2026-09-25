@@ -2,16 +2,16 @@ import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import type { Executor, Transaction } from "../../../src/db/client.js";
 import {
-  MAX_CODE_ATTEMPTS,
-  MAX_CODE_SEND_COUNT,
-  RESEND_COOLDOWN_SECONDS,
-} from "../../../src/lib/session.js";
-import {
   hashOtpCode,
   hashVerificationToken,
 } from "../../../src/lib/token-hash.js";
 import { DEFAULT_TTL, type TtlPolicy } from "../../../src/lib/ttl.js";
 import otpPlugin from "../../../src/modules/otp/index.js";
+import {
+  MAX_CODE_ATTEMPTS,
+  MAX_CODE_SEND_COUNT,
+  RESEND_COOLDOWN_SECONDS,
+} from "../../../src/modules/otp/policy.js";
 import type {
   OtpRepository,
   VerificationPurpose,

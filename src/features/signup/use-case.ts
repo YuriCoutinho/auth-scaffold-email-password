@@ -2,7 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { normalizeEmail } from "../../lib/email.js";
 import { generateId } from "../../lib/id.js";
 import { hashPassword } from "../../lib/password.js";
-import { generateToken } from "../../lib/session.js";
+import { generateToken } from "../../lib/token.js";
 import type { OtpModule } from "../../modules/otp/index.js";
 import type { UsersModule } from "../../modules/users/index.js";
 import type { CheckPwnedPassword } from "../../plugins/pwned-password/checker.js";

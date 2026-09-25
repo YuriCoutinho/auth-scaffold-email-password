@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { Executor } from "../../../src/db/client.js";
 import { createResendSignupCode } from "../../../src/features/resend-signup-code/use-case.js";
 import {
-  MAX_CODE_SEND_COUNT,
-  RESEND_COOLDOWN_SECONDS,
-} from "../../../src/lib/session.js";
-import {
   hashOtpCode,
   hashVerificationToken,
 } from "../../../src/lib/token-hash.js";
 import { DEFAULT_TTL } from "../../../src/lib/ttl.js";
+import {
+  MAX_CODE_SEND_COUNT,
+  RESEND_COOLDOWN_SECONDS,
+} from "../../../src/modules/otp/policy.js";
 import { createOtpService } from "../../../src/modules/otp/service.js";
 import { FakeEmailSender } from "../../../src/plugins/email/drivers/fake.js";
 import type { EmailSender } from "../../../src/plugins/email/sender.js";

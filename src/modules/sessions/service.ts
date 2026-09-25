@@ -1,5 +1,5 @@
 import { generateId } from "../../lib/id.js";
-import { generateToken } from "../../lib/session.js";
+import { generateToken } from "../../lib/token.js";
 import { hashSessionToken } from "../../lib/token-hash.js";
 import { expiresAt, hasExpired, type TtlPolicy } from "../../lib/ttl.js";
 import type { SessionsRepository } from "./repository.js";

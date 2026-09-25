@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../../src/app.js";
 import { hashPassword } from "../../../src/lib/password.js";
-import { MAX_CODE_ATTEMPTS } from "../../../src/lib/session.js";
 import {
   hashOtpCode,
   hashSessionToken,
   hashVerificationToken,
 } from "../../../src/lib/token-hash.js";
+import { MAX_CODE_ATTEMPTS } from "../../../src/modules/otp/policy.js";
 import { FakeEmailSender } from "../../../src/plugins/email/drivers/fake.js";
 import { makeAppOptions, TEST_HMAC_SECRET } from "../../helpers/app-options.js";
 import { createInMemoryStore } from "../../helpers/in-memory-store.js";

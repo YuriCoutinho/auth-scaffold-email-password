@@ -1,11 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import { generateOtpCode } from "../../lib/otp.js";
-import {
-  generateToken,
-  MAX_CODE_ATTEMPTS,
-  MAX_CODE_SEND_COUNT,
-  RESEND_COOLDOWN_SECONDS,
-} from "../../lib/session.js";
+import { generateToken } from "../../lib/token.js";
 import { hashOtpCode, hashVerificationToken } from "../../lib/token-hash.js";
 import {
   expiresAt as expiryFrom,
@@ -18,6 +12,12 @@ import {
 } from "../../plugins/email/sender.js";
 import { renderPasswordResetCodeEmail } from "./emails/password-reset-code.js";
 import { renderSignupCodeEmail } from "./emails/signup-code.js";
+import {
+  generateOtpCode,
+  MAX_CODE_ATTEMPTS,
+  MAX_CODE_SEND_COUNT,
+  RESEND_COOLDOWN_SECONDS,
+} from "./policy.js";
 import type {
   ConsumeVerificationCodeInput,
   OtpRepository,

@@ -58,13 +58,13 @@ Qualidade: a CI (GitHub Actions) roda `typecheck` + `lint` + `test` + `build` em
 
 ## Estrutura
 
-O projeto segue a arquitetura de plugins do Fastify: `src/app.ts` carrega três pastas com `@fastify/autoload`, nesta ordem.
+O código se divide em camadas com dependência de mão única (`features` → `http` → `modules` → `plugins`, e todas podem usar a base `lib`, `db` e `config`), verificada por `tests/architecture.test.ts`. `src/app.ts` registra tudo explicitamente, na ordem das camadas, e serve de índice do sistema.
 
-- `src/plugins/external` — plugins do ecossistema (cookie, swagger, swagger-ui)
-- `src/plugins/app` — plugins da aplicação, que decoram a instância: `database.ts`, `error-handler.ts`, `pwned-password/` (plugin e a chamada à API do Have I Been Pwned), `email/` (interface, fábrica e drivers fake, mailpit e resend) e `auth/` (os quatro fluxos, a interface `AuthRepository` e o adaptador Drizzle dela)
-- `src/routes` — rotas HTTP, com prefixo pelo nome da pasta (`routes/auth/login.ts` vira `/auth/login`)
-- `src/schemas` — schemas Zod compartilhados pelas rotas
+- `src/plugins` — infraestrutura sem regra de negócio: banco, transação, error handler, email (interface, fábrica e drivers fake, mailpit e resend), Have I Been Pwned, e os pacotes do ecossistema em `plugins/external`
+- `src/modules` — uma capacidade por tabela (`users`, `sessions`, `otp`, `credential-throttle`), cada uma com plugin, service, porta de repositório e adaptador Drizzle
+- `src/http` — o hook de sessão e os schemas Zod compartilhados pelas rotas
+- `src/features` — um diretório por caso de uso, com `route.ts`, `schema.ts` e `use-case.ts`, mais o `retention-sweep`, que roda por timer em vez de rota
 - `src/db` — schema Drizzle e fábrica de conexão
-- `src/lib` — funções puras e constantes (hash, tokens, código, TTLs, política dos cookies)
+- `src/lib` — funções puras e genéricas (hash, tokens, TTLs, política dos cookies)
 - `src/config` — configuração validada de ambiente (Zod, fail-fast)
-- `tests` — espelha `src/`, mais `tests/helpers` com as opções de teste e o repositório em memória
+- `tests` — espelha `src/`, mais `tests/helpers` com as opções de teste e o store em memória que implementa os repositórios de todos os módulos
