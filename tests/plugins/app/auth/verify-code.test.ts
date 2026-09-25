@@ -12,6 +12,7 @@ import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 
+const SESSION_TTL_SECONDS = 60 * 60;
 const NOW = new Date("2026-09-24T12:00:00Z");
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const EMAIL = "user@example.com";
@@ -62,6 +63,7 @@ function setup(
   const { verifyCode } = createVerifyCodeService({
     repo,
     codes: options.wrapCodes ? options.wrapCodes(codes) : codes,
+    sessionTtlSeconds: SESSION_TTL_SECONDS,
     log,
     now: () => NOW,
   });
@@ -89,6 +91,7 @@ describe("verifyCode", () => {
         tokenHash: hashSessionToken(result.sessionToken),
         deviceLabel: "Firefox on macOS",
         createdAt: NOW,
+        expiresAt: new Date(NOW.getTime() + SESSION_TTL_SECONDS * 1000),
       },
     ]);
   });

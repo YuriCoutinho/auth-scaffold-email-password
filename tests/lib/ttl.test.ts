@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_TTL,
   expiresAt,
+  hasExpired,
   isExpired,
   issuedAfter,
   resolveTtl,
@@ -42,6 +43,16 @@ describe("resolveTtl", () => {
 describe("expiresAt", () => {
   it("adds the ttl to the issue instant", () => {
     expect(expiresAt(NOW, 60)).toEqual(new Date("2026-09-24T12:01:00Z"));
+  });
+});
+
+describe("hasExpired", () => {
+  it("is false before the expiry", () => {
+    expect(hasExpired(NOW, new Date(NOW.getTime() - 1))).toBe(false);
+  });
+
+  it("is true exactly at the expiry", () => {
+    expect(hasExpired(NOW, NOW)).toBe(true);
   });
 });
 

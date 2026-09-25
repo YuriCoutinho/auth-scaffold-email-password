@@ -1,9 +1,9 @@
 import { z } from "zod";
 
-// How long each credential lives. Only the moment it was issued is stored, and
-// validity is derived from these values when read, so a change made through
-// buildApp also reaches rows that already exist: raising a TTL extends live
-// credentials and revives expired ones the retention sweep has not removed.
+// How long each credential lives. The TTL is applied once, when the credential
+// is issued, and the resulting expiry is stored with it: validity is decided
+// at issue time, like the cookie Max-Age, so changing a TTL never reaches
+// credentials already out.
 export interface TtlPolicy {
   sessionSeconds: number;
   signupCodeSeconds: number;
@@ -39,6 +39,10 @@ export function resolveTtl(overrides?: Partial<TtlPolicy>): TtlPolicy {
 
 export function expiresAt(issuedAt: Date, ttlSeconds: number): Date {
   return new Date(issuedAt.getTime() + ttlSeconds * 1000);
+}
+
+export function hasExpired(expiresAt: Date, now: Date): boolean {
+  return expiresAt <= now;
 }
 
 export function isExpired(

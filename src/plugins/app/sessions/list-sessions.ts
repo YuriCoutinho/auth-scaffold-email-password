@@ -1,4 +1,3 @@
-import { expiresAt, issuedAfter } from "../../../lib/ttl.js";
 import type { SessionRepository } from "./repository.js";
 
 export interface ListSessionsInput {
@@ -16,7 +15,6 @@ export interface SessionSummary {
 
 interface ListSessionsServiceDeps {
   repo: Pick<SessionRepository, "listUserSessions">;
-  sessionTtlSeconds: number;
   now?: () => Date;
 }
 
@@ -27,14 +25,14 @@ export function createListSessionsService(deps: ListSessionsServiceDeps) {
     async listSessions(input: ListSessionsInput): Promise<SessionSummary[]> {
       const records = await deps.repo.listUserSessions({
         userId: input.userId,
-        createdAfter: issuedAfter(deps.sessionTtlSeconds, now()),
+        activeAt: now(),
       });
 
       return records.map((record) => ({
         id: record.id,
         deviceLabel: record.deviceLabel,
         createdAt: record.createdAt,
-        expiresAt: expiresAt(record.createdAt, deps.sessionTtlSeconds),
+        expiresAt: record.expiresAt,
         isCurrent: record.id === input.currentSessionId,
       }));
     },

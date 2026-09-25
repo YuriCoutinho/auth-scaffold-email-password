@@ -22,7 +22,7 @@ export function createDrizzleSessionRepository(
         .select({
           id: sessions.id,
           userId: sessions.userId,
-          createdAt: sessions.createdAt,
+          expiresAt: sessions.expiresAt,
         })
         .from(sessions)
         .where(eq(sessions.tokenHash, tokenHash))
@@ -70,12 +70,13 @@ export function createDrizzleSessionRepository(
           id: sessions.id,
           deviceLabel: sessions.deviceLabel,
           createdAt: sessions.createdAt,
+          expiresAt: sessions.expiresAt,
         })
         .from(sessions)
         .where(
           and(
             eq(sessions.userId, input.userId),
-            gt(sessions.createdAt, input.createdAfter),
+            gt(sessions.expiresAt, input.activeAt),
           ),
         )
         .orderBy(desc(sessions.createdAt), desc(sessions.id));

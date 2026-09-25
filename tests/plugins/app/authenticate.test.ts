@@ -16,7 +16,7 @@ function secondsAgo(seconds: number) {
   return new Date(Date.now() - seconds * 1000);
 }
 
-function repositoryWithSession(createdAt: Date) {
+function repositoryWithSession(createdAt: Date, expiresAt?: Date) {
   return createInMemoryAuthRepository({
     users: [{ id: USER_ID, email: "a@b.com" }],
     sessions: [
@@ -25,6 +25,7 @@ function repositoryWithSession(createdAt: Date) {
         userId: USER_ID,
         tokenHash: hashSessionToken(TOKEN),
         createdAt,
+        ...(expiresAt ? { expiresAt } : {}),
       },
     ],
   });
@@ -141,11 +142,11 @@ describe("authenticate hook", () => {
     await app.close();
   });
 
-  it("judges expiry by the ttl passed to buildApp", async () => {
+  it("judges expiry by the stored expiry, whatever ttl buildApp gets", async () => {
     const app = buildApp(
       makeAppOptions({
-        authRepository: repositoryWithSession(secondsAgo(120)),
-        ttl: { sessionSeconds: 60 },
+        authRepository: repositoryWithSession(secondsAgo(120), secondsAgo(60)),
+        ttl: { sessionSeconds: 30 * 24 * 60 * 60 },
       }),
     );
     protectedRoute(app, "GET", async () => ({ ok: true }));

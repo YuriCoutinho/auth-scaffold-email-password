@@ -12,6 +12,7 @@ vi.mock("../../../../src/lib/password.js", async (importOriginal) => {
 const { verifyPassword } = await import("../../../../src/lib/password.js");
 const verifyPasswordMock = vi.mocked(verifyPassword);
 
+const SESSION_TTL_SECONDS = 60 * 60;
 const NOW = new Date("2026-09-24T12:00:00Z");
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -41,6 +42,7 @@ function setup(emailVerifiedAt: Date | null | "no-account" = new Date(0)) {
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const { login } = createLoginService({
     repo,
+    sessionTtlSeconds: SESSION_TTL_SECONDS,
     throttle,
     log,
     now: () => NOW,
@@ -71,6 +73,7 @@ describe("login", () => {
         tokenHash: hashSessionToken(result.sessionToken),
         deviceLabel: "Firefox on macOS",
         createdAt: NOW,
+        expiresAt: new Date(NOW.getTime() + SESSION_TTL_SECONDS * 1000),
       },
     ]);
   });

@@ -70,7 +70,8 @@ describe("GET /sessions", () => {
       isCurrent: true,
     });
     expect(sessions[1].createdAt).toBe(CURRENT_CREATED_AT.toISOString());
-    // Only the creation instant is stored; the expiry is derived from the ttl.
+    // The seed issued it with the default ttl, and the stored expiry is what
+    // the response reports.
     expect(sessions[1].expiresAt).toBe(
       new Date(CURRENT_CREATED_AT.getTime() + SESSION_TTL_MS).toISOString(),
     );
@@ -84,6 +85,7 @@ describe("GET /sessions", () => {
       tokenHash: "expired-session",
       deviceLabel: null,
       createdAt: EXPIRED_CREATED_AT,
+      expiresAt: new Date(EXPIRED_CREATED_AT.getTime() + SESSION_TTL_MS),
     });
 
     const response = await list(authRepository);

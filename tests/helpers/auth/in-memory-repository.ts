@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { DEFAULT_TTL, expiresAt as expiryFrom } from "../../../src/lib/ttl.js";
 import type {
   AuthRepository,
   ConsumeVerificationCodeInput,
@@ -71,12 +72,16 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
 
   for (const session of seed.sessions ?? []) {
     const id = session.id ?? randomUUID();
+    const createdAt = session.createdAt ?? new Date();
     sessions.set(id, {
       id,
       userId: session.userId,
       tokenHash: session.tokenHash,
       deviceLabel: session.deviceLabel ?? null,
-      createdAt: session.createdAt ?? new Date(),
+      createdAt,
+      // Seeds that only care about age get the expiry a default issue gives.
+      expiresAt:
+        session.expiresAt ?? expiryFrom(createdAt, DEFAULT_TTL.sessionSeconds),
     });
   }
 
@@ -245,7 +250,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
         session && {
           id: session.id,
           userId: session.userId,
-          createdAt: session.createdAt,
+          expiresAt: session.expiresAt,
         }
       );
     },
@@ -278,7 +283,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
         .filter(
           (session) =>
             session.userId === input.userId &&
-            session.createdAt.getTime() > input.createdAfter.getTime(),
+            session.expiresAt.getTime() > input.activeAt.getTime(),
         )
         .sort(
           (a, b) =>
@@ -289,6 +294,7 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
           id: session.id,
           deviceLabel: session.deviceLabel,
           createdAt: session.createdAt,
+          expiresAt: session.expiresAt,
         }));
     },
   };

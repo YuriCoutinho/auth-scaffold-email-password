@@ -89,10 +89,14 @@ export const sessions = pgTable(
     tokenHash: text("token_hash").notNull().unique(),
     deviceLabel: text("device_label"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+    // Decided at issue time, like the cookie Max-Age, so a TTL change never
+    // reaches sessions already out.
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (table) => [
     index("sessions_user_id_idx").on(table.userId),
     index("sessions_created_at_idx").on(table.createdAt),
+    index("sessions_expires_at_idx").on(table.expiresAt),
   ],
 );
 

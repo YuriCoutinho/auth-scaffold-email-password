@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { generateId } from "../../../lib/id.js";
 import { generateToken } from "../../../lib/session.js";
 import { hashSessionToken } from "../../../lib/token-hash.js";
+import { expiresAt } from "../../../lib/ttl.js";
 import type { AuthRepository } from "./repository.js";
 import type { VerificationCodes } from "./verification-codes.js";
 
@@ -12,6 +13,7 @@ export type VerifyCodeResult =
 interface VerifyCodeServiceDeps {
   repo: Pick<AuthRepository, "verifyEmail">;
   codes: Pick<VerificationCodes, "verify">;
+  sessionTtlSeconds: number;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }
@@ -42,6 +44,7 @@ export function createVerifyCodeService(deps: VerifyCodeServiceDeps) {
           tokenHash: hashSessionToken(newSessionToken),
           deviceLabel,
           createdAt: currentTime,
+          expiresAt: expiresAt(currentTime, deps.sessionTtlSeconds),
         },
       });
       if (!verified) {

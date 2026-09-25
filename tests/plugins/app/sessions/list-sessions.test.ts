@@ -3,7 +3,6 @@ import { createListSessionsService } from "../../../../src/plugins/app/sessions/
 import type { ActiveSessionRecord } from "../../../../src/plugins/app/sessions/repository.js";
 
 const NOW = new Date("2026-01-10T00:00:00.000Z");
-const TTL_SECONDS = 30 * 24 * 60 * 60;
 const USER = "11111111-1111-4111-8111-111111111111";
 const CURRENT = "22222222-2222-4222-8222-222222222222";
 const OTHER = "33333333-3333-4333-8333-333333333333";
@@ -12,21 +11,20 @@ function makeService(records: ActiveSessionRecord[]) {
   const repo = { listUserSessions: vi.fn().mockResolvedValue(records) };
   const { listSessions } = createListSessionsService({
     repo,
-    sessionTtlSeconds: TTL_SECONDS,
     now: () => NOW,
   });
   return { repo, listSessions };
 }
 
 describe("listSessions", () => {
-  it("asks for the sessions of the user created within the ttl", async () => {
+  it("asks for the sessions of the user still active now", async () => {
     const { repo, listSessions } = makeService([]);
 
     await listSessions({ userId: USER, currentSessionId: CURRENT });
 
     expect(repo.listUserSessions).toHaveBeenCalledWith({
       userId: USER,
-      createdAfter: new Date(NOW.getTime() - TTL_SECONDS * 1000),
+      activeAt: NOW,
     });
   });
 
@@ -38,17 +36,19 @@ describe("listSessions", () => {
     ).resolves.toEqual([]);
   });
 
-  it("derives the expiry from the creation and flags only the current session", async () => {
+  it("returns the stored expiry and flags only the current session", async () => {
     const { listSessions } = makeService([
       {
         id: OTHER,
         deviceLabel: "Chrome",
         createdAt: new Date("2026-01-05T00:00:00.000Z"),
+        expiresAt: new Date("2026-02-04T00:00:00.000Z"),
       },
       {
         id: CURRENT,
         deviceLabel: null,
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        expiresAt: new Date("2026-01-31T00:00:00.000Z"),
       },
     ]);
 

@@ -59,6 +59,7 @@ function setup(seed: InMemorySeed = {}) {
   });
   const { verifyCode } = createVerifyCodeService({
     repo,
+    sessionTtlSeconds: DEFAULT_TTL.sessionSeconds,
     codes,
     now: () => NOW,
   });

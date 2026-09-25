@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { hashSessionToken } from "../../../../src/lib/token-hash.js";
 import { DEFAULT_TTL, type TtlPolicy } from "../../../../src/lib/ttl.js";
 import { createAuth } from "../../../../src/plugins/app/auth/create-auth.js";
 import { createCredentialThrottle } from "../../../../src/plugins/app/credential-throttle/create-credential-throttle.js";
@@ -90,23 +89,24 @@ describe("createAuth", () => {
     expect(repository.verificationCodes.size).toBe(0);
   });
 
-  it("passes the session ttl to authentication", async () => {
-    const token = "a-session-token";
-    const { auth } = setup(
-      {
-        users: [{ id: USER_ID, email: "a@b.com" }],
-        sessions: [
-          {
-            userId: USER_ID,
-            tokenHash: hashSessionToken(token),
-            createdAt: new Date(NOW.getTime() - 120_000),
-          },
-        ],
-      },
+  it("stamps the sessions it opens with the configured session ttl", async () => {
+    const { repository, emailSender, auth } = setup(
+      {},
       { ...DEFAULT_TTL, sessionSeconds: 60 },
     );
 
-    expect((await auth.authenticate(token)).outcome).toBe("invalid");
+    const signup = await auth.signup(
+      "user@example.com",
+      "a perfectly fine passphrase",
+    );
+    if (signup.outcome !== "accepted") throw new Error("expected accepted");
+    await vi.waitFor(() => expect(emailSender.sent).toHaveLength(1));
+    const code = emailSender.sent[0]?.subject.match(/\d{6}/)?.[0] ?? "";
+    await auth.verifyCode(signup.sessionToken, code, null);
+
+    expect([...repository.sessions.values()]).toEqual([
+      expect.objectContaining({ expiresAt: new Date(NOW.getTime() + 60_000) }),
+    ]);
   });
 
   it("passes the code ttl to the emails", async () => {

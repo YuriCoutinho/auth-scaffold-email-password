@@ -13,6 +13,7 @@ import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 
+const SESSION_TTL_SECONDS = 60 * 60;
 const NOW = new Date("2026-09-24T12:00:00Z");
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_USER_ID = "22222222-2222-4222-8222-222222222222";
@@ -79,6 +80,7 @@ async function setup(
   });
   const { resetPassword } = createResetPasswordService({
     repo,
+    sessionTtlSeconds: SESSION_TTL_SECONDS,
     codes: options.wrapCodes ? options.wrapCodes(codes) : codes,
     emailSender,
     checkPwnedPassword,
@@ -139,6 +141,7 @@ describe("resetPassword", () => {
         tokenHash: hashSessionToken(result.sessionToken),
         deviceLabel: "Safari on iOS",
         createdAt: NOW,
+        expiresAt: new Date(NOW.getTime() + SESSION_TTL_SECONDS * 1000),
       },
     ]);
     expect(sessionsOf(OTHER_USER_ID)).toHaveLength(1);

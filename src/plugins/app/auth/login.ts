@@ -4,6 +4,7 @@ import { generateId } from "../../../lib/id.js";
 import { DUMMY_PASSWORD_HASH, verifyPassword } from "../../../lib/password.js";
 import { generateToken } from "../../../lib/session.js";
 import { hashSessionToken } from "../../../lib/token-hash.js";
+import { expiresAt } from "../../../lib/ttl.js";
 import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
 import type { SessionRepository } from "../sessions/repository.js";
 import type { AuthRepository } from "./repository.js";
@@ -17,6 +18,7 @@ interface LoginServiceDeps {
   repo: Pick<AuthRepository, "findUserByEmail"> &
     Pick<SessionRepository, "createSession">;
   throttle: CredentialThrottle;
+  sessionTtlSeconds: number;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;
 }
@@ -73,6 +75,7 @@ export function createLoginService(deps: LoginServiceDeps) {
         tokenHash: hashSessionToken(sessionToken),
         deviceLabel,
         createdAt: currentTime,
+        expiresAt: expiresAt(currentTime, deps.sessionTtlSeconds),
       });
       await deps.throttle.reset(email);
       deps.log?.info({ userId: user.id }, "login succeeded");

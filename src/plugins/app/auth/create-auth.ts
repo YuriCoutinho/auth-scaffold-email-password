@@ -52,11 +52,17 @@ export function createAuth(deps: AuthDeps) {
     emailSender: deps.emailSender,
     checkPwnedPassword: deps.checkPwnedPassword,
     throttle: deps.credentialThrottle,
+    sessionTtlSeconds: deps.ttl.sessionSeconds,
   });
-  const { verifyCode } = createVerifyCodeService({ ...shared, codes });
+  const { verifyCode } = createVerifyCodeService({
+    ...shared,
+    codes,
+    sessionTtlSeconds: deps.ttl.sessionSeconds,
+  });
   const { login } = createLoginService({
     ...shared,
     throttle: deps.credentialThrottle,
+    sessionTtlSeconds: deps.ttl.sessionSeconds,
     repo: {
       findUserByEmail: deps.repository.findUserByEmail,
       createSession: deps.sessionRepository.createSession,
@@ -65,7 +71,6 @@ export function createAuth(deps: AuthDeps) {
   const { authenticate } = createAuthenticateService({
     ...shared,
     repo: deps.sessionRepository,
-    sessionTtlSeconds: deps.ttl.sessionSeconds,
   });
   const { changePassword } = createChangePasswordService({
     ...shared,
