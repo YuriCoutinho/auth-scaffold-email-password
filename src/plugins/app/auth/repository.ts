@@ -1,6 +1,7 @@
+import type { VERIFICATION_PURPOSES } from "../../../db/schema.js";
 import type { CreateSessionInput } from "../sessions/repository.js";
 
-export type VerificationPurpose = "signup" | "password_reset";
+export type VerificationPurpose = (typeof VERIFICATION_PURPOSES)[number];
 
 // A null emailVerifiedAt is an account whose signup was never confirmed.
 export interface UserRecord {
