@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { messageSchema } from "../../http/schemas.js";
 
-const currentUserResponseSchema = z.object({
+export const currentUserResponseSchema = z.object({
   user: z.object({ id: z.uuid(), email: z.email() }),
 });
 
