@@ -2,20 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../../src/app.js";
 import { FakeEmailSender } from "../../../src/plugins/email/drivers/fake.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
 const BODY = { email: "reset@example.com" };
 
 async function setup() {
-  const authRepository = createInMemoryAuthRepository({
+  const store = createInMemoryStore({
     users: [
       { email: "reset@example.com", passwordHash: "old" },
       { email: "pending@example.com", emailVerifiedAt: null },
     ],
   });
   const emailSender = new FakeEmailSender();
-  const app = await buildApp(makeAppOptions({ authRepository, emailSender }));
-  return { app, authRepository, emailSender };
+  const app = await buildApp(makeAppOptions({ store, emailSender }));
+  return { app, store, emailSender };
 }
 
 describe("POST /auth/forgot-password", () => {
@@ -100,7 +100,7 @@ describe("POST /auth/forgot-password", () => {
   });
 
   it("treats an unconfirmed account like no account at all", async () => {
-    const { app, authRepository, emailSender } = await setup();
+    const { app, store, emailSender } = await setup();
 
     const known = await app.inject({
       method: "POST",
@@ -119,9 +119,9 @@ describe("POST /auth/forgot-password", () => {
     expect(
       pending.cookies.find((c) => c.name === "password_reset")?.value,
     ).toBeTruthy();
-    expect(
-      [...authRepository.verificationCodes.values()].map((c) => c.purpose),
-    ).toEqual(["password_reset"]);
+    expect([...store.verificationCodes.values()].map((c) => c.purpose)).toEqual(
+      ["password_reset"],
+    );
     expect(emailSender.sent).toHaveLength(1);
 
     await app.close();

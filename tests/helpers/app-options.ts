@@ -2,12 +2,9 @@ import { vi } from "vitest";
 import type { AppOptions } from "../../src/app-options.js";
 import type { Env } from "../../src/config/env.js";
 import type { RateLimitOverrides } from "../../src/lib/rate-limit.js";
-import type { AuthRepository } from "../../src/plugins/app/auth/repository.js";
 import type { RetentionRepository } from "../../src/plugins/app/retention/repository.js";
-import type { SessionRepository } from "../../src/plugins/app/sessions/repository.js";
 import { FakeEmailSender } from "../../src/plugins/email/drivers/fake.js";
-import { createInMemoryAuthRepository } from "./auth/in-memory-repository.js";
-import { createInMemoryCredentialThrottleRepository } from "./credential-throttle/in-memory-repository.js";
+import { createInMemoryStore, type InMemoryStore } from "./in-memory-store.js";
 
 export const TEST_HMAC_SECRET = "test-hmac-secret-with-32-characters!";
 
@@ -44,28 +41,29 @@ export const noopRetentionRepository: RetentionRepository = {
   }),
 };
 
-// The in-memory helper implements both ports over one store, so a test that
-// overrides the repository gets the same rows on both sides instead of the
+// The in-memory store backs every legacy port over the same maps, so a test
+// that overrides the store gets the same rows on both sides instead of the
 // route reading one store while the session hook reads another.
-type AppOptionsOverrides = Partial<Omit<AppOptions, "authRepository">> & {
-  authRepository?: AuthRepository & SessionRepository;
+type AppOptionsOverrides = Partial<AppOptions> & {
+  store?: InMemoryStore;
 };
 
 export function makeAppOptions(
   overrides: AppOptionsOverrides = {},
 ): AppOptions {
-  const authRepository =
-    overrides.authRepository ?? createInMemoryAuthRepository();
+  const { store: storeOverride, ...rest } = overrides;
+  const store = storeOverride ?? createInMemoryStore();
   return {
     config: TEST_ENV,
     logger: false,
     emailSender: new FakeEmailSender(),
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
-    credentialThrottleRepository: createInMemoryCredentialThrottleRepository(),
     retentionRepository: noopRetentionRepository,
-    ...overrides,
-    authRepository,
-    sessionRepository: overrides.sessionRepository ?? authRepository,
+    transaction: store.transaction,
+    authRepository: store.legacy,
+    sessionRepository: store.legacy,
+    credentialThrottleRepository: store.legacy,
+    ...rest,
     rateLimit: { ...TEST_RATE_LIMITS, ...overrides.rateLimit },
   };
 }

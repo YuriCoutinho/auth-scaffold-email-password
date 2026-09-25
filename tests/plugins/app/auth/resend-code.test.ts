@@ -13,7 +13,7 @@ import { createVerificationCodes } from "../../../../src/plugins/app/auth/verifi
 import { FakeEmailSender } from "../../../../src/plugins/email/drivers/fake.js";
 import type { EmailSender } from "../../../../src/plugins/email/sender.js";
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../../helpers/in-memory-store.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -24,7 +24,7 @@ function setup(
   code: { codeSendCount?: number; issuedAt?: Date } = {},
   emailSender: EmailSender = new FakeEmailSender(),
 ) {
-  const repo = createInMemoryAuthRepository({
+  const store = createInMemoryStore({
     users: [{ id: USER_ID, email: EMAIL, emailVerifiedAt: null }],
     verificationCodes: [
       {
@@ -39,6 +39,7 @@ function setup(
       },
     ],
   });
+  const repo = store.legacy;
   const send = vi.spyOn(emailSender, "send");
   const codes = createVerificationCodes({
     hmacSecret: TEST_HMAC_SECRET,
@@ -48,8 +49,8 @@ function setup(
     now: () => NOW,
   });
   const { resendCode } = createResendCodeService({ codes });
-  const stored = () => repo.verificationCodes.get(`${USER_ID}:signup`);
-  return { repo, send, resendCode, stored };
+  const stored = () => store.verificationCodes.get(`${USER_ID}:signup`);
+  return { store, send, resendCode, stored };
 }
 
 describe("resendCode", () => {

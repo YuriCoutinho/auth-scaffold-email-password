@@ -6,7 +6,7 @@ import {
   hashVerificationToken,
 } from "../../../src/lib/token-hash.js";
 import { makeAppOptions, TEST_HMAC_SECRET } from "../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const TOKEN = "token-x";
@@ -19,7 +19,7 @@ function makeRepository(
     issuedAt?: Date;
   } = {},
 ) {
-  return createInMemoryAuthRepository({
+  return createInMemoryStore({
     users: [
       {
         id: USER_ID,
@@ -46,13 +46,13 @@ function makeRepository(
 
 async function post(
   options: {
-    authRepository?: ReturnType<typeof makeRepository>;
+    store?: ReturnType<typeof makeRepository>;
     cookie?: boolean;
     code?: string;
   } = {},
 ) {
-  const authRepository = options.authRepository ?? makeRepository();
-  const app = buildApp(makeAppOptions({ authRepository }));
+  const store = options.store ?? makeRepository();
+  const app = buildApp(makeAppOptions({ store }));
   const response = await app.inject({
     method: "POST",
     url: "/auth/verify-code",
@@ -61,12 +61,12 @@ async function post(
     ...(options.cookie === false ? {} : { cookies: { signup_session: TOKEN } }),
   });
   await app.close();
-  return { response, authRepository };
+  return { response, store };
 }
 
 describe("POST /auth/verify-code", () => {
   it("responds 204, sets the session cookie and clears the signup cookie on the right code", async () => {
-    const { response, authRepository } = await post();
+    const { response, store } = await post();
 
     expect(response.statusCode).toBe(204);
     expect(response.body).toBe("");
@@ -86,10 +86,8 @@ describe("POST /auth/verify-code", () => {
     );
     expect(signupCookie).toMatchObject({ value: "", path: "/auth" });
 
-    expect(authRepository.users.get(USER_ID)?.emailVerifiedAt).toBeInstanceOf(
-      Date,
-    );
-    const sessions = [...authRepository.sessions.values()];
+    expect(store.users.get(USER_ID)?.emailVerifiedAt).toBeInstanceOf(Date);
+    const sessions = [...store.sessions.values()];
     expect(sessions).toHaveLength(1);
     expect(sessions[0]).toMatchObject({
       userId: USER_ID,
@@ -97,13 +95,13 @@ describe("POST /auth/verify-code", () => {
       tokenHash: hashSessionToken(sessionCookie?.value ?? ""),
     });
     expect(sessions[0]?.tokenHash).not.toBe(sessionCookie?.value);
-    expect(authRepository.verificationCodes.size).toBe(0);
+    expect(store.verificationCodes.size).toBe(0);
   });
 
   it("follows a configured session ttl in the cookie maxAge", async () => {
-    const authRepository = makeRepository();
+    const store = makeRepository();
     const app = buildApp(
-      makeAppOptions({ authRepository, ttl: { sessionSeconds: 3600 } }),
+      makeAppOptions({ store, ttl: { sessionSeconds: 3600 } }),
     );
     const response = await app.inject({
       method: "POST",
@@ -120,54 +118,50 @@ describe("POST /auth/verify-code", () => {
   });
 
   it("responds 401 when the cookie is missing", async () => {
-    const { response, authRepository } = await post({ cookie: false });
+    const { response, store } = await post({ cookie: false });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid or expired code." });
-    expect(authRepository.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
-    expect(authRepository.verificationCodes.size).toBe(1);
+    expect(store.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
+    expect(store.verificationCodes.size).toBe(1);
   });
 
   it("responds 401 on a wrong code", async () => {
-    const { response, authRepository } = await post({ code: "654321" });
+    const { response, store } = await post({ code: "654321" });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid or expired code." });
-    expect(
-      [...authRepository.verificationCodes.values()][0]?.codeAttempts,
-    ).toBe(1);
+    expect([...store.verificationCodes.values()][0]?.codeAttempts).toBe(1);
     expect(response.cookies.find((c) => c.name === "session")).toBeUndefined();
   });
 
   it("responds 401 when attempts are exhausted", async () => {
-    const { response, authRepository } = await post({
-      authRepository: makeRepository({ codeAttempts: 5 }),
+    const { response, store } = await post({
+      store: makeRepository({ codeAttempts: 5 }),
     });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid or expired code." });
-    expect(
-      [...authRepository.verificationCodes.values()][0]?.codeAttempts,
-    ).toBe(5);
-    expect(authRepository.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
+    expect([...store.verificationCodes.values()][0]?.codeAttempts).toBe(5);
+    expect(store.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
   });
 
   it("responds the same 401 once the code has expired", async () => {
-    const { response, authRepository } = await post({
-      authRepository: makeRepository({
+    const { response, store } = await post({
+      store: makeRepository({
         issuedAt: new Date(Date.now() - 16 * 60 * 1000),
       }),
     });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid or expired code." });
-    expect(authRepository.sessions.size).toBe(0);
+    expect(store.sessions.size).toBe(0);
   });
 
   it("never signs in through a code of an account that is already confirmed", async () => {
-    const { response, authRepository } = await post({
-      authRepository: makeRepository({ emailVerifiedAt: new Date(0) }),
+    const { response, store } = await post({
+      store: makeRepository({ emailVerifiedAt: new Date(0) }),
     });
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid or expired code." });
     expect(response.cookies.find((c) => c.name === "session")).toBeUndefined();
-    expect(authRepository.sessions.size).toBe(0);
+    expect(store.sessions.size).toBe(0);
   });
 
   it("responds 400 on a malformed code", async () => {

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DUMMY_PASSWORD_HASH } from "../../../../src/lib/password.js";
 import { hashSessionToken } from "../../../../src/lib/token-hash.js";
 import { createLoginService } from "../../../../src/plugins/app/auth/login.js";
-import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../../helpers/in-memory-store.js";
 
 vi.mock("../../../../src/lib/password.js", async (importOriginal) => {
   const actual =
@@ -21,7 +21,7 @@ const EMAIL = "foo@gmail.com";
 const PASSWORD_HASH = "argon2-real-hash";
 
 function setup(emailVerifiedAt: Date | null | "no-account" = new Date(0)) {
-  const repo = createInMemoryAuthRepository({
+  const store = createInMemoryStore({
     users:
       emailVerifiedAt === "no-account"
         ? []
@@ -34,6 +34,7 @@ function setup(emailVerifiedAt: Date | null | "no-account" = new Date(0)) {
             },
           ],
   });
+  const repo = store.legacy;
   const throttle = {
     check: vi.fn().mockResolvedValue({ outcome: "allowed" }),
     registerFailure: vi.fn().mockResolvedValue(undefined),
@@ -47,7 +48,7 @@ function setup(emailVerifiedAt: Date | null | "no-account" = new Date(0)) {
     log,
     now: () => NOW,
   });
-  return { repo, throttle, log, login };
+  return { store, repo, throttle, log, login };
 }
 
 beforeEach(() => {
@@ -57,7 +58,7 @@ beforeEach(() => {
 describe("login", () => {
   it("opens a session and hands back its token on the right password", async () => {
     verifyPasswordMock.mockResolvedValue(true);
-    const { repo, login } = setup();
+    const { store, login } = setup();
 
     const result = await login(EMAIL, "secret", "Firefox on macOS");
 
@@ -66,7 +67,7 @@ describe("login", () => {
       sessionToken: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
     });
     if (result.outcome !== "authenticated") return;
-    expect([...repo.sessions.values()]).toEqual([
+    expect([...store.sessions.values()]).toEqual([
       {
         id: expect.stringMatching(UUID_V4),
         userId: USER_ID,
@@ -89,16 +90,16 @@ describe("login", () => {
 
   it("rejects a wrong password without opening a session", async () => {
     verifyPasswordMock.mockResolvedValue(false);
-    const { repo, login } = setup();
+    const { store, login } = setup();
 
     expect(await login(EMAIL, "wrong", null)).toEqual({ outcome: "invalid" });
     expect(verifyPasswordMock).toHaveBeenCalledWith(PASSWORD_HASH, "wrong");
-    expect(repo.sessions.size).toBe(0);
+    expect(store.sessions.size).toBe(0);
   });
 
   it("verifies against the dummy hash when the address has no account", async () => {
     verifyPasswordMock.mockResolvedValue(false);
-    const { repo, login } = setup("no-account");
+    const { store, login } = setup("no-account");
 
     expect(await login(EMAIL, "secret", null)).toEqual({ outcome: "invalid" });
     expect(verifyPasswordMock).toHaveBeenCalledOnce();
@@ -106,21 +107,21 @@ describe("login", () => {
       DUMMY_PASSWORD_HASH,
       "secret",
     );
-    expect(repo.sessions.size).toBe(0);
+    expect(store.sessions.size).toBe(0);
   });
 
   it("does not authenticate a ghost user even if the dummy verification passes", async () => {
     verifyPasswordMock.mockResolvedValue(true);
-    const { repo, login } = setup("no-account");
+    const { store, login } = setup("no-account");
 
     expect(await login(EMAIL, "secret", null)).toEqual({ outcome: "invalid" });
-    expect(repo.sessions.size).toBe(0);
+    expect(store.sessions.size).toBe(0);
   });
 
   it("answers an unconfirmed account like an unknown address, with one dummy verification", async () => {
     // Even the right password must not sign in an unconfirmed account.
     verifyPasswordMock.mockResolvedValue(true);
-    const { repo, log, throttle, login } = setup(null);
+    const { store, log, throttle, login } = setup(null);
 
     expect(await login(EMAIL, "secret", null)).toEqual({ outcome: "invalid" });
     expect(verifyPasswordMock).toHaveBeenCalledOnce();
@@ -128,7 +129,7 @@ describe("login", () => {
       DUMMY_PASSWORD_HASH,
       "secret",
     );
-    expect(repo.sessions.size).toBe(0);
+    expect(store.sessions.size).toBe(0);
     expect(throttle.registerFailure).toHaveBeenCalledWith(EMAIL);
     expect(log.warn).toHaveBeenCalledWith(
       { userId: undefined, reason: "user_not_found" },
@@ -153,7 +154,7 @@ describe("login", () => {
 
 describe("login throttling", () => {
   it("returns throttled without spending a password verification", async () => {
-    const { repo, throttle, login } = setup();
+    const { store, throttle, login } = setup();
     throttle.check.mockResolvedValue({
       outcome: "blocked",
       retryAfterSeconds: 42,
@@ -164,7 +165,7 @@ describe("login throttling", () => {
       retryAfterSeconds: 42,
     });
     expect(verifyPasswordMock).not.toHaveBeenCalled();
-    expect(repo.sessions.size).toBe(0);
+    expect(store.sessions.size).toBe(0);
   });
 
   it("registers a failure under the normalized email", async () => {

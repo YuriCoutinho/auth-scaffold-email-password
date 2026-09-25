@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createInMemoryAuthRepository } from "./in-memory-repository.js";
+import { rollback } from "../../src/plugins/transaction.js";
+import { createInMemoryStore } from "./in-memory-store.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
 const OWNER = "11111111-1111-4111-8111-111111111111";
@@ -38,7 +39,7 @@ function session(id: string) {
 }
 
 function repoWithPendingSignup() {
-  return createInMemoryAuthRepository({
+  return createInMemoryStore({
     users: [{ id: OWNER, email: "user@example.com", emailVerifiedAt: null }],
     verificationCodes: [
       {
@@ -53,7 +54,7 @@ function repoWithPendingSignup() {
 }
 
 function repoWithResetCode() {
-  return createInMemoryAuthRepository({
+  return createInMemoryStore({
     users: [
       { id: OWNER, email: "user@example.com", passwordHash: "old-hash" },
       { id: OTHER, email: "other@example.com" },
@@ -74,9 +75,67 @@ function repoWithResetCode() {
   });
 }
 
-describe("startSignup", () => {
+describe("transaction", () => {
+  it("restores the snapshot and returns the rollback value when work rolls back", async () => {
+    const store = createInMemoryStore({
+      users: [
+        { id: OWNER, email: "user@example.com", passwordHash: "old-hash" },
+      ],
+    });
+
+    const result = await store.transaction(async () => {
+      const user = store.users.get(OWNER);
+      if (user) {
+        user.passwordHash = "changed-hash";
+      }
+      return rollback("x");
+    });
+
+    expect(result).toBe("x");
+    expect(store.users.get(OWNER)).toMatchObject({ passwordHash: "old-hash" });
+  });
+
+  it("restores the snapshot and rethrows when work fails with an ordinary error", async () => {
+    const store = createInMemoryStore({
+      users: [
+        { id: OWNER, email: "user@example.com", passwordHash: "old-hash" },
+      ],
+    });
+
+    await expect(
+      store.transaction(async () => {
+        const user = store.users.get(OWNER);
+        if (user) {
+          user.passwordHash = "changed-hash";
+        }
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
+
+    expect(store.users.get(OWNER)).toMatchObject({ passwordHash: "old-hash" });
+  });
+
+  it("keeps the work's writes when it succeeds", async () => {
+    const store = createInMemoryStore({
+      users: [
+        { id: OWNER, email: "user@example.com", passwordHash: "old-hash" },
+      ],
+    });
+
+    await store.transaction(async () => {
+      const user = store.users.get(OWNER);
+      if (user) {
+        user.passwordHash = "new-hash";
+      }
+    });
+
+    expect(store.users.get(OWNER)).toMatchObject({ passwordHash: "new-hash" });
+  });
+});
+
+describe("legacy.startSignup", () => {
   it("creates an unconfirmed account with its signup code", async () => {
-    const repo = createInMemoryAuthRepository();
+    const { legacy: repo } = createInMemoryStore();
 
     await expect(repo.startSignup(newUser(), CODE)).resolves.toEqual({
       userId: OWNER,
@@ -94,11 +153,12 @@ describe("startSignup", () => {
   });
 
   it("refuses a confirmed account and leaves it untouched", async () => {
-    const repo = createInMemoryAuthRepository({
+    const store = createInMemoryStore({
       users: [
         { id: OWNER, email: "user@example.com", passwordHash: "old-hash" },
       ],
     });
+    const repo = store.legacy;
 
     await expect(repo.startSignup(newUser({ id: OTHER }), CODE)).resolves.toBe(
       null,
@@ -107,12 +167,13 @@ describe("startSignup", () => {
     expect(await repo.findUserById(OWNER)).toMatchObject({
       passwordHash: "old-hash",
     });
-    expect(repo.users.size).toBe(1);
-    expect(repo.verificationCodes.size).toBe(0);
+    expect(store.users.size).toBe(1);
+    expect(store.verificationCodes.size).toBe(0);
   });
 
   it("overwrites the password of an unconfirmed account and replaces its token", async () => {
-    const repo = repoWithPendingSignup();
+    const store = repoWithPendingSignup();
+    const repo = store.legacy;
 
     await expect(
       repo.startSignup(newUser({ id: OTHER, passwordHash: "hash-2" }), {
@@ -125,7 +186,7 @@ describe("startSignup", () => {
       passwordHash: "hash-2",
       emailVerifiedAt: null,
     });
-    expect(repo.users.size).toBe(1);
+    expect(store.users.size).toBe(1);
     expect(
       await repo.findVerificationCodeByTokenHash("signup", "token-hash"),
     ).toBeUndefined();
@@ -135,9 +196,9 @@ describe("startSignup", () => {
   });
 });
 
-describe("findVerificationCodeByTokenHash", () => {
+describe("legacy.findVerificationCodeByTokenHash", () => {
   it("only matches a code of the given purpose", async () => {
-    const repo = repoWithPendingSignup();
+    const { legacy: repo } = repoWithPendingSignup();
 
     expect(
       await repo.findVerificationCodeByTokenHash(
@@ -151,9 +212,9 @@ describe("findVerificationCodeByTokenHash", () => {
   });
 });
 
-describe("rotateVerificationToken", () => {
+describe("legacy.rotateVerificationToken", () => {
   it("replaces the token and keeps the code", async () => {
-    const repo = repoWithPendingSignup();
+    const { legacy: repo } = repoWithPendingSignup();
     const key = { userId: OWNER, purpose: "signup" as const };
 
     await repo.rotateVerificationToken(key, "rotated");
@@ -165,7 +226,7 @@ describe("rotateVerificationToken", () => {
   });
 });
 
-describe("restoreVerificationCode", () => {
+describe("legacy.restoreVerificationCode", () => {
   const key = { userId: OWNER, purpose: "signup" as const };
   const previous = {
     codeHash: "previous-code",
@@ -176,7 +237,7 @@ describe("restoreVerificationCode", () => {
   };
 
   it("restores the previous state while the failed code is still there, and keeps the token", async () => {
-    const repo = repoWithPendingSignup();
+    const { legacy: repo } = repoWithPendingSignup();
     await repo.rotateVerificationToken(key, "newer-token");
 
     await repo.restoreVerificationCode(key, "code-hash", previous);
@@ -188,7 +249,7 @@ describe("restoreVerificationCode", () => {
   });
 
   it("does nothing once the code was replaced by a newer request", async () => {
-    const repo = repoWithPendingSignup();
+    const { legacy: repo } = repoWithPendingSignup();
 
     await repo.restoreVerificationCode(key, "some-other-code", previous);
 
@@ -199,9 +260,9 @@ describe("restoreVerificationCode", () => {
   });
 });
 
-describe("incrementVerificationAttempts", () => {
+describe("legacy.incrementVerificationAttempts", () => {
   it("counts one more attempt", async () => {
-    const repo = repoWithPendingSignup();
+    const { legacy: repo } = repoWithPendingSignup();
     const key = { userId: OWNER, purpose: "signup" as const };
 
     await repo.incrementVerificationAttempts(key);
@@ -212,7 +273,7 @@ describe("incrementVerificationAttempts", () => {
   });
 });
 
-describe("verifyEmail", () => {
+describe("legacy.verifyEmail", () => {
   const input = {
     userId: OWNER,
     tokenHash: "token-hash",
@@ -222,14 +283,15 @@ describe("verifyEmail", () => {
   };
 
   it("consumes the code, confirms the account and opens a session", async () => {
-    const repo = repoWithPendingSignup();
+    const store = repoWithPendingSignup();
+    const repo = store.legacy;
 
     await expect(repo.verifyEmail(input)).resolves.toBe(true);
 
     expect(await repo.findUserById(OWNER)).toMatchObject({
       emailVerifiedAt: NOW,
     });
-    expect(repo.verificationCodes.size).toBe(0);
+    expect(store.verificationCodes.size).toBe(0);
     expect(await repo.findSessionByTokenHash("session-s-new")).toEqual({
       id: "s-new",
       userId: OWNER,
@@ -241,7 +303,8 @@ describe("verifyEmail", () => {
     ["a rotated token", { tokenHash: "stale-token" }],
     ["a code that was reissued", { codeHash: "stale-code" }],
   ])("loses the race against %s", async (_name, override) => {
-    const repo = repoWithPendingSignup();
+    const store = repoWithPendingSignup();
+    const repo = store.legacy;
 
     await expect(repo.verifyEmail({ ...input, ...override })).resolves.toBe(
       false,
@@ -250,12 +313,12 @@ describe("verifyEmail", () => {
     expect(await repo.findUserById(OWNER)).toMatchObject({
       emailVerifiedAt: null,
     });
-    expect(repo.verificationCodes.size).toBe(1);
-    expect(repo.sessions.size).toBe(0);
+    expect(store.verificationCodes.size).toBe(1);
+    expect(store.sessions.size).toBe(0);
   });
 
   it("never opens a session for an account already confirmed", async () => {
-    const repo = createInMemoryAuthRepository({
+    const store = createInMemoryStore({
       users: [{ id: OWNER, email: "user@example.com" }],
       verificationCodes: [
         {
@@ -268,13 +331,13 @@ describe("verifyEmail", () => {
       ],
     });
 
-    await expect(repo.verifyEmail(input)).resolves.toBe(false);
+    await expect(store.legacy.verifyEmail(input)).resolves.toBe(false);
 
-    expect(repo.sessions.size).toBe(0);
+    expect(store.sessions.size).toBe(0);
   });
 });
 
-describe("resetPassword", () => {
+describe("legacy.resetPassword", () => {
   const input = {
     userId: OWNER,
     tokenHash: "token-hash",
@@ -284,14 +347,15 @@ describe("resetPassword", () => {
   };
 
   it("consumes the code, swaps the password and replaces every session of the user", async () => {
-    const repo = repoWithResetCode();
+    const store = repoWithResetCode();
+    const repo = store.legacy;
 
     await expect(repo.resetPassword(input)).resolves.toBe(true);
 
     expect(await repo.findUserById(OWNER)).toMatchObject({
       passwordHash: "new-hash",
     });
-    expect(repo.verificationCodes.size).toBe(0);
+    expect(store.verificationCodes.size).toBe(0);
     expect(await repo.findSessionByTokenHash("phone")).toBeUndefined();
     expect(await repo.findSessionByTokenHash("session-s-new")).toMatchObject({
       userId: OWNER,
@@ -303,7 +367,8 @@ describe("resetPassword", () => {
     ["a rotated token", { tokenHash: "stale-token" }],
     ["a code that was reissued", { codeHash: "stale-code" }],
   ])("changes nothing against %s", async (_name, override) => {
-    const repo = repoWithResetCode();
+    const store = repoWithResetCode();
+    const repo = store.legacy;
 
     await expect(repo.resetPassword({ ...input, ...override })).resolves.toBe(
       false,
@@ -313,13 +378,13 @@ describe("resetPassword", () => {
       passwordHash: "old-hash",
     });
     expect(await repo.findSessionByTokenHash("phone")).toBeDefined();
-    expect(repo.verificationCodes.size).toBe(1);
+    expect(store.verificationCodes.size).toBe(1);
   });
 });
 
-describe("changePassword", () => {
+describe("legacy.changePassword", () => {
   it("swaps the password and deletes every other session of the user", async () => {
-    const repo = createInMemoryAuthRepository({
+    const store = createInMemoryStore({
       users: [{ id: OWNER, email: "user@example.com" }],
       sessions: [
         { id: "current", userId: OWNER, tokenHash: "current" },
@@ -327,22 +392,22 @@ describe("changePassword", () => {
       ],
     });
 
-    await repo.changePassword({
+    await store.legacy.changePassword({
       userId: OWNER,
       passwordHash: "new-hash",
       exceptSessionId: "current",
     });
 
-    expect(await repo.findUserById(OWNER)).toMatchObject({
+    expect(await store.legacy.findUserById(OWNER)).toMatchObject({
       passwordHash: "new-hash",
     });
-    expect([...repo.sessions.keys()]).toEqual(["current"]);
+    expect([...store.sessions.keys()]).toEqual(["current"]);
   });
 });
 
-describe("sessions", () => {
+describe("legacy sessions", () => {
   function repoWithSessions() {
-    return createInMemoryAuthRepository({
+    return createInMemoryStore({
       sessions: [
         {
           id: "old",
@@ -377,37 +442,44 @@ describe("sessions", () => {
   }
 
   it("deletes the session behind a token hash and ignores an unknown one", async () => {
-    const repo = repoWithSessions();
+    const store = repoWithSessions();
+    const repo = store.legacy;
 
     await repo.deleteSessionByTokenHash("laptop");
     await repo.deleteSessionByTokenHash("unknown");
 
     expect(await repo.findSessionByTokenHash("laptop")).toBeUndefined();
-    expect(repo.sessions.size).toBe(3);
+    expect(store.sessions.size).toBe(3);
   });
 
   it("deletes every session of the user except the one named", async () => {
-    const repo = repoWithSessions();
+    const store = repoWithSessions();
 
     await expect(
-      repo.deleteUserSessions({ userId: OWNER, exceptSessionId: "current" }),
+      store.legacy.deleteUserSessions({
+        userId: OWNER,
+        exceptSessionId: "current",
+      }),
     ).resolves.toEqual({ deletedCount: 2 });
 
-    expect([...repo.sessions.keys()].sort()).toEqual(["current", "stranger"]);
+    expect([...store.sessions.keys()].sort()).toEqual(["current", "stranger"]);
   });
 
   it("deletes literally every session of the user without an exception", async () => {
-    const repo = repoWithSessions();
+    const store = repoWithSessions();
 
-    await expect(repo.deleteUserSessions({ userId: OWNER })).resolves.toEqual({
+    await expect(
+      store.legacy.deleteUserSessions({ userId: OWNER }),
+    ).resolves.toEqual({
       deletedCount: 3,
     });
 
-    expect([...repo.sessions.keys()]).toEqual(["stranger"]);
+    expect([...store.sessions.keys()]).toEqual(["stranger"]);
   });
 
   it("deletes one session only for its owner", async () => {
-    const repo = repoWithSessions();
+    const store = repoWithSessions();
+    const repo = store.legacy;
 
     await expect(
       repo.deleteUserSession({ id: "stranger", userId: OWNER }),
@@ -419,13 +491,13 @@ describe("sessions", () => {
       repo.deleteUserSession({ id: "laptop", userId: OWNER }),
     ).resolves.toEqual({ deleted: false });
 
-    expect(repo.sessions.has("stranger")).toBe(true);
+    expect(store.sessions.has("stranger")).toBe(true);
   });
 
   it("lists the user's sessions still active at the instant, newest first", async () => {
-    const repo = repoWithSessions();
+    const store = repoWithSessions();
 
-    const listed = await repo.listUserSessions({
+    const listed = await store.legacy.listUserSessions({
       userId: OWNER,
       activeAt: NOW,
     });
@@ -444,5 +516,29 @@ describe("sessions", () => {
         expiresAt: SESSION_EXPIRES_AT,
       },
     ]);
+  });
+});
+
+describe("legacy throttle", () => {
+  it("upserts a failure, reads it back and clears it", async () => {
+    const { legacy: repo } = createInMemoryStore();
+    const now = NOW;
+
+    expect(await repo.findThrottleByKeyHash("key-hash")).toBeUndefined();
+
+    await repo.upsertThrottleFailure({
+      keyHash: "key-hash",
+      failedCount: 1,
+      lastFailedAt: now,
+    });
+
+    expect(await repo.findThrottleByKeyHash("key-hash")).toEqual({
+      failedCount: 1,
+      lastFailedAt: now,
+    });
+
+    await repo.clearThrottle("key-hash");
+
+    expect(await repo.findThrottleByKeyHash("key-hash")).toBeUndefined();
   });
 });

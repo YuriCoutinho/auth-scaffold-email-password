@@ -10,7 +10,7 @@ import { createVerificationCodes } from "../../../../src/plugins/app/auth/verifi
 import { createVerifyCodeService } from "../../../../src/plugins/app/auth/verify-code.js";
 import { FakeEmailSender } from "../../../../src/plugins/email/drivers/fake.js";
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../../helpers/in-memory-store.js";
 
 const SESSION_TTL_SECONDS = 60 * 60;
 const NOW = new Date("2026-09-24T12:00:00Z");
@@ -29,7 +29,7 @@ function setup(
     wrapCodes?: (codes: VerificationCodes) => Pick<VerificationCodes, "verify">;
   } = {},
 ) {
-  const repo = createInMemoryAuthRepository({
+  const store = createInMemoryStore({
     users: [
       {
         id: USER_ID,
@@ -51,6 +51,7 @@ function setup(
       },
     ],
   });
+  const repo = store.legacy;
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const codes = createVerificationCodes({
     hmacSecret: TEST_HMAC_SECRET,
@@ -67,13 +68,13 @@ function setup(
     log,
     now: () => NOW,
   });
-  const code = () => repo.verificationCodes.get(`${USER_ID}:signup`);
-  return { repo, log, codes, verifyCode, code };
+  const code = () => store.verificationCodes.get(`${USER_ID}:signup`);
+  return { store, repo, log, codes, verifyCode, code };
 }
 
 describe("verifyCode", () => {
   it("confirms the address, consumes the code and opens a session", async () => {
-    const { repo, code, verifyCode } = setup();
+    const { store, code, verifyCode } = setup();
 
     const result = await verifyCode(TOKEN, CODE, "Firefox on macOS");
 
@@ -82,9 +83,9 @@ describe("verifyCode", () => {
       sessionToken: expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
     });
     if (result.outcome !== "verified") return;
-    expect(repo.users.get(USER_ID)?.emailVerifiedAt).toEqual(NOW);
+    expect(store.users.get(USER_ID)?.emailVerifiedAt).toEqual(NOW);
     expect(code()).toBeUndefined();
-    expect([...repo.sessions.values()]).toEqual([
+    expect([...store.sessions.values()]).toEqual([
       {
         id: expect.stringMatching(UUID_V4),
         userId: USER_ID,
@@ -108,54 +109,54 @@ describe("verifyCode", () => {
   });
 
   it("rejects a missing cookie", async () => {
-    const { repo, code, verifyCode } = setup();
+    const { store, code, verifyCode } = setup();
 
     expect(await verifyCode(undefined, CODE, null)).toEqual({
       outcome: "invalid",
     });
     expect(code()).toBeDefined();
-    expect(repo.sessions.size).toBe(0);
+    expect(store.sessions.size).toBe(0);
   });
 
   it("rejects a token that matches no code", async () => {
-    const { repo, verifyCode } = setup();
+    const { store, verifyCode } = setup();
 
     expect(await verifyCode("not-a-real-token", CODE, null)).toEqual({
       outcome: "invalid",
     });
-    expect(repo.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
-    expect(repo.sessions.size).toBe(0);
+    expect(store.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
+    expect(store.sessions.size).toBe(0);
   });
 
   it("rejects a wrong code, counts the attempt and confirms nothing", async () => {
-    const { repo, code, verifyCode } = setup();
+    const { store, code, verifyCode } = setup();
 
     expect(await verifyCode(TOKEN, "000000", null)).toEqual({
       outcome: "invalid",
     });
     expect(code()?.codeAttempts).toBe(1);
-    expect(repo.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
-    expect(repo.sessions.size).toBe(0);
+    expect(store.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
+    expect(store.sessions.size).toBe(0);
   });
 
   it("rejects an expired code", async () => {
-    const { repo, verifyCode } = setup({
+    const { store, verifyCode } = setup({
       issuedAt: new Date(NOW.getTime() - DEFAULT_TTL.signupCodeSeconds * 1000),
     });
 
     expect(await verifyCode(TOKEN, CODE, null)).toEqual({ outcome: "invalid" });
-    expect(repo.sessions.size).toBe(0);
+    expect(store.sessions.size).toBe(0);
   });
 
   it("rejects the right code once the attempts are exhausted", async () => {
-    const { repo, verifyCode } = setup({ codeAttempts: 5 });
+    const { store, verifyCode } = setup({ codeAttempts: 5 });
 
     expect(await verifyCode(TOKEN, CODE, null)).toEqual({ outcome: "invalid" });
-    expect(repo.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
+    expect(store.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
   });
 
   it("loses when the token is rotated between the check and the confirmation", async () => {
-    const { repo, log, verifyCode } = setup({
+    const { store, repo, log, verifyCode } = setup({
       wrapCodes: (codes) => ({
         async verify(...args) {
           const result = await codes.verify(...args);
@@ -170,8 +171,8 @@ describe("verifyCode", () => {
     });
 
     expect(await verifyCode(TOKEN, CODE, null)).toEqual({ outcome: "invalid" });
-    expect(repo.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
-    expect(repo.sessions.size).toBe(0);
+    expect(store.users.get(USER_ID)?.emailVerifiedAt).toBeNull();
+    expect(store.sessions.size).toBe(0);
     expect(log.info).toHaveBeenCalledWith(
       { userId: USER_ID },
       "signup code already consumed by a concurrent request",
@@ -179,7 +180,7 @@ describe("verifyCode", () => {
   });
 
   it("lets only one of two concurrent confirmations with the same code win", async () => {
-    const { repo, verifyCode } = setup();
+    const { store, verifyCode } = setup();
 
     const results = await Promise.all([
       verifyCode(TOKEN, CODE, null),
@@ -190,14 +191,14 @@ describe("verifyCode", () => {
       "invalid",
       "verified",
     ]);
-    expect(repo.sessions.size).toBe(1);
+    expect(store.sessions.size).toBe(1);
   });
 
   it("never opens a session from a leftover code of an already confirmed account", async () => {
-    const { repo, verifyCode } = setup({ emailVerifiedAt: new Date(0) });
+    const { store, verifyCode } = setup({ emailVerifiedAt: new Date(0) });
 
     expect(await verifyCode(TOKEN, CODE, null)).toEqual({ outcome: "invalid" });
-    expect(repo.users.get(USER_ID)?.emailVerifiedAt).toEqual(new Date(0));
-    expect(repo.sessions.size).toBe(0);
+    expect(store.users.get(USER_ID)?.emailVerifiedAt).toEqual(new Date(0));
+    expect(store.sessions.size).toBe(0);
   });
 });

@@ -5,16 +5,16 @@ import { createCredentialThrottle } from "../../../../src/plugins/app/credential
 import { FakeEmailSender } from "../../../../src/plugins/email/drivers/fake.js";
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import {
-  createInMemoryAuthRepository,
+  createInMemoryStore,
   type InMemorySeed,
-} from "../../../helpers/auth/in-memory-repository.js";
-import { createInMemoryCredentialThrottleRepository } from "../../../helpers/credential-throttle/in-memory-repository.js";
+} from "../../../helpers/in-memory-store.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 
 function setup(seed: InMemorySeed = {}, ttl: TtlPolicy = DEFAULT_TTL) {
-  const repository = createInMemoryAuthRepository(seed);
+  const store = createInMemoryStore(seed);
+  const repository = store.legacy;
   const emailSender = new FakeEmailSender();
   const auth = createAuth({
     hmacSecret: TEST_HMAC_SECRET,
@@ -24,25 +24,25 @@ function setup(seed: InMemorySeed = {}, ttl: TtlPolicy = DEFAULT_TTL) {
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
     credentialThrottle: createCredentialThrottle({
       hmacSecret: TEST_HMAC_SECRET,
-      repository: createInMemoryCredentialThrottleRepository(),
+      repository: store.legacy,
     }),
     ttl,
     now: () => NOW,
   });
-  return { repository, emailSender, auth };
+  return { store, repository, emailSender, auth };
 }
 
 describe("createAuth", () => {
   it("exposes every auth flow over one repository", async () => {
-    const { repository, auth } = setup();
+    const { store, auth } = setup();
 
     const signup = await auth.signup(
       "user@example.com",
       "a perfectly fine passphrase",
     );
     expect(signup.outcome).toBe("accepted");
-    expect(repository.users.size).toBe(1);
-    expect(repository.verificationCodes.size).toBe(1);
+    expect(store.users.size).toBe(1);
+    expect(store.verificationCodes.size).toBe(1);
 
     expect((await auth.resendCode(undefined)).outcome).toBe("invalid-session");
     expect((await auth.verifyCode(undefined, "000000", null)).outcome).toBe(
@@ -71,7 +71,7 @@ describe("createAuth", () => {
   });
 
   it("carries a signup through to a confirmed account with a session", async () => {
-    const { repository, emailSender, auth } = setup();
+    const { store, emailSender, auth } = setup();
 
     const signup = await auth.signup(
       "user@example.com",
@@ -86,11 +86,11 @@ describe("createAuth", () => {
 
     const session = await auth.authenticate(verified.sessionToken);
     expect(session.outcome).toBe("authenticated");
-    expect(repository.verificationCodes.size).toBe(0);
+    expect(store.verificationCodes.size).toBe(0);
   });
 
   it("stamps the sessions it opens with the configured session ttl", async () => {
-    const { repository, emailSender, auth } = setup(
+    const { store, emailSender, auth } = setup(
       {},
       { ...DEFAULT_TTL, sessionSeconds: 60 },
     );
@@ -104,7 +104,7 @@ describe("createAuth", () => {
     const code = emailSender.sent[0]?.subject.match(/\d{6}/)?.[0] ?? "";
     await auth.verifyCode(signup.sessionToken, code, null);
 
-    expect([...repository.sessions.values()]).toEqual([
+    expect([...store.sessions.values()]).toEqual([
       expect.objectContaining({ expiresAt: new Date(NOW.getTime() + 60_000) }),
     ]);
   });

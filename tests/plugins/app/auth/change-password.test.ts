@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { hashPassword } from "../../../../src/lib/password.js";
 import { createChangePasswordService } from "../../../../src/plugins/app/auth/change-password.js";
-import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../../helpers/in-memory-store.js";
 
 // A spy over the real implementation: the existing tests still hash and verify
 // for real, and a test can still assert the verification was never spent.
@@ -31,7 +31,7 @@ function makeDeps(
   overrides: Record<string, unknown> = {},
   options: { email?: string; passwordHash?: string } = {},
 ) {
-  const repo = createInMemoryAuthRepository({
+  const store = createInMemoryStore({
     users: [
       {
         id: USER_ID,
@@ -47,7 +47,9 @@ function makeDeps(
       { userId: OTHER_USER_ID, tokenHash: "someone-else" },
     ],
   });
+  const repo = store.legacy;
   return {
+    store,
     repo,
     emailSender: {
       send: vi.fn().mockResolvedValue({ providerMessageId: "x" }),
@@ -64,10 +66,10 @@ function makeDeps(
 }
 
 const storedHash = (deps: ReturnType<typeof makeDeps>) =>
-  deps.repo.users.get(USER_ID)?.passwordHash ?? "";
+  deps.store.users.get(USER_ID)?.passwordHash ?? "";
 
 const sessionIdsOf = (deps: ReturnType<typeof makeDeps>, userId: string) =>
-  [...deps.repo.sessions.values()]
+  [...deps.store.sessions.values()]
     .filter((session) => session.userId === userId)
     .map((session) => session.id);
 

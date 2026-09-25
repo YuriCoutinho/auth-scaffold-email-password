@@ -9,7 +9,7 @@ import {
 } from "../../../src/lib/token-hash.js";
 import { FakeEmailSender } from "../../../src/plugins/email/drivers/fake.js";
 import { makeAppOptions, TEST_HMAC_SECRET } from "../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
 const CODE = "123456";
 const NEW_PASSWORD = "a-brand-new-passphrase";
@@ -21,7 +21,7 @@ async function setup(
   overrides: Record<string, unknown> = {},
   code: { issuedAt?: Date; codeAttempts?: number } = {},
 ) {
-  const authRepository = createInMemoryAuthRepository({
+  const store = createInMemoryStore({
     users: [
       {
         id: USER_ID,
@@ -45,9 +45,9 @@ async function setup(
   });
   const emailSender = new FakeEmailSender();
   const app = await buildApp(
-    makeAppOptions({ authRepository, emailSender, ...overrides }),
+    makeAppOptions({ store, emailSender, ...overrides }),
   );
-  return { app, authRepository, emailSender };
+  return { app, store, emailSender };
 }
 
 function inject(
@@ -66,7 +66,7 @@ function inject(
 
 describe("POST /auth/reset-password", () => {
   it("answers 204, clears the reset cookie and sets the session cookie", async () => {
-    const { app, authRepository } = await setup();
+    const { app, store } = await setup();
 
     const response = await inject(app, {
       code: CODE,
@@ -84,13 +84,13 @@ describe("POST /auth/reset-password", () => {
     expect(cleared?.value).toBe("");
 
     // Every older session is gone and only the one just handed out remains.
-    expect([...authRepository.sessions.values()]).toEqual([
+    expect([...store.sessions.values()]).toEqual([
       expect.objectContaining({
         userId: USER_ID,
         tokenHash: hashSessionToken(session?.value ?? ""),
       }),
     ]);
-    expect(authRepository.verificationCodes.size).toBe(0);
+    expect(store.verificationCodes.size).toBe(0);
 
     await app.close();
   });
@@ -114,7 +114,7 @@ describe("POST /auth/reset-password", () => {
   });
 
   it("answers 401 with one generic message for a wrong code", async () => {
-    const { app, authRepository } = await setup();
+    const { app, store } = await setup();
 
     const response = await inject(app, {
       code: "000000",
@@ -123,10 +123,8 @@ describe("POST /auth/reset-password", () => {
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid or expired code." });
-    expect(
-      [...authRepository.verificationCodes.values()][0]?.codeAttempts,
-    ).toBe(1);
-    expect(authRepository.sessions.size).toBe(1);
+    expect([...store.verificationCodes.values()][0]?.codeAttempts).toBe(1);
+    expect(store.sessions.size).toBe(1);
 
     await app.close();
   });
@@ -194,18 +192,18 @@ describe("POST /auth/reset-password", () => {
   });
 
   it("answers 400 for a malformed body without reaching the service", async () => {
-    const { app, authRepository } = await setup();
+    const { app, store } = await setup();
 
     const response = await inject(app, { code: "12345", newPassword: "short" });
 
     expect(response.statusCode).toBe(400);
-    expect(authRepository.verificationCodes.size).toBe(1);
+    expect(store.verificationCodes.size).toBe(1);
 
     await app.close();
   });
 
   it("answers the same 401 once the reset has expired", async () => {
-    const { app, authRepository } = await setup(
+    const { app, store } = await setup(
       {},
       { issuedAt: new Date(Date.now() - 16 * 60 * 1000) },
     );
@@ -217,16 +215,13 @@ describe("POST /auth/reset-password", () => {
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid or expired code." });
-    expect(authRepository.sessions.size).toBe(1);
+    expect(store.sessions.size).toBe(1);
 
     await app.close();
   });
 
   it("answers the same 401 for an exhausted code, even when it is the right one", async () => {
-    const { app, authRepository } = await setup(
-      {},
-      { codeAttempts: MAX_CODE_ATTEMPTS },
-    );
+    const { app, store } = await setup({}, { codeAttempts: MAX_CODE_ATTEMPTS });
 
     const response = await inject(app, {
       code: CODE,
@@ -235,7 +230,7 @@ describe("POST /auth/reset-password", () => {
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid or expired code." });
-    expect(authRepository.verificationCodes.size).toBe(1);
+    expect(store.verificationCodes.size).toBe(1);
 
     await app.close();
   });

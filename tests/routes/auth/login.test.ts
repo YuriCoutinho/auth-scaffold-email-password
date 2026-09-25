@@ -3,8 +3,7 @@ import { buildApp } from "../../../src/app.js";
 import { hashPassword } from "../../../src/lib/password.js";
 import { hashSessionToken } from "../../../src/lib/token-hash.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
-import { createInMemoryCredentialThrottleRepository } from "../../helpers/credential-throttle/in-memory-repository.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
 const EMAIL = "foo@gmail.com";
 const PASSWORD = "correct-horse-battery-staple";
@@ -16,15 +15,15 @@ beforeAll(async () => {
 });
 
 function repoWithUser(emailVerifiedAt: Date | null = new Date(0)) {
-  return createInMemoryAuthRepository({
+  return createInMemoryStore({
     users: [{ id: USER_ID, email: EMAIL, passwordHash, emailVerifiedAt }],
   });
 }
 
 describe("POST /auth/login", () => {
   it("returns 204 with only the session cookie", async () => {
-    const authRepository = repoWithUser();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = repoWithUser();
+    const app = buildApp(makeAppOptions({ store }));
     const response = await app.inject({
       method: "POST",
       url: "/auth/login",
@@ -44,7 +43,7 @@ describe("POST /auth/login", () => {
       maxAge: 2_592_000,
     });
 
-    const sessions = [...authRepository.sessions.values()];
+    const sessions = [...store.sessions.values()];
     expect(sessions).toHaveLength(1);
     expect(sessions[0]).toMatchObject({
       userId: USER_ID,
@@ -59,7 +58,7 @@ describe("POST /auth/login", () => {
   it("follows a configured session ttl in the cookie maxAge", async () => {
     const app = buildApp(
       makeAppOptions({
-        authRepository: repoWithUser(),
+        store: repoWithUser(),
         ttl: { sessionSeconds: 3600 },
       }),
     );
@@ -77,8 +76,8 @@ describe("POST /auth/login", () => {
   });
 
   it("returns the same generic 401 for an account whose email was never confirmed", async () => {
-    const authRepository = repoWithUser(null);
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = repoWithUser(null);
+    const app = buildApp(makeAppOptions({ store }));
     const response = await app.inject({
       method: "POST",
       url: "/auth/login",
@@ -88,7 +87,7 @@ describe("POST /auth/login", () => {
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid credentials." });
     expect(response.cookies).toEqual([]);
-    expect(authRepository.sessions.size).toBe(0);
+    expect(store.sessions.size).toBe(0);
     await app.close();
   });
 
@@ -107,8 +106,8 @@ describe("POST /auth/login", () => {
   });
 
   it("returns the same generic 401 on a wrong password", async () => {
-    const authRepository = repoWithUser();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = repoWithUser();
+    const app = buildApp(makeAppOptions({ store }));
     const response = await app.inject({
       method: "POST",
       url: "/auth/login",
@@ -117,7 +116,7 @@ describe("POST /auth/login", () => {
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Invalid credentials." });
-    expect(authRepository.sessions.size).toBe(0);
+    expect(store.sessions.size).toBe(0);
     await app.close();
   });
 
@@ -136,11 +135,10 @@ describe("POST /auth/login", () => {
 
 describe("POST /auth/login throttling", () => {
   it("returns 429 with Retry-After once the free attempts are spent", async () => {
-    const authRepository = repoWithUser();
-    const credentialThrottleRepository =
-      createInMemoryCredentialThrottleRepository();
+    const store = repoWithUser();
+    const credentialThrottleRepository = createInMemoryStore().legacy;
     const app = buildApp(
-      makeAppOptions({ authRepository, credentialThrottleRepository }),
+      makeAppOptions({ store, credentialThrottleRepository }),
     );
     const attempt = () =>
       app.inject({

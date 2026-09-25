@@ -16,9 +16,9 @@ import type { EmailSender } from "../../../../src/plugins/email/sender.js";
 import { EmailProviderError } from "../../../../src/plugins/email/sender.js";
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import {
-  createInMemoryAuthRepository,
+  createInMemoryStore,
   type InMemorySeed,
-} from "../../../helpers/auth/in-memory-repository.js";
+} from "../../../helpers/in-memory-store.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -38,9 +38,10 @@ function setup(
     ttl?: TtlPolicy;
   } = {},
 ) {
-  const repo = createInMemoryAuthRepository(
+  const store = createInMemoryStore(
     options.seed ?? { users: [{ id: USER_ID, email: EMAIL }] },
   );
+  const repo = store.legacy;
   const fake = new FakeEmailSender();
   const emailSender = options.emailSender ?? fake;
   const send = vi.spyOn(emailSender, "send");
@@ -54,8 +55,8 @@ function setup(
     now: () => NOW,
   });
   const stored = (purpose: VerificationPurpose) =>
-    repo.verificationCodes.get(`${USER_ID}:${purpose}`);
-  return { repo, fake, send, log, codes, stored };
+    store.verificationCodes.get(`${USER_ID}:${purpose}`);
+  return { store, repo, fake, send, log, codes, stored };
 }
 
 // A user with a code already on file, reached through the token TOKEN.
@@ -127,7 +128,7 @@ describe("verification codes: request", () => {
   });
 
   it("hands out a new token on every call and retires the previous one", async () => {
-    const { codes, repo } = setup();
+    const { codes, repo, store } = setup();
 
     const first = await codes.request(USER, "password_reset");
     const second = await codes.request(USER, "password_reset");
@@ -145,7 +146,7 @@ describe("verification codes: request", () => {
         hashVerificationToken(second),
       ),
     ).toMatchObject({ userId: USER_ID });
-    expect(repo.verificationCodes.size).toBe(1);
+    expect(store.verificationCodes.size).toBe(1);
   });
 
   it("only rotates the token inside the cooldown", async () => {
@@ -460,12 +461,12 @@ describe("verification codes: startSignup", () => {
   });
 
   it("creates the unconfirmed account and emails its first code", async () => {
-    const { codes, repo, stored, fake } = setup({ seed: {} });
+    const { codes, store, stored, fake } = setup({ seed: {} });
 
     const started = await codes.startSignup(newUser());
 
     expect(started).toEqual({ userId: USER_ID, token: expect.any(String) });
-    expect(repo.users.get(USER_ID)).toMatchObject({
+    expect(store.users.get(USER_ID)).toMatchObject({
       email: EMAIL,
       passwordHash: "new-hash",
       emailVerifiedAt: null,
@@ -484,13 +485,13 @@ describe("verification codes: startSignup", () => {
   });
 
   it("replaces the password of a pending account and rotates only the token inside the cooldown", async () => {
-    const { codes, repo, stored, send } = setup({
+    const { codes, store, stored, send } = setup({
       seed: seedWithCode("signup", { issuedAt: secondsAgo(5) }, null),
     });
 
     const started = await codes.startSignup(newUser("newer-hash"));
 
-    expect(repo.users.get(USER_ID)?.passwordHash).toBe("newer-hash");
+    expect(store.users.get(USER_ID)?.passwordHash).toBe("newer-hash");
     expect(stored("signup")).toMatchObject({
       tokenHash: hashVerificationToken(started?.token ?? ""),
       codeHash: hashOtpCode(TEST_HMAC_SECRET, CODE),
@@ -501,14 +502,14 @@ describe("verification codes: startSignup", () => {
   });
 
   it("returns null and writes nothing for a confirmed address", async () => {
-    const { codes, repo, send } = setup({
+    const { codes, store, send } = setup({
       seed: { users: [{ id: USER_ID, email: EMAIL, passwordHash: "kept" }] },
     });
 
     expect(await codes.startSignup(newUser())).toBeNull();
 
-    expect(repo.users.get(USER_ID)?.passwordHash).toBe("kept");
-    expect(repo.verificationCodes.size).toBe(0);
+    expect(store.users.get(USER_ID)?.passwordHash).toBe("kept");
+    expect(store.verificationCodes.size).toBe(0);
     expect(send).not.toHaveBeenCalled();
   });
 

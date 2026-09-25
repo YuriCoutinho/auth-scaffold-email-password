@@ -3,7 +3,7 @@ import { buildApp } from "../../../src/app.js";
 import { hashVerificationToken } from "../../../src/lib/token-hash.js";
 import type { EmailSender } from "../../../src/plugins/email/sender.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
 type FakeEmailSender = { send: Mock<EmailSender["send"]> };
 
@@ -33,26 +33,26 @@ async function post(options: {
   cookie?: boolean;
   emailSender?: FakeEmailSender;
 }) {
-  const authRepository = createInMemoryAuthRepository({
+  const store = createInMemoryStore({
     users: [{ id: USER_ID, email: "user@example.com", emailVerifiedAt: null }],
     verificationCodes: options.pendingCode ? [options.pendingCode] : [],
   });
   const emailSender: FakeEmailSender = options.emailSender ?? {
     send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
   };
-  const app = buildApp(makeAppOptions({ authRepository, emailSender }));
+  const app = buildApp(makeAppOptions({ store, emailSender }));
   const response = await app.inject({
     method: "POST",
     url: "/auth/resend-code",
     ...(options.cookie === false ? {} : { cookies: { signup_session: TOKEN } }),
   });
   await app.close();
-  return { response, emailSender, authRepository };
+  return { response, emailSender, store };
 }
 
 describe("POST /auth/resend-code", () => {
   it("responds 202, re-sets the signup_session cookie and sends a new code", async () => {
-    const { response, emailSender, authRepository } = await post({
+    const { response, emailSender, store } = await post({
       pendingCode: makePendingCode(),
     });
 
@@ -74,7 +74,7 @@ describe("POST /auth/resend-code", () => {
 
     expect(emailSender.send).toHaveBeenCalledTimes(1);
     expect(emailSender.send.mock.calls[0]?.[0].to).toBe("user@example.com");
-    expect([...authRepository.verificationCodes.values()][0]).toMatchObject({
+    expect([...store.verificationCodes.values()][0]).toMatchObject({
       codeAttempts: 0,
       codeSendCount: 2,
     });
@@ -129,7 +129,7 @@ describe("POST /auth/resend-code", () => {
   });
 
   it("responds 503 without re-setting the cookie when delivery fails", async () => {
-    const { response, authRepository } = await post({
+    const { response, store } = await post({
       pendingCode: makePendingCode(),
       emailSender: {
         send: vi.fn().mockRejectedValue(new Error("provider down")),
@@ -141,15 +141,15 @@ describe("POST /auth/resend-code", () => {
         "We could not send the confirmation email right now. Please try again shortly.",
     });
     expect(response.headers["set-cookie"]).toBeUndefined();
-    expect([...authRepository.verificationCodes.values()][0]).toMatchObject({
+    expect([...store.verificationCodes.values()][0]).toMatchObject({
       codeHash: "old-hash",
       codeSendCount: 1,
     });
   });
 
   it("accepts the rotated cookie and refuses the one it replaced", async () => {
-    const authRepository = createInMemoryAuthRepository();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = createInMemoryStore();
+    const app = buildApp(makeAppOptions({ store }));
     const signup = () =>
       app.inject({
         method: "POST",
@@ -169,7 +169,7 @@ describe("POST /auth/resend-code", () => {
 
     // Push the first send outside the cooldown, so the refusal under test is
     // the token and not the rate limit.
-    const [pending] = authRepository.verificationCodes.values();
+    const [pending] = store.verificationCodes.values();
     if (pending) {
       pending.issuedAt = new Date(Date.now() - 120_000);
     }

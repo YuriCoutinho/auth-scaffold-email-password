@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../../src/app.js";
 import { hashVerificationToken } from "../../../src/lib/token-hash.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
 const VALID_BODY = {
   email: "user@example.com",
@@ -54,8 +54,8 @@ describe("POST /auth/signup", () => {
   });
 
   it("returns 202 with the generic message and the signup session cookie", async () => {
-    const authRepository = createInMemoryAuthRepository();
-    const response = await post(VALID_BODY, makeAppOptions({ authRepository }));
+    const store = createInMemoryStore();
+    const response = await post(VALID_BODY, makeAppOptions({ store }));
     expect(response.statusCode).toBe(202);
     expect(response.json()).toEqual({ message: GENERIC_MESSAGE });
 
@@ -69,12 +69,12 @@ describe("POST /auth/signup", () => {
     });
     expect(cookie?.value).toMatch(/^[A-Za-z0-9_-]{43}$/);
 
-    const [user] = [...authRepository.users.values()];
+    const [user] = [...store.users.values()];
     expect(user).toMatchObject({
       email: "user@example.com",
       emailVerifiedAt: null,
     });
-    const code = [...authRepository.verificationCodes.values()][0];
+    const code = [...store.verificationCodes.values()][0];
     expect(code).toMatchObject({ userId: user?.id, purpose: "signup" });
     // Only the digest of the cookie reaches the store.
     expect(code?.tokenHash).toBe(hashVerificationToken(cookie?.value ?? ""));
@@ -94,7 +94,7 @@ describe("POST /auth/signup", () => {
   });
 
   it("returns the same generic 202 when the email already has a confirmed account", async () => {
-    const authRepository = createInMemoryAuthRepository({
+    const store = createInMemoryStore({
       users: [{ email: "user@example.com", passwordHash: "original-hash" }],
     });
     const emailSender = {
@@ -102,7 +102,7 @@ describe("POST /auth/signup", () => {
     };
     const response = await post(
       VALID_BODY,
-      makeAppOptions({ authRepository, emailSender }),
+      makeAppOptions({ store, emailSender }),
     );
     expect(response.statusCode).toBe(202);
     expect(response.json()).toEqual({ message: GENERIC_MESSAGE });
@@ -110,8 +110,8 @@ describe("POST /auth/signup", () => {
       true,
     );
     expect(emailSender.send).not.toHaveBeenCalled();
-    expect(authRepository.verificationCodes.size).toBe(0);
-    expect([...authRepository.users.values()]).toEqual([
+    expect(store.verificationCodes.size).toBe(0);
+    expect([...store.users.values()]).toEqual([
       expect.objectContaining({ passwordHash: "original-hash" }),
     ]);
   });
@@ -140,10 +140,10 @@ describe("POST /auth/signup", () => {
   });
 
   it("hands out a different cookie on every call, whatever the address is", async () => {
-    const authRepository = createInMemoryAuthRepository({
+    const store = createInMemoryStore({
       users: [{ email: "taken@example.com" }],
     });
-    const app = await buildApp(makeAppOptions({ authRepository }));
+    const app = await buildApp(makeAppOptions({ store }));
 
     const cookieFor = async (email: string) => {
       const response = await app.inject({
@@ -170,8 +170,8 @@ describe("POST /auth/signup", () => {
   });
 
   it("accepts the rotated cookie on the flows that read it", async () => {
-    const authRepository = createInMemoryAuthRepository();
-    const app = await buildApp(makeAppOptions({ authRepository }));
+    const store = createInMemoryStore();
+    const app = await buildApp(makeAppOptions({ store }));
 
     const first = await app.inject({
       method: "POST",
@@ -213,7 +213,7 @@ describe("POST /auth/signup", () => {
     // real pending signup, so only it burned an attempt.
     expect(withFresh.statusCode).toBe(401);
     expect(withStale.statusCode).toBe(401);
-    const [code] = [...authRepository.verificationCodes.values()];
+    const [code] = [...store.verificationCodes.values()];
     expect(code?.tokenHash).toBe(hashVerificationToken(fresh ?? ""));
     expect(code?.tokenHash).not.toBe(hashVerificationToken(stale ?? ""));
     expect(code?.codeAttempts).toBe(1);
@@ -222,11 +222,11 @@ describe("POST /auth/signup", () => {
   });
 
   it("lets the latest signup of an unconfirmed address win and retires the old cookie", async () => {
-    const authRepository = createInMemoryAuthRepository();
+    const store = createInMemoryStore();
     const emailSender = {
       send: vi.fn().mockResolvedValue({ providerMessageId: "msg-1" }),
     };
-    const app = buildApp(makeAppOptions({ authRepository, emailSender }));
+    const app = buildApp(makeAppOptions({ store, emailSender }));
     const signup = (password: string) =>
       app.inject({
         method: "POST",

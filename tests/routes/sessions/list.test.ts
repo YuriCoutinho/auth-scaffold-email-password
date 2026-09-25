@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildApp } from "../../../src/app.js";
 import { hashSessionToken } from "../../../src/lib/token-hash.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
 const TOKEN = "a-session-token";
 const OTHER_TOKEN = "another-session-token";
@@ -17,7 +17,7 @@ const OTHER_CREATED_AT = new Date(Date.now() - DAY_MS);
 const EXPIRED_CREATED_AT = new Date(Date.now() - SESSION_TTL_MS - 1000);
 
 function repoWithTwoSessions() {
-  return createInMemoryAuthRepository({
+  return createInMemoryStore({
     users: [{ id: USER_ID, email: "foo@gmail.com" }],
     sessions: [
       {
@@ -39,10 +39,10 @@ function repoWithTwoSessions() {
 }
 
 async function list(
-  authRepository: ReturnType<typeof createInMemoryAuthRepository>,
+  store: ReturnType<typeof createInMemoryStore>,
   cookie: string | null = TOKEN,
 ) {
-  const app = buildApp(makeAppOptions({ authRepository }));
+  const app = buildApp(makeAppOptions({ store }));
   const response = await app.inject({
     method: "GET",
     url: "/sessions",
@@ -78,8 +78,8 @@ describe("GET /sessions", () => {
   });
 
   it("leaves out an expired session of the same user", async () => {
-    const authRepository = repoWithTwoSessions();
-    await authRepository.createSession({
+    const store = repoWithTwoSessions();
+    await store.legacy.createSession({
       id: "33333333-3333-4333-8333-333333333333",
       userId: USER_ID,
       tokenHash: "expired-session",
@@ -88,7 +88,7 @@ describe("GET /sessions", () => {
       expiresAt: new Date(EXPIRED_CREATED_AT.getTime() + SESSION_TTL_MS),
     });
 
-    const response = await list(authRepository);
+    const response = await list(store);
 
     expect(response.json().sessions.map((s: { id: string }) => s.id)).toEqual([
       OTHER_ID,
@@ -103,7 +103,7 @@ describe("GET /sessions", () => {
   });
 
   it("never lists a session belonging to another user", async () => {
-    const authRepository = createInMemoryAuthRepository({
+    const store = createInMemoryStore({
       users: [
         { id: USER_ID, email: "foo@gmail.com" },
         { id: OTHER_USER_ID, email: "bar@gmail.com" },
@@ -118,7 +118,7 @@ describe("GET /sessions", () => {
       ],
     });
 
-    const response = await list(authRepository);
+    const response = await list(store);
 
     expect(response.json().sessions).toHaveLength(1);
     expect(response.json().sessions[0].id).toBe(CURRENT_ID);
@@ -142,17 +142,17 @@ describe("GET /sessions", () => {
   });
 
   it("returns the same generic 401 for a session that was signed out", async () => {
-    const authRepository = repoWithTwoSessions();
-    authRepository.sessions.delete(CURRENT_ID);
+    const store = repoWithTwoSessions();
+    store.sessions.delete(CURRENT_ID);
 
-    const response = await list(authRepository);
+    const response = await list(store);
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Unauthorized." });
   });
 
   it("returns the same generic 401 for an expired session", async () => {
-    const authRepository = createInMemoryAuthRepository({
+    const store = createInMemoryStore({
       users: [{ id: USER_ID, email: "foo@gmail.com" }],
       sessions: [
         {
@@ -163,7 +163,7 @@ describe("GET /sessions", () => {
       ],
     });
 
-    const response = await list(authRepository);
+    const response = await list(store);
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ message: "Unauthorized." });

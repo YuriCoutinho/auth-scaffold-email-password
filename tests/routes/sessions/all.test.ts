@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildApp } from "../../../src/app.js";
 import { hashSessionToken } from "../../../src/lib/token-hash.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
 const TOKEN = "a-session-token";
 const OTHER_TOKEN = "another-session-token";
@@ -15,7 +15,7 @@ const THIRD_ID = "33333333-3333-4333-8333-333333333333";
 const EXPIRED_CREATED_AT = new Date(Date.now() - 31 * 24 * 60 * 60 * 1000);
 
 function repoWithThreeSessions() {
-  return createInMemoryAuthRepository({
+  return createInMemoryStore({
     users: [{ id: USER_ID, email: "foo@gmail.com" }],
     sessions: [
       { id: CURRENT_ID, userId: USER_ID, tokenHash: hashSessionToken(TOKEN) },
@@ -35,8 +35,8 @@ function repoWithThreeSessions() {
 
 describe("DELETE /sessions", () => {
   it("deletes the other sessions and keeps the current one", async () => {
-    const authRepository = repoWithThreeSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = repoWithThreeSessions();
+    const app = buildApp(makeAppOptions({ store }));
 
     const response = await app.inject({
       method: "DELETE",
@@ -45,14 +45,12 @@ describe("DELETE /sessions", () => {
     });
 
     expect(response.statusCode).toBe(204);
-    expect([...authRepository.sessions.keys()]).toEqual([CURRENT_ID]);
+    expect([...store.sessions.keys()]).toEqual([CURRENT_ID]);
     await app.close();
   });
 
   it("never clears the cookie, because the current session always survives", async () => {
-    const app = buildApp(
-      makeAppOptions({ authRepository: repoWithThreeSessions() }),
-    );
+    const app = buildApp(makeAppOptions({ store: repoWithThreeSessions() }));
 
     const response = await app.inject({
       method: "DELETE",
@@ -66,13 +64,13 @@ describe("DELETE /sessions", () => {
   });
 
   it("answers 204 for a user whose only session is the current one", async () => {
-    const authRepository = createInMemoryAuthRepository({
+    const store = createInMemoryStore({
       users: [{ id: USER_ID, email: "foo@gmail.com" }],
       sessions: [
         { id: CURRENT_ID, userId: USER_ID, tokenHash: hashSessionToken(TOKEN) },
       ],
     });
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const app = buildApp(makeAppOptions({ store }));
 
     const response = await app.inject({
       method: "DELETE",
@@ -81,12 +79,12 @@ describe("DELETE /sessions", () => {
     });
 
     expect(response.statusCode).toBe(204);
-    expect([...authRepository.sessions.keys()]).toEqual([CURRENT_ID]);
+    expect([...store.sessions.keys()]).toEqual([CURRENT_ID]);
     await app.close();
   });
 
   it("never touches the sessions of another user", async () => {
-    const authRepository = createInMemoryAuthRepository({
+    const store = createInMemoryStore({
       users: [
         { id: USER_ID, email: "foo@gmail.com" },
         { id: OTHER_USER_ID, email: "bar@gmail.com" },
@@ -100,7 +98,7 @@ describe("DELETE /sessions", () => {
         },
       ],
     });
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const app = buildApp(makeAppOptions({ store }));
 
     await app.inject({
       method: "DELETE",
@@ -108,7 +106,7 @@ describe("DELETE /sessions", () => {
       cookies: { session: TOKEN },
     });
 
-    expect(authRepository.sessions.has(OTHER_ID)).toBe(true);
+    expect(store.sessions.has(OTHER_ID)).toBe(true);
     await app.close();
   });
 
@@ -129,7 +127,7 @@ describe("DELETE /sessions", () => {
   it.each(REFUSALS)(
     "answers a generic 401 without deleting anything when $name",
     async ({ cookie, createdAt }) => {
-      const authRepository = createInMemoryAuthRepository({
+      const store = createInMemoryStore({
         users: [{ id: USER_ID, email: "foo@gmail.com" }],
         sessions: [
           {
@@ -145,7 +143,7 @@ describe("DELETE /sessions", () => {
           },
         ],
       });
-      const app = buildApp(makeAppOptions({ authRepository }));
+      const app = buildApp(makeAppOptions({ store }));
 
       const response = await app.inject({
         method: "DELETE",
@@ -155,7 +153,7 @@ describe("DELETE /sessions", () => {
 
       expect(response.statusCode).toBe(401);
       expect(response.json()).toEqual({ message: "Unauthorized." });
-      expect(authRepository.sessions.size).toBe(2);
+      expect(store.sessions.size).toBe(2);
       await app.close();
     },
   );

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { DEFAULT_TTL, expiresAt as expiryFrom } from "../../../src/lib/ttl.js";
+import type { Transaction } from "../../src/db/client.js";
+import { DEFAULT_TTL, expiresAt as expiryFrom } from "../../src/lib/ttl.js";
 import type {
   AuthRepository,
   ConsumeVerificationCodeInput,
@@ -7,11 +8,19 @@ import type {
   UserRecord,
   VerificationCodeKey,
   VerificationPurpose,
-} from "../../../src/plugins/app/auth/repository.js";
+} from "../../src/plugins/app/auth/repository.js";
+import type {
+  CredentialThrottleRepository,
+  ThrottleRecord,
+} from "../../src/plugins/app/credential-throttle/repository.js";
 import type {
   CreateSessionInput,
   SessionRepository,
-} from "../../../src/plugins/app/sessions/repository.js";
+} from "../../src/plugins/app/sessions/repository.js";
+import {
+  Rollback,
+  type TransactionRunner,
+} from "../../src/plugins/transaction.js";
 
 export interface InMemorySeed {
   users?: Array<{
@@ -32,12 +41,29 @@ export interface InMemorySeed {
   >;
 }
 
+// No module has its own repository factory yet: each of tasks 4, 7, 8 and 9
+// adds one entry here as it migrates off the legacy ports.
+type RepositoryFactories = Record<string, never>;
+
+export interface InMemoryStore {
+  users: Map<string, UserRecord>;
+  verificationCodes: Map<string, SaveVerificationCodeInput>;
+  sessions: Map<string, CreateSessionInput>;
+  throttle: Map<string, ThrottleRecord>;
+  repositories: RepositoryFactories;
+  transaction: TransactionRunner;
+  // Every port a service or route still asks for by name, until task 15
+  // finishes moving them to `repositories`.
+  legacy: AuthRepository & SessionRepository & CredentialThrottleRepository;
+}
+
 const codeKey = (key: VerificationCodeKey) => `${key.userId}:${key.purpose}`;
 
-export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
+export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
   const users = new Map<string, UserRecord>();
   const verificationCodes = new Map<string, SaveVerificationCodeInput>();
   const sessions = new Map<string, CreateSessionInput>();
+  const throttle = new Map<string, ThrottleRecord>();
 
   for (const user of seed.users ?? []) {
     const id = user.id ?? randomUUID();
@@ -136,7 +162,9 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
     return deletedCount;
   };
 
-  const repository: AuthRepository & SessionRepository = {
+  const legacy: AuthRepository &
+    SessionRepository &
+    CredentialThrottleRepository = {
     async findUserByEmail(email) {
       return toUserRecord(findUserByEmail(email));
     },
@@ -300,11 +328,80 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
           expiresAt: session.expiresAt,
         }));
     },
+
+    async findThrottleByKeyHash(keyHash) {
+      return throttle.get(keyHash);
+    },
+
+    async upsertThrottleFailure(input) {
+      throttle.set(input.keyHash, {
+        failedCount: input.failedCount,
+        lastFailedAt: input.lastFailedAt,
+      });
+    },
+
+    async clearThrottle(keyHash) {
+      throttle.delete(keyHash);
+    },
   };
 
-  return { ...repository, users, verificationCodes, sessions };
-}
+  const cloneState = () => ({
+    users: new Map(
+      [...users].map(([id, value]) => [id, structuredClone(value)]),
+    ),
+    verificationCodes: new Map(
+      [...verificationCodes].map(([id, value]) => [id, structuredClone(value)]),
+    ),
+    sessions: new Map(
+      [...sessions].map(([id, value]) => [id, structuredClone(value)]),
+    ),
+    throttle: new Map(
+      [...throttle].map(([id, value]) => [id, structuredClone(value)]),
+    ),
+  });
 
-export type InMemoryAuthRepository = ReturnType<
-  typeof createInMemoryAuthRepository
->;
+  // Restores into the SAME map instances: tests hold onto `store.users` and
+  // the other maps by reference, so replacing them would strand those tests
+  // watching a map the store no longer writes to.
+  const restoreState = (snapshot: ReturnType<typeof cloneState>) => {
+    users.clear();
+    for (const [id, value] of snapshot.users) {
+      users.set(id, value);
+    }
+    verificationCodes.clear();
+    for (const [id, value] of snapshot.verificationCodes) {
+      verificationCodes.set(id, value);
+    }
+    sessions.clear();
+    for (const [id, value] of snapshot.sessions) {
+      sessions.set(id, value);
+    }
+    throttle.clear();
+    for (const [id, value] of snapshot.throttle) {
+      throttle.set(id, value);
+    }
+  };
+
+  const transaction: TransactionRunner = async (work) => {
+    const snapshot = cloneState();
+    try {
+      return await work({} as Transaction);
+    } catch (error) {
+      restoreState(snapshot);
+      if (error instanceof Rollback) {
+        return error.value;
+      }
+      throw error;
+    }
+  };
+
+  return {
+    users,
+    verificationCodes,
+    sessions,
+    throttle,
+    repositories: {},
+    transaction,
+    legacy,
+  };
+}

@@ -10,9 +10,9 @@ import { createVerifyCodeService } from "../../../../src/plugins/app/auth/verify
 import { FakeEmailSender } from "../../../../src/plugins/email/drivers/fake.js";
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import {
-  createInMemoryAuthRepository,
+  createInMemoryStore,
   type InMemorySeed,
-} from "../../../helpers/auth/in-memory-repository.js";
+} from "../../../helpers/in-memory-store.js";
 
 // A spy over the real implementation: every test still hashes for real, and
 // the timing cases can assert argon2 ran on each branch.
@@ -37,7 +37,8 @@ beforeEach(() => {
 });
 
 function setup(seed: InMemorySeed = {}) {
-  const repo = createInMemoryAuthRepository(seed);
+  const store = createInMemoryStore(seed);
+  const repo = store.legacy;
   const emailSender = new FakeEmailSender();
   const send = vi.spyOn(emailSender, "send");
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -63,6 +64,7 @@ function setup(seed: InMemorySeed = {}) {
     now: () => NOW,
   });
   return {
+    store,
     repo,
     emailSender,
     send,
@@ -80,28 +82,28 @@ async function acceptedToken(
   return result.outcome === "accepted" ? result.sessionToken : "";
 }
 
-const userByEmail = (repo: ReturnType<typeof setup>["repo"], email: string) =>
-  [...repo.users.values()].find((user) => user.email === email);
+const userByEmail = (store: ReturnType<typeof setup>["store"], email: string) =>
+  [...store.users.values()].find((user) => user.email === email);
 
 describe("signup service", () => {
   it("rejects a pwned password without writing or hashing anything", async () => {
-    const { repo, send, checkPwnedPassword, signup } = setup();
+    const { store, send, checkPwnedPassword, signup } = setup();
     checkPwnedPassword.mockResolvedValue(true);
 
     expect(await signup(EMAIL, PASSWORD)).toEqual({
       outcome: "pwned-password",
     });
-    expect(repo.users.size).toBe(0);
-    expect(repo.verificationCodes.size).toBe(0);
+    expect(store.users.size).toBe(0);
+    expect(store.verificationCodes.size).toBe(0);
     expect(send).not.toHaveBeenCalled();
   });
 
   it("creates an unconfirmed account with the hashed password and emails its code", async () => {
-    const { repo, emailSender, signup } = setup();
+    const { store, repo, emailSender, signup } = setup();
 
     const token = await acceptedToken(await signup(EMAIL, PASSWORD));
 
-    const user = userByEmail(repo, EMAIL);
+    const user = userByEmail(store, EMAIL);
     expect(user?.emailVerifiedAt).toBeNull();
     expect(user?.passwordHash).not.toContain(PASSWORD);
     expect(await verifyPassword(user?.passwordHash ?? "", PASSWORD)).toBe(true);
@@ -118,12 +120,12 @@ describe("signup service", () => {
   });
 
   it("normalizes the email before any lookup or write", async () => {
-    const { repo, signup } = setup();
+    const { store, signup } = setup();
 
     await signup("  User@Example.COM ", PASSWORD);
 
-    expect(userByEmail(repo, EMAIL)).toBeDefined();
-    expect(repo.users.size).toBe(1);
+    expect(userByEmail(store, EMAIL)).toBeDefined();
+    expect(store.users.size).toBe(1);
   });
 
   it.each([
@@ -146,7 +148,7 @@ describe("signup service", () => {
   });
 
   it("returns a throwaway token and writes nothing for a confirmed address", async () => {
-    const { repo, send, signup } = setup({
+    const { store, send, signup } = setup({
       users: [{ id: USER_ID, email: EMAIL, passwordHash: "owner-hash" }],
     });
 
@@ -155,35 +157,35 @@ describe("signup service", () => {
 
     expect(first).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(second).not.toBe(first);
-    expect(repo.users.get(USER_ID)).toMatchObject({
+    expect(store.users.get(USER_ID)).toMatchObject({
       passwordHash: "owner-hash",
       emailVerifiedAt: new Date(0),
     });
-    expect(repo.verificationCodes.size).toBe(0);
+    expect(store.verificationCodes.size).toBe(0);
     expect(send).not.toHaveBeenCalled();
   });
 
   it("lets the latest signup win: the password is replaced and the old token no longer confirms", async () => {
-    const { repo, emailSender, signup, verifyCode } = setup();
+    const { store, emailSender, signup, verifyCode } = setup();
 
     const attackerToken = await acceptedToken(await signup(EMAIL, PASSWORD));
     await vi.waitFor(() => expect(emailSender.sent).toHaveLength(1));
     const code = emailSender.sent[0]?.subject.match(/\d{6}/)?.[0] ?? "";
     const ownerToken = await acceptedToken(await signup(EMAIL, OTHER_PASSWORD));
 
-    const user = userByEmail(repo, EMAIL);
+    const user = userByEmail(store, EMAIL);
     expect(await verifyPassword(user?.passwordHash ?? "", OTHER_PASSWORD)).toBe(
       true,
     );
     expect(await verifyPassword(user?.passwordHash ?? "", PASSWORD)).toBe(
       false,
     );
-    expect(repo.users.size).toBe(1);
+    expect(store.users.size).toBe(1);
 
     expect(await verifyCode(attackerToken, code, null)).toEqual({
       outcome: "invalid",
     });
-    expect(userByEmail(repo, EMAIL)?.emailVerifiedAt).toBeNull();
+    expect(userByEmail(store, EMAIL)?.emailVerifiedAt).toBeNull();
     expect(await verifyCode(ownerToken, code, null)).toMatchObject({
       outcome: "verified",
     });
@@ -200,7 +202,7 @@ describe("signup service", () => {
   });
 
   it("answers like a confirmed address when the account is confirmed between the read and the write", async () => {
-    const { repo, send, signup } = setup({
+    const { store, repo, send, signup } = setup({
       users: [{ id: USER_ID, email: EMAIL, passwordHash: "owner-hash" }],
     });
     // The read misses the confirmation that a concurrent verify just landed.
@@ -209,14 +211,15 @@ describe("signup service", () => {
     const token = await acceptedToken(await signup(EMAIL, PASSWORD));
 
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(repo.users.get(USER_ID)?.passwordHash).toBe("owner-hash");
-    expect(repo.users.size).toBe(1);
-    expect(repo.verificationCodes.size).toBe(0);
+    expect(store.users.get(USER_ID)?.passwordHash).toBe("owner-hash");
+    expect(store.users.size).toBe(1);
+    expect(store.verificationCodes.size).toBe(0);
     expect(send).not.toHaveBeenCalled();
   });
 
   it("still accepts the signup when delivery fails", async () => {
-    const repo = createInMemoryAuthRepository();
+    const store = createInMemoryStore();
+    const repo = store.legacy;
     const codes = createVerificationCodes({
       hmacSecret: TEST_HMAC_SECRET,
       repo,
@@ -232,16 +235,16 @@ describe("signup service", () => {
 
     expect((await signup(EMAIL, PASSWORD)).outcome).toBe("accepted");
     await vi.waitFor(() =>
-      expect([...repo.verificationCodes.values()][0]?.codeSendCount).toBe(0),
+      expect([...store.verificationCodes.values()][0]?.codeSendCount).toBe(0),
     );
   });
 
   it("logs the signup start with the user id and never the email", async () => {
-    const { repo, log, signup } = setup();
+    const { store, log, signup } = setup();
 
     await signup(EMAIL, PASSWORD);
 
-    const userId = userByEmail(repo, EMAIL)?.id;
+    const userId = userByEmail(store, EMAIL)?.id;
     expect(log.info).toHaveBeenCalledWith({ userId }, "signup started");
     expect(JSON.stringify(log.info.mock.calls)).not.toContain(EMAIL);
   });

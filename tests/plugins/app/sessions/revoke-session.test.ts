@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createRevokeSessionService } from "../../../../src/plugins/app/sessions/revoke-session.js";
-import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../../helpers/in-memory-store.js";
 
 const USER = "11111111-1111-4111-8111-111111111111";
 const SESSION = "33333333-3333-4333-8333-333333333333";
@@ -55,7 +55,7 @@ describe("revokeSession", () => {
   });
 
   it("revokes an expired session the sweep has not removed yet, harmlessly", async () => {
-    const repo = createInMemoryAuthRepository({
+    const store = createInMemoryStore({
       sessions: [
         {
           id: SESSION,
@@ -67,13 +67,13 @@ describe("revokeSession", () => {
     });
 
     await expect(
-      createRevokeSessionService({ repo }).revokeSession({
+      createRevokeSessionService({ repo: store.legacy }).revokeSession({
         userId: USER,
         sessionId: SESSION,
       }),
     ).resolves.toBeUndefined();
 
-    expect(repo.sessions.size).toBe(0);
+    expect(store.sessions.size).toBe(0);
   });
 
   it("works without a logger", async () => {

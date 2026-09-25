@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildApp } from "../../../src/app.js";
 import { hashSessionToken } from "../../../src/lib/token-hash.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
 const TOKEN = "a-session-token";
 const OTHER_TOKEN = "another-session-token";
@@ -11,7 +11,7 @@ const CURRENT_ID = "11111111-1111-4111-8111-111111111111";
 const OTHER_ID = "22222222-2222-4222-8222-222222222222";
 
 function repoWithTwoSessions() {
-  return createInMemoryAuthRepository({
+  return createInMemoryStore({
     users: [{ id: USER_ID, email: "foo@gmail.com" }],
     sessions: [
       { id: CURRENT_ID, userId: USER_ID, tokenHash: hashSessionToken(TOKEN) },
@@ -32,8 +32,8 @@ function sessionCookie(response: { headers: Record<string, unknown> }) {
 
 describe("DELETE /sessions/current", () => {
   it("deletes the session of the cookie and answers 204", async () => {
-    const authRepository = repoWithTwoSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ store }));
 
     const response = await app.inject({
       method: "DELETE",
@@ -42,13 +42,13 @@ describe("DELETE /sessions/current", () => {
     });
 
     expect(response.statusCode).toBe(204);
-    expect(authRepository.sessions.has(CURRENT_ID)).toBe(false);
+    expect(store.sessions.has(CURRENT_ID)).toBe(false);
     await app.close();
   });
 
   it("leaves the other sessions of the same user untouched", async () => {
-    const authRepository = repoWithTwoSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ store }));
 
     await app.inject({
       method: "DELETE",
@@ -56,14 +56,12 @@ describe("DELETE /sessions/current", () => {
       cookies: { session: TOKEN },
     });
 
-    expect([...authRepository.sessions.keys()]).toEqual([OTHER_ID]);
+    expect([...store.sessions.keys()]).toEqual([OTHER_ID]);
     await app.close();
   });
 
   it("makes the cookie useless afterwards, so GET /me answers 401", async () => {
-    const app = buildApp(
-      makeAppOptions({ authRepository: repoWithTwoSessions() }),
-    );
+    const app = buildApp(makeAppOptions({ store: repoWithTwoSessions() }));
 
     await app.inject({
       method: "DELETE",
@@ -82,9 +80,7 @@ describe("DELETE /sessions/current", () => {
   });
 
   it("clears the session cookie with the hardened flags", async () => {
-    const app = buildApp(
-      makeAppOptions({ authRepository: repoWithTwoSessions() }),
-    );
+    const app = buildApp(makeAppOptions({ store: repoWithTwoSessions() }));
 
     const response = await app.inject({
       method: "DELETE",
@@ -115,8 +111,8 @@ describe("DELETE /sessions/current", () => {
   });
 
   it("answers 204 for a session that was already signed out", async () => {
-    const authRepository = repoWithTwoSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ store }));
 
     await app.inject({
       method: "DELETE",
@@ -130,13 +126,13 @@ describe("DELETE /sessions/current", () => {
     });
 
     expect(response.statusCode).toBe(204);
-    expect([...authRepository.sessions.keys()]).toEqual([OTHER_ID]);
+    expect([...store.sessions.keys()]).toEqual([OTHER_ID]);
     await app.close();
   });
 
   it("answers 204 for an unknown token without deleting anything", async () => {
-    const authRepository = repoWithTwoSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ store }));
 
     const response = await app.inject({
       method: "DELETE",
@@ -145,7 +141,7 @@ describe("DELETE /sessions/current", () => {
     });
 
     expect(response.statusCode).toBe(204);
-    expect(authRepository.sessions.size).toBe(2);
+    expect(store.sessions.size).toBe(2);
     await app.close();
   });
 

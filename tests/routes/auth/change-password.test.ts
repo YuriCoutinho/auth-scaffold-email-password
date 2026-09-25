@@ -3,7 +3,7 @@ import { buildApp } from "../../../src/app.js";
 import { hashPassword } from "../../../src/lib/password.js";
 import { hashSessionToken } from "../../../src/lib/token-hash.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
 const TOKEN = "current-session-token";
 const OTHER_TOKEN = "laptop-session-token";
@@ -14,7 +14,7 @@ const CURRENT_SESSION_ID = "10101010-1010-4010-8010-101010101010";
 const OTHER_SESSION_ID = "11111111-1111-4111-8111-111111111112";
 
 async function repoWithTwoSessions() {
-  return createInMemoryAuthRepository({
+  return createInMemoryStore({
     users: [
       {
         id: USER_ID,
@@ -48,9 +48,9 @@ function change(body: Record<string, string>) {
 
 describe("POST /auth/change-password", () => {
   it("responds 204 and stores a different hash", async () => {
-    const authRepository = await repoWithTwoSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
-    const before = authRepository.users.get(USER_ID)?.passwordHash;
+    const store = await repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ store }));
+    const before = store.users.get(USER_ID)?.passwordHash;
 
     const response = await app.inject(
       change({ currentPassword: CURRENT, newPassword: NEXT }),
@@ -58,23 +58,23 @@ describe("POST /auth/change-password", () => {
 
     expect(response.statusCode).toBe(204);
     expect(response.body).toBe("");
-    expect(authRepository.users.get(USER_ID)?.passwordHash).not.toBe(before);
+    expect(store.users.get(USER_ID)?.passwordHash).not.toBe(before);
     await app.close();
   });
 
   it("deletes the other session and keeps the current one", async () => {
-    const authRepository = await repoWithTwoSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = await repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ store }));
 
     await app.inject(change({ currentPassword: CURRENT, newPassword: NEXT }));
 
-    expect([...authRepository.sessions.keys()]).toEqual([CURRENT_SESSION_ID]);
+    expect([...store.sessions.keys()]).toEqual([CURRENT_SESSION_ID]);
     await app.close();
   });
 
   it("never touches the session cookie", async () => {
-    const authRepository = await repoWithTwoSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = await repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ store }));
 
     const response = await app.inject(
       change({ currentPassword: CURRENT, newPassword: NEXT }),
@@ -85,8 +85,8 @@ describe("POST /auth/change-password", () => {
   });
 
   it("lets the caller keep using the session afterwards", async () => {
-    const authRepository = await repoWithTwoSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = await repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ store }));
 
     await app.inject(change({ currentPassword: CURRENT, newPassword: NEXT }));
     const after = await app.inject({
@@ -100,9 +100,9 @@ describe("POST /auth/change-password", () => {
   });
 
   it("responds 400 when the current password is wrong", async () => {
-    const authRepository = await repoWithTwoSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
-    const before = authRepository.users.get(USER_ID)?.passwordHash;
+    const store = await repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ store }));
+    const before = store.users.get(USER_ID)?.passwordHash;
 
     const response = await app.inject(
       change({ currentPassword: "not-the-password", newPassword: NEXT }),
@@ -110,14 +110,14 @@ describe("POST /auth/change-password", () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.json().message).toBe("The current password is incorrect.");
-    expect(authRepository.users.get(USER_ID)?.passwordHash).toBe(before);
-    expect(authRepository.sessions.size).toBe(2);
+    expect(store.users.get(USER_ID)?.passwordHash).toBe(before);
+    expect(store.sessions.size).toBe(2);
     await app.close();
   });
 
   it("responds 400 when the new password equals the current one", async () => {
-    const authRepository = await repoWithTwoSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = await repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ store }));
 
     const response = await app.inject(
       change({ currentPassword: CURRENT, newPassword: CURRENT }),
@@ -131,10 +131,10 @@ describe("POST /auth/change-password", () => {
   });
 
   it("responds 400 when the new password appeared in a breach", async () => {
-    const authRepository = await repoWithTwoSessions();
+    const store = await repoWithTwoSessions();
     const app = buildApp(
       makeAppOptions({
-        authRepository,
+        store,
         checkPwnedPassword: async () => true,
       }),
     );
@@ -151,8 +151,8 @@ describe("POST /auth/change-password", () => {
   });
 
   it("responds 400 when the new password is too short", async () => {
-    const authRepository = await repoWithTwoSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = await repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ store }));
 
     const response = await app.inject(
       change({ currentPassword: CURRENT, newPassword: "short" }),
@@ -163,8 +163,8 @@ describe("POST /auth/change-password", () => {
   });
 
   it("responds 401 without a session cookie", async () => {
-    const authRepository = await repoWithTwoSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = await repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ store }));
 
     const response = await app.inject({
       method: "POST",
@@ -178,9 +178,9 @@ describe("POST /auth/change-password", () => {
   });
 
   it("responds 401 with the cookie of a session that was signed out", async () => {
-    const authRepository = await repoWithTwoSessions();
-    authRepository.sessions.delete(CURRENT_SESSION_ID);
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = await repoWithTwoSessions();
+    store.sessions.delete(CURRENT_SESSION_ID);
+    const app = buildApp(makeAppOptions({ store }));
 
     const response = await app.inject(
       change({ currentPassword: CURRENT, newPassword: NEXT }),
@@ -191,8 +191,8 @@ describe("POST /auth/change-password", () => {
   });
 
   it("never exposes a password hash in the response", async () => {
-    const authRepository = await repoWithTwoSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = await repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ store }));
 
     const response = await app.inject(
       change({ currentPassword: "not-the-password", newPassword: NEXT }),
@@ -205,8 +205,8 @@ describe("POST /auth/change-password", () => {
 
 describe("POST /auth/change-password throttling", () => {
   it("returns 429 with Retry-After once the free attempts are spent", async () => {
-    const authRepository = await repoWithTwoSessions();
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = await repoWithTwoSessions();
+    const app = buildApp(makeAppOptions({ store }));
     const attempt = () =>
       app.inject(
         change({

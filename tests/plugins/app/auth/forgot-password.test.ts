@@ -6,7 +6,7 @@ import { createVerificationCodes } from "../../../../src/plugins/app/auth/verifi
 import { FakeEmailSender } from "../../../../src/plugins/email/drivers/fake.js";
 import type { EmailSender } from "../../../../src/plugins/email/sender.js";
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../../helpers/in-memory-store.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -15,7 +15,7 @@ const EMAIL = "reset@example.com";
 function setup(
   options: { emailVerifiedAt?: Date | null; emailSender?: EmailSender } = {},
 ) {
-  const repo = createInMemoryAuthRepository({
+  const store = createInMemoryStore({
     users: [
       {
         id: USER_ID,
@@ -27,6 +27,7 @@ function setup(
       },
     ],
   });
+  const repo = store.legacy;
   const fake = new FakeEmailSender();
   const emailSender = options.emailSender ?? fake;
   // Spied so the "nothing was sent" cases can assert synchronously, instead of
@@ -45,7 +46,7 @@ function setup(
       "password_reset",
       hashVerificationToken(token),
     );
-  return { repo, fake, send, forgotPassword, findByToken };
+  return { store, repo, fake, send, forgotPassword, findByToken };
 }
 
 describe("forgotPassword", () => {
@@ -74,18 +75,18 @@ describe("forgotPassword", () => {
   });
 
   it("hands back a throwaway token and writes nothing for an unknown address", async () => {
-    const { repo, send, forgotPassword, findByToken } = setup();
+    const { store, send, forgotPassword, findByToken } = setup();
 
     const { sessionToken } = await forgotPassword("nobody@example.com");
 
     expect(sessionToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(await findByToken(sessionToken)).toBeUndefined();
-    expect(repo.verificationCodes.size).toBe(0);
+    expect(store.verificationCodes.size).toBe(0);
     expect(send).not.toHaveBeenCalled();
   });
 
   it("hands back a throwaway token and writes nothing for an unconfirmed account", async () => {
-    const { repo, send, forgotPassword, findByToken } = setup({
+    const { store, send, forgotPassword, findByToken } = setup({
       emailVerifiedAt: null,
     });
 
@@ -93,18 +94,18 @@ describe("forgotPassword", () => {
 
     expect(sessionToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(await findByToken(sessionToken)).toBeUndefined();
-    expect(repo.verificationCodes.size).toBe(0);
+    expect(store.verificationCodes.size).toBe(0);
     expect(send).not.toHaveBeenCalled();
   });
 
   it("hands out a different token on every call and keeps one row", async () => {
-    const { repo, forgotPassword, findByToken } = setup();
+    const { store, forgotPassword, findByToken } = setup();
 
     const first = await forgotPassword(EMAIL);
     const second = await forgotPassword(EMAIL);
 
     expect(second.sessionToken).not.toBe(first.sessionToken);
-    expect(repo.verificationCodes.size).toBe(1);
+    expect(store.verificationCodes.size).toBe(1);
     expect(await findByToken(first.sessionToken)).toBeUndefined();
     expect(await findByToken(second.sessionToken)).toMatchObject({
       userId: USER_ID,

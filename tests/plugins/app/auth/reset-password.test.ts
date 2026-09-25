@@ -11,7 +11,7 @@ import type { VerificationCodes } from "../../../../src/plugins/app/auth/verific
 import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
 import { FakeEmailSender } from "../../../../src/plugins/email/drivers/fake.js";
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../../helpers/in-memory-store.js";
 
 const SESSION_TTL_SECONDS = 60 * 60;
 const NOW = new Date("2026-09-24T12:00:00Z");
@@ -33,7 +33,7 @@ async function setup(
     wrapCodes?: (codes: VerificationCodes) => Pick<VerificationCodes, "verify">;
   } = {},
 ) {
-  const repo = createInMemoryAuthRepository({
+  const store = createInMemoryStore({
     users: [
       {
         id: USER_ID,
@@ -58,6 +58,7 @@ async function setup(
       { userId: OTHER_USER_ID, tokenHash: "someone-else", createdAt: NOW },
     ],
   });
+  const repo = store.legacy;
   const emailSender = new FakeEmailSender();
   // Spied so the "no notice" case can assert synchronously, instead of reading
   // a list that a detached send may not have filled yet.
@@ -88,12 +89,13 @@ async function setup(
     log,
     now: () => NOW,
   });
-  const code = () => repo.verificationCodes.get(`${USER_ID}:password_reset`);
+  const code = () => store.verificationCodes.get(`${USER_ID}:password_reset`);
   const passwordIs = async (password: string) =>
-    verifyPassword(repo.users.get(USER_ID)?.passwordHash ?? "", password);
+    verifyPassword(store.users.get(USER_ID)?.passwordHash ?? "", password);
   const sessionsOf = (userId: string) =>
-    [...repo.sessions.values()].filter((session) => session.userId === userId);
+    [...store.sessions.values()].filter((session) => session.userId === userId);
   return {
+    store,
     repo,
     emailSender,
     send,

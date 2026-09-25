@@ -5,7 +5,7 @@ import { cookiePolicy } from "../../../src/lib/cookies.js";
 import { hashSessionToken } from "../../../src/lib/token-hash.js";
 import { DEFAULT_TTL } from "../../../src/lib/ttl.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
-import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
 const TOKEN = "a-session-token";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -17,7 +17,7 @@ function secondsAgo(seconds: number) {
 }
 
 function repositoryWithSession(createdAt: Date, expiresAt?: Date) {
-  return createInMemoryAuthRepository({
+  return createInMemoryStore({
     users: [{ id: USER_ID, email: "a@b.com" }],
     sessions: [
       {
@@ -51,7 +51,7 @@ function protectedRoute(
 describe("authenticate hook", () => {
   it("lets a request with a live session through and exposes the user and session ids", async () => {
     const app = buildApp(
-      makeAppOptions({ authRepository: repositoryWithSession(secondsAgo(60)) }),
+      makeAppOptions({ store: repositoryWithSession(secondsAgo(60)) }),
     );
     const seen = vi.fn();
     protectedRoute(app, "GET", async (request) => {
@@ -108,7 +108,7 @@ describe("authenticate hook", () => {
     async ({ cookie, createdAt }) => {
       const app = buildApp(
         makeAppOptions({
-          authRepository: repositoryWithSession(createdAt ?? secondsAgo(60)),
+          store: repositoryWithSession(createdAt ?? secondsAgo(60)),
         }),
       );
       protectedRoute(app, "GET", async () => ({ ok: true }));
@@ -127,9 +127,9 @@ describe("authenticate hook", () => {
   );
 
   it("refuses a session whose row was deleted, as after a logout", async () => {
-    const authRepository = repositoryWithSession(secondsAgo(60));
-    await authRepository.deleteSessionByTokenHash(hashSessionToken(TOKEN));
-    const app = buildApp(makeAppOptions({ authRepository }));
+    const store = repositoryWithSession(secondsAgo(60));
+    await store.legacy.deleteSessionByTokenHash(hashSessionToken(TOKEN));
+    const app = buildApp(makeAppOptions({ store }));
     protectedRoute(app, "GET", async () => ({ ok: true }));
 
     const response = await app.inject({
@@ -145,7 +145,7 @@ describe("authenticate hook", () => {
   it("judges expiry by the stored expiry, whatever ttl buildApp gets", async () => {
     const app = buildApp(
       makeAppOptions({
-        authRepository: repositoryWithSession(secondsAgo(120), secondsAgo(60)),
+        store: repositoryWithSession(secondsAgo(120), secondsAgo(60)),
         ttl: { sessionSeconds: 30 * 24 * 60 * 60 },
       }),
     );
