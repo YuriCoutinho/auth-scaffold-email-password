@@ -4,6 +4,7 @@ import type { Executor } from "./db/client.js";
 import type { RateLimitOverrides } from "./lib/rate-limit.js";
 import type { TtlPolicy } from "./lib/ttl.js";
 import type { SessionsRepository } from "./modules/sessions/repository.js";
+import type { UsersRepository } from "./modules/users/repository.js";
 import type { AuthRepository } from "./plugins/app/auth/repository.js";
 import type { CredentialThrottleRepository } from "./plugins/app/credential-throttle/repository.js";
 import type { RetentionRepository } from "./plugins/app/retention/repository.js";
@@ -15,6 +16,7 @@ import type { TransactionRunner } from "./plugins/transaction.js";
 // Each module adds its entry here as it migrates off the legacy ports below,
 // so a test overrides only the repository the case under test touches.
 export interface RepositoryFactories {
+  users: (executor: Executor) => UsersRepository;
   sessions: (executor: Executor) => SessionsRepository;
 }
 

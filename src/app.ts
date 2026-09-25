@@ -19,6 +19,7 @@ import meRoute from "./features/me/route.js";
 import revokeSessionRoute from "./features/revoke-session/route.js";
 import authenticate from "./http/authenticate.js";
 import sessionsModule from "./modules/sessions/index.js";
+import usersModule from "./modules/users/index.js";
 import database from "./plugins/database.js";
 import email from "./plugins/email/index.js";
 import errorHandler from "./plugins/error-handler.js";
@@ -48,6 +49,7 @@ const appPlugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
   await fastify.register(pwnedPassword, opts);
 
   await fastify.register(sessionsModule, opts);
+  await fastify.register(usersModule, opts);
   await fastify.register(authenticate, opts);
 
   await fastify.register(healthRoute);

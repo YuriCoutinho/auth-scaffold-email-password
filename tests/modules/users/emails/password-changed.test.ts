@@ -1,8 +1,31 @@
 import { describe, expect, it, vi } from "vitest";
-import { sendPasswordChanged } from "../../../../src/plugins/app/auth/send-password-changed.js";
+import {
+  renderPasswordChangedEmail,
+  sendPasswordChanged,
+} from "../../../../src/modules/users/emails/password-changed.js";
 import { EmailProviderError } from "../../../../src/plugins/email/sender.js";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
+
+describe("renderPasswordChangedEmail", () => {
+  it("states that the password changed in the subject", () => {
+    expect(renderPasswordChangedEmail().subject).toBe(
+      "Your password was changed",
+    );
+  });
+
+  it("points at the reset flow and carries no link", () => {
+    const content = renderPasswordChangedEmail();
+
+    expect(content.text).toContain("reset your password");
+    expect(content.text).not.toContain("contact support");
+    expect(content.html).not.toContain("<a ");
+  });
+
+  it("says every other device was signed out", () => {
+    expect(renderPasswordChangedEmail().text).toContain("signed out");
+  });
+});
 
 describe("sendPasswordChanged", () => {
   it("resolves true and logs when the provider accepts the message", async () => {

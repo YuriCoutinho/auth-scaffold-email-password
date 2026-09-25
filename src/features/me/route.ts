@@ -4,7 +4,7 @@ import { meSchema } from "./schema.js";
 import { createMe } from "./use-case.js";
 
 const route: FastifyPluginAsyncZod = async (app) => {
-  const me = createMe({ findUser: (id) => app.auth.currentUser(id) });
+  const me = createMe({ findUser: (id) => app.users.publicProfile(id) });
 
   app.get(
     "/me",

@@ -519,6 +519,135 @@ describe("legacy sessions", () => {
   });
 });
 
+describe("repositories.users", () => {
+  const db = {} as never;
+
+  describe("upsertUnverified", () => {
+    it("creates a new unconfirmed account", async () => {
+      const store = createInMemoryStore();
+      const repo = store.repositories.users(db);
+
+      await expect(
+        repo.upsertUnverified({
+          id: OWNER,
+          email: "user@example.com",
+          passwordHash: "hash-1",
+        }),
+      ).resolves.toEqual({ userId: OWNER });
+
+      expect(store.users.get(OWNER)).toMatchObject({
+        email: "user@example.com",
+        passwordHash: "hash-1",
+        emailVerifiedAt: null,
+      });
+    });
+
+    it("replaces the password of an account still pending", async () => {
+      const store = createInMemoryStore({
+        users: [
+          {
+            id: OWNER,
+            email: "user@example.com",
+            passwordHash: "old-hash",
+            emailVerifiedAt: null,
+          },
+        ],
+      });
+      const repo = store.repositories.users(db);
+
+      await expect(
+        repo.upsertUnverified({
+          id: OTHER,
+          email: "user@example.com",
+          passwordHash: "new-hash",
+        }),
+      ).resolves.toEqual({ userId: OWNER });
+
+      expect(store.users.size).toBe(1);
+      expect(store.users.get(OWNER)).toMatchObject({
+        passwordHash: "new-hash",
+      });
+    });
+
+    it("refuses an account already confirmed and leaves it untouched", async () => {
+      const store = createInMemoryStore({
+        users: [
+          { id: OWNER, email: "user@example.com", passwordHash: "old-hash" },
+        ],
+      });
+      const repo = store.repositories.users(db);
+
+      await expect(
+        repo.upsertUnverified({
+          id: OTHER,
+          email: "user@example.com",
+          passwordHash: "new-hash",
+        }),
+      ).resolves.toBe(null);
+
+      expect(store.users.size).toBe(1);
+      expect(store.users.get(OWNER)).toMatchObject({
+        passwordHash: "old-hash",
+      });
+    });
+  });
+
+  describe("markVerified", () => {
+    it("confirms an account still pending", async () => {
+      const store = createInMemoryStore({
+        users: [
+          { id: OWNER, email: "user@example.com", emailVerifiedAt: null },
+        ],
+      });
+      const repo = store.repositories.users(db);
+
+      await expect(repo.markVerified(OWNER, NOW)).resolves.toBe(true);
+      expect(store.users.get(OWNER)).toMatchObject({ emailVerifiedAt: NOW });
+    });
+
+    it("returns false when the account is already confirmed", async () => {
+      const store = createInMemoryStore({
+        users: [{ id: OWNER, email: "user@example.com" }],
+      });
+      const repo = store.repositories.users(db);
+
+      await expect(repo.markVerified(OWNER, NOW)).resolves.toBe(false);
+    });
+  });
+
+  describe("purgeAbandonedUnverified", () => {
+    it("deletes an unconfirmed account with no verification code left", async () => {
+      const store = createInMemoryStore({
+        users: [
+          { id: OWNER, email: "user@example.com", emailVerifiedAt: null },
+        ],
+      });
+      const repo = store.repositories.users(db);
+
+      await expect(repo.purgeAbandonedUnverified()).resolves.toBe(1);
+      expect(store.users.has(OWNER)).toBe(false);
+    });
+
+    it("keeps an unconfirmed account that still has a live code", async () => {
+      const store = repoWithPendingSignup();
+      const repo = store.repositories.users(db);
+
+      await expect(repo.purgeAbandonedUnverified()).resolves.toBe(0);
+      expect(store.users.has(OWNER)).toBe(true);
+    });
+
+    it("never touches a confirmed account", async () => {
+      const store = createInMemoryStore({
+        users: [{ id: OWNER, email: "user@example.com" }],
+      });
+      const repo = store.repositories.users(db);
+
+      await expect(repo.purgeAbandonedUnverified()).resolves.toBe(0);
+      expect(store.users.has(OWNER)).toBe(true);
+    });
+  });
+});
+
 describe("legacy throttle", () => {
   it("upserts a failure, reads it back and clears it", async () => {
     const { legacy: repo } = createInMemoryStore();

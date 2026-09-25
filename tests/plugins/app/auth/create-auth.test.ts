@@ -11,7 +11,6 @@ import {
 } from "../../../helpers/in-memory-store.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
-const USER_ID = "11111111-1111-4111-8111-111111111111";
 
 function setup(seed: InMemorySeed = {}, ttl: TtlPolicy = DEFAULT_TTL) {
   const store = createInMemoryStore(seed);
@@ -65,9 +64,6 @@ describe("createAuth", () => {
         })
       ).outcome,
     ).toBe("invalid");
-    expect(
-      await auth.currentUser("99999999-9999-4999-8999-999999999999"),
-    ).toBeUndefined();
   });
 
   it("carries a signup through to a confirmed account with a session", async () => {
@@ -126,16 +122,5 @@ describe("createAuth", () => {
 
     await vi.waitFor(() => expect(emailSender.sent).toHaveLength(1));
     expect(emailSender.sent[0]?.text).toContain("10 minutes");
-  });
-
-  it("resolves the current user without the password hash", async () => {
-    const { auth } = setup({
-      users: [{ id: USER_ID, email: "a@b.com", passwordHash: "secret-hash" }],
-    });
-
-    expect(await auth.currentUser(USER_ID)).toEqual({
-      id: USER_ID,
-      email: "a@b.com",
-    });
   });
 });

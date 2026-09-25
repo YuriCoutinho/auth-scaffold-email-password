@@ -3,6 +3,7 @@ import type { RepositoryFactories } from "../../src/app-options.js";
 import type { Transaction } from "../../src/db/client.js";
 import { DEFAULT_TTL, expiresAt as expiryFrom } from "../../src/lib/ttl.js";
 import type { SessionsRepository } from "../../src/modules/sessions/repository.js";
+import type { UsersRepository } from "../../src/modules/users/repository.js";
 import type {
   AuthRepository,
   ConsumeVerificationCodeInput,
@@ -364,7 +365,65 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
     },
   };
 
+  // The new-style users port shares the legacy user rows and adds the shape
+  // task 7 needs, without the code-writing side of legacy.startSignup, which
+  // stays with the otp module until it moves off the legacy repository too.
+  const usersRepository: UsersRepository = {
+    async findByEmail(email) {
+      return toUserRecord(findUserByEmail(email));
+    },
+
+    async findById(id) {
+      return toUserRecord(users.get(id));
+    },
+
+    async upsertUnverified(input) {
+      const existing = findUserByEmail(input.email);
+      if (existing?.emailVerifiedAt) {
+        return null;
+      }
+      const userId = existing?.id ?? input.id;
+      if (existing) {
+        existing.passwordHash = input.passwordHash;
+      } else {
+        users.set(userId, { ...input, emailVerifiedAt: null });
+      }
+      return { userId };
+    },
+
+    async markVerified(id, at) {
+      const user = users.get(id);
+      if (!user || user.emailVerifiedAt) {
+        return false;
+      }
+      user.emailVerifiedAt = at;
+      return true;
+    },
+
+    async setPasswordHash(id, passwordHash) {
+      const user = users.get(id);
+      if (user) {
+        user.passwordHash = passwordHash;
+      }
+    },
+
+    async purgeAbandonedUnverified() {
+      const codeOwners = new Set(
+        [...verificationCodes.values()].map((code) => code.userId),
+      );
+      let purgedCount = 0;
+      for (const [id, user] of users) {
+        if (!user.emailVerifiedAt && !codeOwners.has(id)) {
+          users.delete(id);
+          purgedCount++;
+        }
+      }
+      return purgedCount;
+    },
+  };
+
   const repositories: RepositoryFactories = {
+    users: () => usersRepository,
     sessions: () => sessionsRepository,
   };
 

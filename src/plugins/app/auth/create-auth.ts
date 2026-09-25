@@ -82,11 +82,6 @@ export function createAuth(deps: AuthDeps) {
     verifyCode,
     login,
     changePassword,
-    // Only the public half of the record: the password hash stops here.
-    async currentUser(id: string) {
-      const user = await deps.repository.findUserById(id);
-      return user && { id: user.id, email: user.email };
-    },
   };
 }
 
