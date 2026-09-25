@@ -163,10 +163,6 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
   };
 
   const legacy: AuthRepository & SessionRepository = {
-    async findUserByEmail(email) {
-      return toUserRecord(findUserByEmail(email));
-    },
-
     async findUserById(id) {
       return toUserRecord(users.get(id));
     },
@@ -206,22 +202,6 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
       if (code) {
         code.codeAttempts++;
       }
-    },
-
-    async verifyEmail(input) {
-      const user = users.get(input.userId);
-      if (!user || user.emailVerifiedAt) {
-        return false;
-      }
-      if (!consumeCode("signup", input)) {
-        return false;
-      }
-      user.emailVerifiedAt = input.verifiedAt;
-      sessions.set(input.session.id, {
-        ...input.session,
-        userId: input.userId,
-      });
-      return true;
     },
 
     async changePassword(input) {

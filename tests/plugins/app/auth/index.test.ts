@@ -19,9 +19,16 @@ describe("auth plugin", () => {
     await app.register(authPlugin, opts);
     await app.ready();
 
-    expect(typeof app.auth.login).toBe("function");
+    expect(typeof app.auth.resetPassword).toBe("function");
     expect(
-      (await app.auth.login("nobody@example.com", "x", null)).outcome,
+      (
+        await app.auth.resetPassword({
+          sessionToken: undefined,
+          code: "000000",
+          newPassword: "a perfectly fine passphrase",
+          deviceLabel: null,
+        })
+      ).outcome,
     ).toBe("invalid");
     await app.close();
   });
@@ -36,7 +43,7 @@ describe("auth plugin", () => {
     await app.register(authPlugin, opts);
     await app.ready();
 
-    expect(typeof app.auth.login).toBe("function");
+    expect(typeof app.auth.resetPassword).toBe("function");
     await app.close();
   });
 

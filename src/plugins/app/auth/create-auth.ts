@@ -3,17 +3,13 @@ import type { TtlPolicy } from "../../../lib/ttl.js";
 import type { CredentialThrottleService } from "../../../modules/credential-throttle/service.js";
 import type { EmailSender } from "../../email/sender.js";
 import type { CheckPwnedPassword } from "../../pwned-password/checker.js";
-import type { SessionRepository } from "../sessions/repository.js";
 import { createChangePasswordService } from "./change-password.js";
-import { createLoginService } from "./login.js";
 import type { AuthRepository } from "./repository.js";
 import { createResetPasswordService } from "./reset-password.js";
 import { createVerificationCodes } from "./verification-codes.js";
-import { createVerifyCodeService } from "./verify-code.js";
 
 export interface AuthDeps {
   repository: AuthRepository;
-  sessionRepository: SessionRepository;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
   credentialThrottle: CredentialThrottleService;
@@ -41,20 +37,6 @@ export function createAuth(deps: AuthDeps) {
     throttle: deps.credentialThrottle,
     sessionTtlSeconds: deps.ttl.sessionSeconds,
   });
-  const { verifyCode } = createVerifyCodeService({
-    ...shared,
-    codes,
-    sessionTtlSeconds: deps.ttl.sessionSeconds,
-  });
-  const { login } = createLoginService({
-    ...shared,
-    throttle: deps.credentialThrottle,
-    sessionTtlSeconds: deps.ttl.sessionSeconds,
-    repo: {
-      findUserByEmail: deps.repository.findUserByEmail,
-      createSession: deps.sessionRepository.createSession,
-    },
-  });
   const { changePassword } = createChangePasswordService({
     ...shared,
     emailSender: deps.emailSender,
@@ -64,8 +46,6 @@ export function createAuth(deps: AuthDeps) {
 
   return {
     resetPassword,
-    verifyCode,
-    login,
     changePassword,
   };
 }

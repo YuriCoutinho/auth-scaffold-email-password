@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql, TransactionRollbackError } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { users, verificationCodes } from "../../../db/schema.js";
 import {
   createDrizzleSessionRepository,
@@ -62,15 +62,6 @@ export function createDrizzleAuthRepository(
   db: DatabaseOrTransaction,
 ): AuthRepository {
   return {
-    async findUserByEmail(email) {
-      const rows = await db
-        .select(userColumns)
-        .from(users)
-        .where(eq(users.email, email))
-        .limit(1);
-      return rows[0];
-    },
-
     async findUserById(id) {
       const rows = await db
         .select(userColumns)
@@ -132,42 +123,6 @@ export function createDrizzleAuthRepository(
         .update(verificationCodes)
         .set({ codeAttempts: sql`${verificationCodes.codeAttempts} + 1` })
         .where(byKey(key));
-    },
-
-    // All-or-nothing: if anything fails, the code survives for a retry.
-    async verifyEmail(input) {
-      return await db
-        .transaction(async (tx) => {
-          // Consuming first makes the code row the serialization point: a second
-          // request carrying the same code blocks on this delete and then
-          // matches nothing.
-          if (!(await consumeCode(tx, "signup", input))) {
-            return false;
-          }
-          const confirmed = await tx
-            .update(users)
-            .set({ emailVerifiedAt: input.verifiedAt })
-            .where(
-              and(eq(users.id, input.userId), isNull(users.emailVerifiedAt)),
-            )
-            .returning({ id: users.id });
-          if (confirmed.length === 0) {
-            // A leftover signup code of a confirmed account must never turn
-            // into a session without a password.
-            tx.rollback();
-          }
-          await createDrizzleSessionRepository(tx).createSession({
-            ...input.session,
-            userId: input.userId,
-          });
-          return true;
-        })
-        .catch((error: unknown) => {
-          if (error instanceof TransactionRollbackError) {
-            return false;
-          }
-          throw error;
-        });
     },
 
     // One transaction so the two writes cannot come apart: a new password with

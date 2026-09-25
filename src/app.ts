@@ -14,12 +14,14 @@ import type { AppOptions } from "./app-options.js";
 import forgotPasswordRoute from "./features/forgot-password/route.js";
 import healthRoute from "./features/health/route.js";
 import listSessionsRoute from "./features/list-sessions/route.js";
+import loginRoute from "./features/login/route.js";
 import logoutRoute from "./features/logout/route.js";
 import logoutAllRoute from "./features/logout-all/route.js";
 import meRoute from "./features/me/route.js";
 import resendSignupCodeRoute from "./features/resend-signup-code/route.js";
 import revokeSessionRoute from "./features/revoke-session/route.js";
 import signupRoute from "./features/signup/route.js";
+import verifySignupRoute from "./features/verify-signup/route.js";
 import authenticate from "./http/authenticate.js";
 import credentialThrottleModule from "./modules/credential-throttle/index.js";
 import otpModule from "./modules/otp/index.js";
@@ -37,9 +39,7 @@ import swaggerUi from "./plugins/external/swagger-ui.js";
 import pwnedPassword from "./plugins/pwned-password/index.js";
 import transaction from "./plugins/transaction.js";
 import changePasswordRoute from "./routes/auth/change-password.js";
-import loginRoute from "./routes/auth/login.js";
 import resetPasswordRoute from "./routes/auth/reset-password.js";
-import verifyCodeRoute from "./routes/auth/verify-code.js";
 
 export type { AppOptions } from "./app-options.js";
 
@@ -84,7 +84,7 @@ const appPlugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
   await fastify.register(resendSignupCodeRoute, auth);
   await fastify.register(resetPasswordRoute, auth);
   await fastify.register(signupRoute, auth);
-  await fastify.register(verifyCodeRoute, auth);
+  await fastify.register(verifySignupRoute, auth);
   await fastify.register(logoutAllRoute, { prefix: "/sessions" });
   await fastify.register(logoutRoute, { ...opts, prefix: "/sessions" });
   await fastify.register(listSessionsRoute, { prefix: "/sessions" });

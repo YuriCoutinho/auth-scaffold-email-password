@@ -1,15 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DUMMY_PASSWORD_HASH } from "../../../../src/lib/password.js";
-import { hashSessionToken } from "../../../../src/lib/token-hash.js";
-import { createLoginService } from "../../../../src/plugins/app/auth/login.js";
-import { createInMemoryStore } from "../../../helpers/in-memory-store.js";
+import type { Executor } from "../../../src/db/client.js";
+import { createLogin } from "../../../src/features/login/use-case.js";
+import { DUMMY_PASSWORD_HASH } from "../../../src/lib/password.js";
+import { hashSessionToken } from "../../../src/lib/token-hash.js";
+import { DEFAULT_TTL } from "../../../src/lib/ttl.js";
+import { createSessionsService } from "../../../src/modules/sessions/service.js";
+import { createUsersService } from "../../../src/modules/users/service.js";
+import { FakeEmailSender } from "../../../src/plugins/email/drivers/fake.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
-vi.mock("../../../../src/lib/password.js", async (importOriginal) => {
+vi.mock("../../../src/lib/password.js", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("../../../../src/lib/password.js")>();
+    await importOriginal<typeof import("../../../src/lib/password.js")>();
   return { ...actual, verifyPassword: vi.fn() };
 });
-const { verifyPassword } = await import("../../../../src/lib/password.js");
+const { verifyPassword } = await import("../../../src/lib/password.js");
 const verifyPasswordMock = vi.mocked(verifyPassword);
 
 const SESSION_TTL_SECONDS = 60 * 60;
@@ -19,6 +24,10 @@ const UUID_V4 =
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const EMAIL = "foo@gmail.com";
 const PASSWORD_HASH = "argon2-real-hash";
+
+// The store's repository factories ignore the executor they are handed, so
+// any value satisfying the type stands in for a real connection.
+const db = {} as Executor;
 
 function setup(emailVerifiedAt: Date | null | "no-account" = new Date(0)) {
   const store = createInMemoryStore({
@@ -34,22 +43,26 @@ function setup(emailVerifiedAt: Date | null | "no-account" = new Date(0)) {
             },
           ],
   });
-  const repo = store.legacy;
   const throttle = {
     check: vi.fn().mockResolvedValue({ outcome: "allowed" }),
     registerFailure: vi.fn().mockResolvedValue(undefined),
     reset: vi.fn().mockResolvedValue(undefined),
-    purgeStale: vi.fn().mockResolvedValue(0),
   };
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-  const { login } = createLoginService({
-    repo,
-    sessionTtlSeconds: SESSION_TTL_SECONDS,
-    throttle,
+  const login = createLogin({
+    users: createUsersService({
+      repo: store.repositories.users(db),
+      emailSender: new FakeEmailSender(),
+    }),
+    sessions: createSessionsService({
+      repo: store.repositories.sessions(db),
+      ttl: { ...DEFAULT_TTL, sessionSeconds: SESSION_TTL_SECONDS },
+      now: () => NOW,
+    }),
+    credentialThrottle: throttle,
     log,
-    now: () => NOW,
   });
-  return { store, repo, throttle, log, login };
+  return { store, throttle, log, login };
 }
 
 beforeEach(() => {
@@ -78,6 +91,18 @@ describe("login", () => {
         expiresAt: new Date(NOW.getTime() + SESSION_TTL_SECONDS * 1000),
       },
     ]);
+  });
+
+  it("logs the success with the user id and nothing else", async () => {
+    verifyPasswordMock.mockResolvedValue(true);
+    const { log, login } = setup();
+
+    await login(EMAIL, "secret", null);
+
+    expect(log.info).toHaveBeenCalledWith(
+      { userId: USER_ID },
+      "login succeeded",
+    );
   });
 
   it("normalizes the email before lookup", async () => {

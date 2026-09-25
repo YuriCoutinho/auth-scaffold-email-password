@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { Executor } from "../../../../src/db/client.js";
+import { hashPassword } from "../../../../src/lib/password.js";
 import {
   hashOtpCode,
   hashSessionToken,
@@ -17,20 +18,31 @@ import {
 
 const NOW = new Date("2026-09-24T12:00:00Z");
 const USER_ID = "11111111-1111-4111-8111-111111111111";
-const SIGNUP_TOKEN = "a-signup-token";
-const SIGNUP_CODE = "123456";
-const PENDING_SIGNUP: InMemorySeed = {
-  users: [{ id: USER_ID, email: "user@example.com", emailVerifiedAt: null }],
-  verificationCodes: [
-    {
-      userId: USER_ID,
-      purpose: "signup",
-      tokenHash: hashVerificationToken(SIGNUP_TOKEN),
-      codeHash: hashOtpCode(TEST_HMAC_SECRET, SIGNUP_CODE),
-      issuedAt: NOW,
-    },
-  ],
-};
+const RESET_TOKEN = "a-reset-token";
+const RESET_CODE = "123456";
+const NEW_PASSWORD = "a-brand-new-passphrase";
+let pendingReset: InMemorySeed;
+
+beforeAll(async () => {
+  pendingReset = {
+    users: [
+      {
+        id: USER_ID,
+        email: "user@example.com",
+        passwordHash: await hashPassword("the-previous-passphrase"),
+      },
+    ],
+    verificationCodes: [
+      {
+        userId: USER_ID,
+        purpose: "password_reset",
+        tokenHash: hashVerificationToken(RESET_TOKEN),
+        codeHash: hashOtpCode(TEST_HMAC_SECRET, RESET_CODE),
+        issuedAt: NOW,
+      },
+    ],
+  };
+});
 
 // The store's credential-throttle repository factory ignores the executor it
 // is handed, so any value satisfying the type stands in for a real connection.
@@ -43,7 +55,6 @@ function setup(seed: InMemorySeed = {}, ttl: TtlPolicy = DEFAULT_TTL) {
   const auth = createAuth({
     hmacSecret: TEST_HMAC_SECRET,
     repository,
-    sessionRepository: repository,
     emailSender,
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
     credentialThrottle: createCredentialThrottleService({
@@ -60,12 +71,6 @@ describe("createAuth", () => {
   it("exposes every auth flow over one repository", async () => {
     const { auth } = setup();
 
-    expect((await auth.verifyCode(undefined, "000000", null)).outcome).toBe(
-      "invalid",
-    );
-    expect((await auth.login("nobody@example.com", "x", null)).outcome).toBe(
-      "invalid",
-    );
     expect(
       (
         await auth.resetPassword({
@@ -78,13 +83,18 @@ describe("createAuth", () => {
     ).toBe("invalid");
   });
 
-  it("carries a pending signup through to a confirmed account with a session", async () => {
-    const { store, auth } = setup(PENDING_SIGNUP);
+  it("carries a pending reset through to a new password with a session", async () => {
+    const { store, auth } = setup(pendingReset);
 
-    const verified = await auth.verifyCode(SIGNUP_TOKEN, SIGNUP_CODE, null);
-    if (verified.outcome !== "verified") throw new Error("expected verified");
+    const reset = await auth.resetPassword({
+      sessionToken: RESET_TOKEN,
+      code: RESET_CODE,
+      newPassword: NEW_PASSWORD,
+      deviceLabel: null,
+    });
+    if (reset.outcome !== "reset") throw new Error("expected reset");
 
-    const tokenHash = hashSessionToken(verified.sessionToken);
+    const tokenHash = hashSessionToken(reset.sessionToken);
     expect(
       [...store.sessions.values()].some(
         (session) => session.tokenHash === tokenHash,
@@ -94,12 +104,17 @@ describe("createAuth", () => {
   });
 
   it("stamps the sessions it opens with the configured session ttl", async () => {
-    const { store, auth } = setup(PENDING_SIGNUP, {
+    const { store, auth } = setup(pendingReset, {
       ...DEFAULT_TTL,
       sessionSeconds: 60,
     });
 
-    await auth.verifyCode(SIGNUP_TOKEN, SIGNUP_CODE, null);
+    await auth.resetPassword({
+      sessionToken: RESET_TOKEN,
+      code: RESET_CODE,
+      newPassword: NEW_PASSWORD,
+      deviceLabel: null,
+    });
 
     expect([...store.sessions.values()]).toEqual([
       expect.objectContaining({ expiresAt: new Date(NOW.getTime() + 60_000) }),

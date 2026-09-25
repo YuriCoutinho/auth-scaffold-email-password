@@ -2,7 +2,6 @@ import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import type { AppOptions } from "../../../app-options.js";
 import { resolveTtl } from "../../../lib/ttl.js";
-import { createDrizzleSessionRepository } from "../sessions/drizzle-repository.js";
 import { type Auth, createAuth } from "./create-auth.js";
 import { createDrizzleAuthRepository } from "./drizzle-repository.js";
 
@@ -18,8 +17,6 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
     createAuth({
       repository:
         opts.authRepository ?? createDrizzleAuthRepository(fastify.db),
-      sessionRepository:
-        opts.sessionRepository ?? createDrizzleSessionRepository(fastify.db),
       emailSender: fastify.emailSender,
       checkPwnedPassword: fastify.checkPwnedPassword,
       credentialThrottle: fastify.credentialThrottle,

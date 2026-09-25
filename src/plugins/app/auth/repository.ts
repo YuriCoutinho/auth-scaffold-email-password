@@ -51,11 +51,6 @@ export interface ConsumeVerificationCodeInput {
 
 export type NewSessionInput = Omit<CreateSessionInput, "userId">;
 
-export interface VerifyEmailInput extends ConsumeVerificationCodeInput {
-  verifiedAt: Date;
-  session: NewSessionInput;
-}
-
 export interface ChangePasswordInput {
   userId: string;
   passwordHash: string;
@@ -68,7 +63,6 @@ export interface ResetPasswordInput extends ConsumeVerificationCodeInput {
 }
 
 export interface AuthRepository {
-  findUserByEmail(email: string): Promise<UserRecord | undefined>;
   findUserById(id: string): Promise<UserRecord | undefined>;
   findVerificationCode(
     key: VerificationCodeKey,
@@ -91,9 +85,6 @@ export interface AuthRepository {
     previous: VerificationCodeState,
   ): Promise<void>;
   incrementVerificationAttempts(key: VerificationCodeKey): Promise<void>;
-  // False when the code was already consumed or rotated, or the account was
-  // already confirmed, which is how a concurrent verification learns it lost.
-  verifyEmail(input: VerifyEmailInput): Promise<boolean>;
   changePassword(input: ChangePasswordInput): Promise<void>;
   // False when the code was already consumed or rotated.
   resetPassword(input: ResetPasswordInput): Promise<boolean>;

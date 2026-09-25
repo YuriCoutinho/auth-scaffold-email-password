@@ -2,29 +2,11 @@ import { describe, expect, it } from "vitest";
 import { signupBodySchema } from "../../src/features/signup/schema.js";
 import {
   changePasswordBodySchema,
-  loginBodySchema,
   messageSchema,
   resetPasswordBodySchema,
-  verifyCodeBodySchema,
 } from "../../src/schemas/auth.js";
 
 describe("auth schemas", () => {
-  it("requires a non-empty password on login", () => {
-    expect(
-      loginBodySchema.safeParse({ email: "user@example.com", password: "" })
-        .success,
-    ).toBe(false);
-  });
-
-  it("requires exactly six digits on verify", () => {
-    expect(verifyCodeBodySchema.safeParse({ code: "123456" }).success).toBe(
-      true,
-    );
-    expect(verifyCodeBodySchema.safeParse({ code: "12a456" }).success).toBe(
-      false,
-    );
-  });
-
   it("describes a message envelope", () => {
     expect(messageSchema.safeParse({ message: "ok" }).success).toBe(true);
   });
