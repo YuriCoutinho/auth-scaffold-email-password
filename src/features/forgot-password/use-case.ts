@@ -1,10 +1,10 @@
 import { normalizeEmail } from "../../lib/email.js";
 import { generateToken } from "../../lib/token.js";
 import type { OtpModule } from "../../modules/otp/index.js";
-import type { UsersModule } from "../../modules/users/index.js";
+import type { UsersService } from "../../modules/users/service.js";
 
 interface ForgotPasswordDeps {
-  users: Pick<UsersModule, "findByEmail">;
+  users: Pick<UsersService, "findByEmail">;
   otp: Pick<OtpModule, "issue" | "dispatch">;
 }
 

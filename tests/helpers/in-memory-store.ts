@@ -404,6 +404,8 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
   const transaction: TransactionRunner = async (work) => {
     const snapshot = cloneState();
     try {
+      // The store's repository factories ignore the executor they are handed, so
+      // any value satisfying the type stands in for an open transaction.
       return await work({} as Transaction);
     } catch (error) {
       restoreState(snapshot);

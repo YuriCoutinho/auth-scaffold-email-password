@@ -1,6 +1,5 @@
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
-import type { AppOptions } from "../app-options.js";
 import type { Database, Transaction } from "../db/client.js";
 
 export type TransactionRunner = <T>(
@@ -38,7 +37,9 @@ declare module "fastify" {
   }
 }
 
-const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
+const plugin: FastifyPluginAsync<{
+  transaction?: TransactionRunner;
+}> = async (fastify, opts) => {
   fastify.decorate(
     "transaction",
     opts.transaction ?? createDrizzleTransactionRunner(fastify.db),

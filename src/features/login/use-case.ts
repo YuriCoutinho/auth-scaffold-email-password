@@ -2,8 +2,8 @@ import type { FastifyBaseLogger } from "fastify";
 import { normalizeEmail } from "../../lib/email.js";
 import { DUMMY_PASSWORD_HASH, verifyPassword } from "../../lib/password.js";
 import type { CredentialThrottleService } from "../../modules/credential-throttle/service.js";
-import type { SessionsModule } from "../../modules/sessions/index.js";
-import type { UsersModule } from "../../modules/users/index.js";
+import type { SessionsService } from "../../modules/sessions/service.js";
+import type { UsersService } from "../../modules/users/service.js";
 
 export type LoginResult =
   | { outcome: "authenticated"; sessionToken: string }
@@ -11,8 +11,8 @@ export type LoginResult =
   | { outcome: "throttled"; retryAfterSeconds: number };
 
 interface LoginDeps {
-  users: Pick<UsersModule, "findByEmail">;
-  sessions: Pick<SessionsModule, "issue">;
+  users: Pick<UsersService, "findByEmail">;
+  sessions: Pick<SessionsService, "issue">;
   credentialThrottle: Pick<
     CredentialThrottleService,
     "check" | "registerFailure" | "reset"

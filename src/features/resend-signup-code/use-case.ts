@@ -1,4 +1,4 @@
-import type { OtpModule } from "../../modules/otp/index.js";
+import type { OtpService } from "../../modules/otp/service.js";
 
 export type ResendSignupCodeResult =
   | { outcome: "sent"; sessionToken: string }
@@ -8,7 +8,7 @@ export type ResendSignupCodeResult =
   | { outcome: "email-unavailable" };
 
 interface ResendSignupCodeDeps {
-  otp: Pick<OtpModule, "resend">;
+  otp: Pick<OtpService, "resend">;
 }
 
 export function createResendSignupCode(deps: ResendSignupCodeDeps) {
