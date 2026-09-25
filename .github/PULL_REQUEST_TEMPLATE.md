@@ -15,11 +15,6 @@
 
 -
 
-**Documento da task**
-<!-- docs/tasks/NN-slug.md  (índice em docs/tasks/README.md). "Não se aplica" quando a mudança não vem de uma task. -->
-
--
-
 ## Verificação
 
 <!-- O que foi rodado e o resultado. Apagar linhas que não se aplicam. -->

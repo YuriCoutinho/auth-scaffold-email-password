@@ -7,6 +7,9 @@ node_modules/
 .claude/scheduled_tasks.lock
 docs/superpowers/plans/
 
+# Guias de task: ficam só na máquina de quem escreveu
+docs/tasks/
+
 # Build
 dist/
 
