@@ -2,7 +2,6 @@ import { vi } from "vitest";
 import type { AppOptions } from "../../src/app-options.js";
 import type { Env } from "../../src/config/env.js";
 import type { RateLimitOverrides } from "../../src/lib/rate-limit.js";
-import type { RetentionRepository } from "../../src/plugins/app/retention/repository.js";
 import { FakeEmailSender } from "../../src/plugins/email/drivers/fake.js";
 import { createInMemoryStore, type InMemoryStore } from "./in-memory-store.js";
 
@@ -30,17 +29,6 @@ const TEST_RATE_LIMITS: RateLimitOverrides = {
   resetPassword: { max: 10_000, timeWindow: "1 minute" },
 };
 
-// The sweep timer never fires within a test, but the default adapter would
-// still be wired to the database, so tests get a port that touches nothing.
-export const noopRetentionRepository: RetentionRepository = {
-  purge: async () => ({
-    sessions: 0,
-    verificationCodes: 0,
-    unverifiedUsers: 0,
-    throttleTrails: 0,
-  }),
-};
-
 // The in-memory store backs every repository over the same maps, so a test
 // that overrides the store gets the same rows everywhere instead of the route
 // reading one store while the session hook reads another.
@@ -58,7 +46,6 @@ export function makeAppOptions(
     logger: false,
     emailSender: new FakeEmailSender(),
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
-    retentionRepository: noopRetentionRepository,
     transaction: store.transaction,
     ...rest,
     // Merged rather than replaced, so a test overriding only one factory

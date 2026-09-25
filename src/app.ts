@@ -1,5 +1,3 @@
-import { join } from "node:path";
-import autoload from "@fastify/autoload";
 import Fastify, {
   type FastifyInstance,
   type FastifyPluginAsync,
@@ -21,6 +19,7 @@ import logoutAllRoute from "./features/logout-all/route.js";
 import meRoute from "./features/me/route.js";
 import resendSignupCodeRoute from "./features/resend-signup-code/route.js";
 import resetPasswordRoute from "./features/reset-password/route.js";
+import retentionSweepJob from "./features/retention-sweep/job.js";
 import revokeSessionRoute from "./features/revoke-session/route.js";
 import signupRoute from "./features/signup/route.js";
 import verifySignupRoute from "./features/verify-signup/route.js";
@@ -65,15 +64,7 @@ const appPlugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
 
   await fastify.register(healthRoute);
   await fastify.register(meRoute);
-
-  // Temporary: only the retention sweep is still loaded this way.
-  const load = (dir: string) =>
-    fastify.register(autoload, {
-      dir: join(import.meta.dirname, dir),
-      options: opts,
-      forceESM: true,
-    });
-  await load("plugins/app");
+  await fastify.register(retentionSweepJob, opts);
 
   // Registered in the order the route table was pinned in before this
   // migration.

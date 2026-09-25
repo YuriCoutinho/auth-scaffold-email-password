@@ -1,4 +1,4 @@
-import { THROTTLE_MAX_BLOCK_SECONDS } from "../modules/credential-throttle/policy.js";
+import { THROTTLE_MAX_BLOCK_SECONDS } from "../../modules/credential-throttle/policy.js";
 
 export const RETENTION_INTERVAL_SECONDS = 60 * 60;
 

@@ -7,7 +7,6 @@ import type { CredentialThrottleRepository } from "./modules/credential-throttle
 import type { OtpRepository } from "./modules/otp/repository.js";
 import type { SessionsRepository } from "./modules/sessions/repository.js";
 import type { UsersRepository } from "./modules/users/repository.js";
-import type { RetentionRepository } from "./plugins/app/retention/repository.js";
 import type { EmailSender } from "./plugins/email/sender.js";
 import type { CheckPwnedPassword } from "./plugins/pwned-password/checker.js";
 import type { TransactionRunner } from "./plugins/transaction.js";
@@ -26,7 +25,6 @@ export interface AppOptions {
   logger?: FastifyServerOptions["logger"];
   emailSender?: EmailSender;
   checkPwnedPassword?: CheckPwnedPassword;
-  retentionRepository?: RetentionRepository;
   repositories?: Partial<RepositoryFactories>;
   transaction?: TransactionRunner;
   rateLimit?: RateLimitOverrides;

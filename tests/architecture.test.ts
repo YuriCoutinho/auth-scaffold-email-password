@@ -135,13 +135,6 @@ const allowedFastifySpecifiers = new Set([
   "FastifyPluginAsync",
 ]);
 
-// Pending task 14 deletes credential-throttle's policy import from
-// lib/retention.ts, which is the one lib file allowed to reach into
-// modules/ today.
-const ruleSixAllowlist = new Set([
-  "lib/retention.ts", // TODO(task 14): drop once retention owns its own cutoff policy
-]);
-
 describe("architecture: dependency direction between layers", () => {
   const files = listFiles(SRC_ROOT);
   const violations: Violation[] = [];
@@ -224,7 +217,7 @@ describe("architecture: dependency direction between layers", () => {
         const base = relPath.split("/")[0];
         const isBaseLayer =
           base === "lib" || base === "db" || base === "config";
-        if (isBaseLayer && importedInfo && !ruleSixAllowlist.has(relPath)) {
+        if (isBaseLayer && importedInfo) {
           violations.push({
             file: relPath,
             imported: importedRel,
