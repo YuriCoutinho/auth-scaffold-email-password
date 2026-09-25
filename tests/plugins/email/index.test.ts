@@ -1,8 +1,8 @@
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
-import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
-import emailSenderPlugin from "../../../../src/plugins/app/email/index.js";
-import { TEST_ENV } from "../../../helpers/app-options.js";
+import { FakeEmailSender } from "../../../src/plugins/email/drivers/fake.js";
+import emailSenderPlugin from "../../../src/plugins/email/index.js";
+import { TEST_ENV } from "../../helpers/app-options.js";
 
 describe("email plugin", () => {
   it("uses the sender from the options when given", async () => {

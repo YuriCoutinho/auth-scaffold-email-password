@@ -1,8 +1,8 @@
 import type { FastifyBaseLogger } from "fastify";
 import { hashPassword, verifyPassword } from "../../../lib/password.js";
+import type { EmailSender } from "../../email/sender.js";
+import type { CheckPwnedPassword } from "../../pwned-password/checker.js";
 import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
-import type { EmailSender } from "../email/sender.js";
-import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import type { AuthRepository } from "./repository.js";
 import { sendPasswordChanged } from "./send-password-changed.js";
 

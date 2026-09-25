@@ -12,5 +12,5 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
 
 export default fp(plugin, {
   name: "swagger-ui",
-  dependencies: ["@fastify/swagger"],
+  dependencies: ["swagger"],
 });

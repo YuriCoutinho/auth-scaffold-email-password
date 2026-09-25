@@ -4,11 +4,11 @@ vi.mock("nodemailer", () => ({
   default: { createTransport: vi.fn(() => ({ sendMail: vi.fn() })) },
 }));
 
-import type { Env } from "../../../../src/config/env.js";
-import { createEmailSender } from "../../../../src/plugins/app/email/create-sender.js";
-import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
-import { MailpitEmailSender } from "../../../../src/plugins/app/email/drivers/mailpit.js";
-import { ResendEmailSender } from "../../../../src/plugins/app/email/drivers/resend.js";
+import type { Env } from "../../../src/config/env.js";
+import { createEmailSender } from "../../../src/plugins/email/create-sender.js";
+import { FakeEmailSender } from "../../../src/plugins/email/drivers/fake.js";
+import { MailpitEmailSender } from "../../../src/plugins/email/drivers/mailpit.js";
+import { ResendEmailSender } from "../../../src/plugins/email/drivers/resend.js";
 
 const baseEnv: Env = {
   DATABASE_URL: "postgres://x",

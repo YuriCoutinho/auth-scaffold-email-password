@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EmailProviderError } from "../../../../src/plugins/app/email/sender.js";
+import { EmailProviderError } from "../../../src/plugins/email/sender.js";
 
 const BODY = '{"message":"invalid recipient reset@example.com"}';
 

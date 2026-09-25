@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import { EmailProviderError, type EmailSender } from "../email/sender.js";
+import { EmailProviderError, type EmailSender } from "../../email/sender.js";
 import { renderPasswordChangedEmail } from "./emails/password-changed.js";
 
 interface SendPasswordChangedDeps {

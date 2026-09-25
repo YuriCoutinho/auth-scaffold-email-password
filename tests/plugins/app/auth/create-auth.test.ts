@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_TTL, type TtlPolicy } from "../../../../src/lib/ttl.js";
 import { createAuth } from "../../../../src/plugins/app/auth/create-auth.js";
 import { createCredentialThrottle } from "../../../../src/plugins/app/credential-throttle/create-credential-throttle.js";
-import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
+import { FakeEmailSender } from "../../../../src/plugins/email/drivers/fake.js";
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import {
   createInMemoryAuthRepository,

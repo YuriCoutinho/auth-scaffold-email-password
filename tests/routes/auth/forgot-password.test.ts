@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "../../../src/app.js";
-import { FakeEmailSender } from "../../../src/plugins/app/email/drivers/fake.js";
+import { FakeEmailSender } from "../../../src/plugins/email/drivers/fake.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
 

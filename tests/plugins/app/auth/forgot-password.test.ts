@@ -3,8 +3,8 @@ import { hashVerificationToken } from "../../../../src/lib/token-hash.js";
 import { DEFAULT_TTL } from "../../../../src/lib/ttl.js";
 import { createForgotPasswordService } from "../../../../src/plugins/app/auth/forgot-password.js";
 import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
-import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
-import type { EmailSender } from "../../../../src/plugins/app/email/sender.js";
+import { FakeEmailSender } from "../../../../src/plugins/email/drivers/fake.js";
+import type { EmailSender } from "../../../../src/plugins/email/sender.js";
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 

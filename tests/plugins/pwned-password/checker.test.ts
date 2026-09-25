@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { createPwnedPasswordChecker } from "../../../../src/plugins/app/pwned-password/checker.js";
+import { createPwnedPasswordChecker } from "../../../src/plugins/pwned-password/checker.js";
 
 const PASSWORD = "correct horse battery staple";
 const DIGEST = createHash("sha1").update(PASSWORD).digest("hex").toUpperCase();

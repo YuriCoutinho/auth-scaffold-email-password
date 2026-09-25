@@ -3,9 +3,9 @@ import type { AppOptions } from "../../src/app-options.js";
 import type { Env } from "../../src/config/env.js";
 import type { RateLimitOverrides } from "../../src/lib/rate-limit.js";
 import type { AuthRepository } from "../../src/plugins/app/auth/repository.js";
-import { FakeEmailSender } from "../../src/plugins/app/email/drivers/fake.js";
 import type { RetentionRepository } from "../../src/plugins/app/retention/repository.js";
 import type { SessionRepository } from "../../src/plugins/app/sessions/repository.js";
+import { FakeEmailSender } from "../../src/plugins/email/drivers/fake.js";
 import { createInMemoryAuthRepository } from "./auth/in-memory-repository.js";
 import { createInMemoryCredentialThrottleRepository } from "./credential-throttle/in-memory-repository.js";
 

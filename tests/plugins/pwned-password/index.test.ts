@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import { describe, expect, it, vi } from "vitest";
-import pwnedPasswordPlugin from "../../../../src/plugins/app/pwned-password/index.js";
+import pwnedPasswordPlugin from "../../../src/plugins/pwned-password/index.js";
 
 describe("pwned-password plugin", () => {
   it("uses the checker from the options when given", async () => {

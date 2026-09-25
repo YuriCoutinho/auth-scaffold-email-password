@@ -1,8 +1,8 @@
 import Fastify from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RETENTION_INTERVAL_SECONDS } from "../../../../src/lib/retention.js";
-import databasePlugin from "../../../../src/plugins/app/database.js";
 import retentionPlugin from "../../../../src/plugins/app/retention/index.js";
+import databasePlugin from "../../../../src/plugins/database.js";
 import { makeAppOptions } from "../../../helpers/app-options.js";
 
 afterEach(() => {

@@ -7,7 +7,7 @@ import { DEFAULT_TTL } from "../../../../src/lib/ttl.js";
 import { createSignupService } from "../../../../src/plugins/app/auth/signup.js";
 import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
 import { createVerifyCodeService } from "../../../../src/plugins/app/auth/verify-code.js";
-import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
+import { FakeEmailSender } from "../../../../src/plugins/email/drivers/fake.js";
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import {
   createInMemoryAuthRepository,

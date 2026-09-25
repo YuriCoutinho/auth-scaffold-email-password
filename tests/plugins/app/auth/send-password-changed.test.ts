@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { sendPasswordChanged } from "../../../../src/plugins/app/auth/send-password-changed.js";
-import { EmailProviderError } from "../../../../src/plugins/app/email/sender.js";
+import { EmailProviderError } from "../../../../src/plugins/email/sender.js";
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 

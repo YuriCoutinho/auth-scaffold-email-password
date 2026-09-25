@@ -9,7 +9,7 @@ import { DEFAULT_TTL } from "../../../../src/lib/ttl.js";
 import { createResetPasswordService } from "../../../../src/plugins/app/auth/reset-password.js";
 import type { VerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
 import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
-import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
+import { FakeEmailSender } from "../../../../src/plugins/email/drivers/fake.js";
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../../helpers/auth/in-memory-repository.js";
 

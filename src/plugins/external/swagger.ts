@@ -1,11 +1,13 @@
-import swagger, { type FastifyDynamicSwaggerOptions } from "@fastify/swagger";
+import swagger from "@fastify/swagger";
+import type { FastifyPluginAsync } from "fastify";
+import fp from "fastify-plugin";
 import { jsonSchemaTransform } from "fastify-type-provider-zod";
 
-export const autoConfig: FastifyDynamicSwaggerOptions = {
-  openapi: {
-    info: { title: "Auth Scaffold API", version: "0.1.0" },
-  },
-  transform: jsonSchemaTransform,
+const plugin: FastifyPluginAsync = async (fastify) => {
+  await fastify.register(swagger, {
+    openapi: { info: { title: "Auth Scaffold API", version: "0.1.0" } },
+    transform: jsonSchemaTransform,
+  });
 };
 
-export default swagger;
+export default fp(plugin, { name: "swagger" });

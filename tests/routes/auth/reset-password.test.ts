@@ -7,7 +7,7 @@ import {
   hashSessionToken,
   hashVerificationToken,
 } from "../../../src/lib/token-hash.js";
-import { FakeEmailSender } from "../../../src/plugins/app/email/drivers/fake.js";
+import { FakeEmailSender } from "../../../src/plugins/email/drivers/fake.js";
 import { makeAppOptions, TEST_HMAC_SECRET } from "../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
 

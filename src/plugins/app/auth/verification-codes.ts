@@ -12,7 +12,7 @@ import {
   hasExpired,
   type TtlPolicy,
 } from "../../../lib/ttl.js";
-import { EmailProviderError, type EmailSender } from "../email/sender.js";
+import { EmailProviderError, type EmailSender } from "../../email/sender.js";
 import { renderPasswordResetCodeEmail } from "./emails/password-reset-code.js";
 import { renderSignupCodeEmail } from "./emails/signup-code.js";
 import type {

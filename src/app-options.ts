@@ -4,10 +4,11 @@ import type { RateLimitOverrides } from "./lib/rate-limit.js";
 import type { TtlPolicy } from "./lib/ttl.js";
 import type { AuthRepository } from "./plugins/app/auth/repository.js";
 import type { CredentialThrottleRepository } from "./plugins/app/credential-throttle/repository.js";
-import type { EmailSender } from "./plugins/app/email/sender.js";
-import type { CheckPwnedPassword } from "./plugins/app/pwned-password/checker.js";
 import type { RetentionRepository } from "./plugins/app/retention/repository.js";
 import type { SessionRepository } from "./plugins/app/sessions/repository.js";
+import type { EmailSender } from "./plugins/email/sender.js";
+import type { CheckPwnedPassword } from "./plugins/pwned-password/checker.js";
+import type { TransactionRunner } from "./plugins/transaction.js";
 
 export interface AppOptions {
   config: Env;
@@ -18,6 +19,7 @@ export interface AppOptions {
   checkPwnedPassword?: CheckPwnedPassword;
   credentialThrottleRepository?: CredentialThrottleRepository;
   retentionRepository?: RetentionRepository;
+  transaction?: TransactionRunner;
   rateLimit?: RateLimitOverrides;
   ttl?: Partial<TtlPolicy>;
 }

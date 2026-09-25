@@ -3,7 +3,7 @@ import { normalizeEmail } from "../../../lib/email.js";
 import { generateId } from "../../../lib/id.js";
 import { hashPassword } from "../../../lib/password.js";
 import { generateToken } from "../../../lib/session.js";
-import type { CheckPwnedPassword } from "../pwned-password/checker.js";
+import type { CheckPwnedPassword } from "../../pwned-password/checker.js";
 import type { AuthRepository } from "./repository.js";
 import type { VerificationCodes } from "./verification-codes.js";
 

@@ -1,8 +1,8 @@
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import type { AppOptions } from "../../../../src/app-options.js";
-import databasePlugin from "../../../../src/plugins/app/database.js";
 import sessionsPlugin from "../../../../src/plugins/app/sessions/index.js";
+import databasePlugin from "../../../../src/plugins/database.js";
 import { makeAppOptions, TEST_ENV } from "../../../helpers/app-options.js";
 
 describe("sessions plugin", () => {

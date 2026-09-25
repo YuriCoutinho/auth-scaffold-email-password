@@ -1,7 +1,7 @@
 import { describe, expect, it, type Mock, vi } from "vitest";
 import { buildApp } from "../../../src/app.js";
 import { hashVerificationToken } from "../../../src/lib/token-hash.js";
-import type { EmailSender } from "../../../src/plugins/app/email/sender.js";
+import type { EmailSender } from "../../../src/plugins/email/sender.js";
 import { makeAppOptions } from "../../helpers/app-options.js";
 import { createInMemoryAuthRepository } from "../../helpers/auth/in-memory-repository.js";
 

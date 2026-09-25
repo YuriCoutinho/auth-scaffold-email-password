@@ -11,9 +11,9 @@ import {
 import { DEFAULT_TTL, type TtlPolicy } from "../../../../src/lib/ttl.js";
 import type { VerificationPurpose } from "../../../../src/plugins/app/auth/repository.js";
 import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
-import { FakeEmailSender } from "../../../../src/plugins/app/email/drivers/fake.js";
-import type { EmailSender } from "../../../../src/plugins/app/email/sender.js";
-import { EmailProviderError } from "../../../../src/plugins/app/email/sender.js";
+import { FakeEmailSender } from "../../../../src/plugins/email/drivers/fake.js";
+import type { EmailSender } from "../../../../src/plugins/email/sender.js";
+import { EmailProviderError } from "../../../../src/plugins/email/sender.js";
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import {
   createInMemoryAuthRepository,

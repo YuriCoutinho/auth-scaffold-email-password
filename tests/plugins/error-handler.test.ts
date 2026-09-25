@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildApp } from "../../../src/app.js";
-import { makeAppOptions } from "../../helpers/app-options.js";
+import { buildApp } from "../../src/app.js";
+import { makeAppOptions } from "../helpers/app-options.js";
 
 function buildAppWithFailingRoutes() {
   const app = buildApp(makeAppOptions());

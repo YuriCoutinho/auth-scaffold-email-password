@@ -1,8 +1,8 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { TtlPolicy } from "../../../lib/ttl.js";
+import type { EmailSender } from "../../email/sender.js";
+import type { CheckPwnedPassword } from "../../pwned-password/checker.js";
 import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
-import type { EmailSender } from "../email/sender.js";
-import type { CheckPwnedPassword } from "../pwned-password/checker.js";
 import type { SessionRepository } from "../sessions/repository.js";
 import { createAuthenticateService } from "./authenticate.js";
 import { createChangePasswordService } from "./change-password.js";

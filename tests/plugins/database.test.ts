@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
-import databasePlugin from "../../../src/plugins/app/database.js";
-import { TEST_ENV } from "../../helpers/app-options.js";
+import databasePlugin from "../../src/plugins/database.js";
+import { TEST_ENV } from "../helpers/app-options.js";
 
 describe("database plugin", () => {
   it("decorates fastify.db and closes the pool with the app", async () => {
