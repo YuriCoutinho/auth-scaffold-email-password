@@ -45,14 +45,6 @@ export function hasExpired(expiresAt: Date, now: Date): boolean {
   return expiresAt <= now;
 }
 
-export function isExpired(
-  issuedAt: Date,
-  ttlSeconds: number,
-  now: Date,
-): boolean {
-  return expiresAt(issuedAt, ttlSeconds) <= now;
-}
-
 // The oldest issue instant still valid at `now`, which is how a query filters
 // live rows without the column holding an expiry.
 export function issuedAfter(ttlSeconds: number, now: Date): Date {

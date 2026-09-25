@@ -67,6 +67,15 @@ export function createInMemoryAuthRepository(seed: InMemorySeed = {}) {
       codeAttempts: code.codeAttempts ?? 0,
       codeSendCount: code.codeSendCount ?? 1,
       issuedAt: code.issuedAt,
+      // Seeds that only care about age get the expiry a default issue gives.
+      expiresAt:
+        code.expiresAt ??
+        expiryFrom(
+          code.issuedAt,
+          code.purpose === "signup"
+            ? DEFAULT_TTL.signupCodeSeconds
+            : DEFAULT_TTL.passwordResetCodeSeconds,
+        ),
     });
   }
 

@@ -11,6 +11,7 @@ const CODE = {
   codeAttempts: 0,
   codeSendCount: 1,
   issuedAt: NOW,
+  expiresAt: new Date(NOW.getTime() + 15 * 60 * 1000),
 };
 
 function newUser(
@@ -172,6 +173,7 @@ describe("restoreVerificationCode", () => {
     codeAttempts: 2,
     codeSendCount: 3,
     issuedAt: new Date(NOW.getTime() - 60_000),
+    expiresAt: new Date(NOW.getTime() + 14 * 60 * 1000),
   };
 
   it("restores the previous state while the failed code is still there, and keeps the token", async () => {

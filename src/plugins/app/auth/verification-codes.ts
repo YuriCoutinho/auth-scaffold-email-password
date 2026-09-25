@@ -7,7 +7,11 @@ import {
   RESEND_COOLDOWN_SECONDS,
 } from "../../../lib/session.js";
 import { hashOtpCode, hashVerificationToken } from "../../../lib/token-hash.js";
-import { isExpired, type TtlPolicy } from "../../../lib/ttl.js";
+import {
+  expiresAt as expiryFrom,
+  hasExpired,
+  type TtlPolicy,
+} from "../../../lib/ttl.js";
 import { EmailProviderError, type EmailSender } from "../email/sender.js";
 import { renderPasswordResetCodeEmail } from "./emails/password-reset-code.js";
 import { renderSignupCodeEmail } from "./emails/signup-code.js";
@@ -100,7 +104,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
     currentTime: Date,
   ): NextCode {
     const live =
-      existing && !isExpired(existing.issuedAt, ttlFor(purpose), currentTime)
+      existing && !hasExpired(existing.expiresAt, currentTime)
         ? existing
         : undefined;
     const current: VerificationCodeState | undefined = live && {
@@ -108,6 +112,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
       codeAttempts: live.codeAttempts,
       codeSendCount: live.codeSendCount,
       issuedAt: live.issuedAt,
+      expiresAt: live.expiresAt,
     };
     if (current && sendGate(current, currentTime) !== "open") {
       return { kind: "rotate", state: current };
@@ -115,6 +120,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
 
     const code = generateOtpCode();
     const codeHash = hashOtpCode(deps.hmacSecret, code);
+    const expiresAt = expiryFrom(currentTime, ttlFor(purpose));
     return {
       kind: "issue",
       code,
@@ -123,6 +129,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
         codeAttempts: 0,
         codeSendCount: (current?.codeSendCount ?? 0) + 1,
         issuedAt: currentTime,
+        expiresAt,
       },
       // Restoring a first send zeroes the count instead of deleting the row,
       // so the cookie already handed out keeps pointing at a code that the
@@ -132,6 +139,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
         codeAttempts: 0,
         codeSendCount: 0,
         issuedAt: currentTime,
+        expiresAt,
       },
     };
   }
@@ -259,7 +267,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
         purpose,
         hashVerificationToken(token),
       );
-      if (!record || isExpired(record.issuedAt, ttlFor(purpose), currentTime)) {
+      if (!record || hasExpired(record.expiresAt, currentTime)) {
         return "invalid-session";
       }
 
@@ -275,6 +283,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
         codeAttempts: 0,
         codeSendCount: record.codeSendCount + 1,
         issuedAt: currentTime,
+        expiresAt: expiryFrom(currentTime, ttlFor(purpose)),
       };
       await deps.repo.saveVerificationCode({
         ...key,
@@ -291,6 +300,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
             codeAttempts: record.codeAttempts,
             codeSendCount: record.codeSendCount,
             issuedAt: record.issuedAt,
+            expiresAt: record.expiresAt,
           });
         } catch (restoreError) {
           deps.log?.warn(
@@ -323,7 +333,7 @@ export function createVerificationCodes(deps: VerificationCodesDeps) {
         deps.log?.info({ purpose }, `${label} token not recognized`);
         return { outcome: "invalid" };
       }
-      if (isExpired(record.issuedAt, ttlFor(purpose), now())) {
+      if (hasExpired(record.expiresAt, now())) {
         deps.log?.info({ userId: record.userId, purpose }, `${label} expired`);
         return { outcome: "invalid" };
       }

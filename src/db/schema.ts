@@ -50,8 +50,8 @@ export const users = pgTable(
   ],
 );
 
-// Validity is issued_at plus the TTL configured for the purpose, computed when
-// read, so a TTL change reaches rows that already exist.
+// Validity is decided at issue time and stored in expires_at, so a TTL change
+// never reaches codes already in a mailbox.
 export const verificationCodes = pgTable(
   "verification_codes",
   {
@@ -66,10 +66,12 @@ export const verificationCodes = pgTable(
     codeAttempts: integer("code_attempts").notNull().default(0),
     codeSendCount: integer("code_send_count").notNull().default(1),
     issuedAt: timestamp("issued_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.purpose] }),
     index("verification_codes_issued_at_idx").on(table.issuedAt),
+    index("verification_codes_expires_at_idx").on(table.expiresAt),
     check(
       "verification_codes_purpose_check",
       sql`${table.purpose} in (${sqlList(VERIFICATION_PURPOSES)})`,

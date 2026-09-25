@@ -25,6 +25,9 @@ export interface VerificationCodeState {
   // cooldown and does not count against the send cap.
   codeSendCount: number;
   issuedAt: Date;
+  // Moves with issuedAt on every send and stays put when only the token
+  // rotates, so a code in the mailbox keeps the deadline it was sent with.
+  expiresAt: Date;
 }
 
 export interface VerificationCodeKey {
