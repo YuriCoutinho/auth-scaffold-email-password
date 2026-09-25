@@ -123,7 +123,7 @@ Exemplo: `feat(auth): add post /auth/login endpoint with timing-safe credential 
 * Título em Conventional Commit, em inglês, porque o merge é squash e ele vira a mensagem do commit na `main`
 * Corpo segue `.github/PULL_REQUEST_TEMPLATE.md`, com as seções Resumo, Verificação e Notas da revisão
 * O corpo **nunca** leva assinatura de agente ou ferramenta, nem menção a ferramenta de IA, nem emoji de robô
-* Sempre com `--assignee YuriCoutinho` e com a label de tipo (`feature`, `fix` ou `documentation`)
+* Sempre com `--assignee YuriCoutinho` e com a label de tipo (`feature`, `fix`, `refactor` ou `documentation`)
 * Merge sempre por squash, que o ruleset da `main` já impõe
 
 ## Board de planejamento
