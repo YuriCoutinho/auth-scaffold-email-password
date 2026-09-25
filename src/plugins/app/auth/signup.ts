@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
+import { normalizeEmail } from "../../../lib/email.js";
 import { generateId } from "../../../lib/id.js";
 import { hashPassword } from "../../../lib/password.js";
 import { generateToken } from "../../../lib/session.js";
@@ -23,7 +24,7 @@ export function createSignupService(deps: SignupServiceDeps) {
 
   return {
     async signup(rawEmail: string, password: string): Promise<SignupResult> {
-      const email = rawEmail.trim().toLowerCase();
+      const email = normalizeEmail(rawEmail);
 
       if (await deps.checkPwnedPassword(password)) {
         return { outcome: "pwned-password" };

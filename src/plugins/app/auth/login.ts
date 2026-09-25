@@ -1,4 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
+import { normalizeEmail } from "../../../lib/email.js";
 import { generateId } from "../../../lib/id.js";
 import { DUMMY_PASSWORD_HASH, verifyPassword } from "../../../lib/password.js";
 import { generateToken } from "../../../lib/session.js";
@@ -29,7 +30,7 @@ export function createLoginService(deps: LoginServiceDeps) {
       password: string,
       deviceLabel: string | null,
     ): Promise<LoginResult> {
-      const email = rawEmail.trim().toLowerCase();
+      const email = normalizeEmail(rawEmail);
       const currentTime = now();
 
       const throttleCheck = await deps.throttle.check(email);
