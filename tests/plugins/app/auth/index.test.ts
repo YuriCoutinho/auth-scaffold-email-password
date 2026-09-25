@@ -1,8 +1,8 @@
 import Fastify from "fastify";
 import { describe, expect, it } from "vitest";
 import type { AppOptions } from "../../../../src/app-options.js";
+import credentialThrottlePlugin from "../../../../src/modules/credential-throttle/index.js";
 import authPlugin from "../../../../src/plugins/app/auth/index.js";
-import credentialThrottlePlugin from "../../../../src/plugins/app/credential-throttle/index.js";
 import databasePlugin from "../../../../src/plugins/database.js";
 import emailSenderPlugin from "../../../../src/plugins/email/index.js";
 import pwnedPasswordPlugin from "../../../../src/plugins/pwned-password/index.js";

@@ -648,9 +648,11 @@ describe("repositories.users", () => {
   });
 });
 
-describe("legacy throttle", () => {
+describe("repositories.credentialThrottle", () => {
+  const db = {} as never;
+
   it("upserts a failure, reads it back and clears it", async () => {
-    const { legacy: repo } = createInMemoryStore();
+    const repo = createInMemoryStore().repositories.credentialThrottle(db);
     const now = NOW;
 
     expect(await repo.findThrottleByKeyHash("key-hash")).toBeUndefined();
@@ -669,5 +671,20 @@ describe("legacy throttle", () => {
     await repo.clearThrottle("key-hash");
 
     expect(await repo.findThrottleByKeyHash("key-hash")).toBeUndefined();
+  });
+
+  it("purges trails whose last failure is before the cutoff", async () => {
+    const store = createInMemoryStore();
+    const repo = store.repositories.credentialThrottle(db);
+    store.throttle.set("stale-hash", {
+      failedCount: 1,
+      lastFailedAt: new Date(NOW.getTime() - 1000),
+    });
+    store.throttle.set("fresh-hash", { failedCount: 1, lastFailedAt: NOW });
+
+    await expect(repo.purgeStale(NOW)).resolves.toBe(1);
+
+    expect(store.throttle.has("stale-hash")).toBe(false);
+    expect(store.throttle.has("fresh-hash")).toBe(true);
   });
 });

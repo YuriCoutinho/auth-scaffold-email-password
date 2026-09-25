@@ -59,6 +59,7 @@ function makeDeps(
       check: vi.fn().mockResolvedValue({ outcome: "allowed" }),
       registerFailure: vi.fn().mockResolvedValue(undefined),
       reset: vi.fn().mockResolvedValue(undefined),
+      purgeStale: vi.fn().mockResolvedValue(0),
     },
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     ...overrides,

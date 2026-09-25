@@ -5,7 +5,7 @@ import { DUMMY_PASSWORD_HASH, verifyPassword } from "../../../lib/password.js";
 import { generateToken } from "../../../lib/session.js";
 import { hashSessionToken } from "../../../lib/token-hash.js";
 import { expiresAt } from "../../../lib/ttl.js";
-import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
+import type { CredentialThrottleService } from "../../../modules/credential-throttle/service.js";
 import type { SessionRepository } from "../sessions/repository.js";
 import type { AuthRepository } from "./repository.js";
 
@@ -17,7 +17,7 @@ export type LoginResult =
 interface LoginServiceDeps {
   repo: Pick<AuthRepository, "findUserByEmail"> &
     Pick<SessionRepository, "createSession">;
-  throttle: CredentialThrottle;
+  throttle: CredentialThrottleService;
   sessionTtlSeconds: number;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;

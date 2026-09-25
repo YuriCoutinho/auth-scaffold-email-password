@@ -3,10 +3,10 @@ import type { Env } from "./config/env.js";
 import type { Executor } from "./db/client.js";
 import type { RateLimitOverrides } from "./lib/rate-limit.js";
 import type { TtlPolicy } from "./lib/ttl.js";
+import type { CredentialThrottleRepository } from "./modules/credential-throttle/repository.js";
 import type { SessionsRepository } from "./modules/sessions/repository.js";
 import type { UsersRepository } from "./modules/users/repository.js";
 import type { AuthRepository } from "./plugins/app/auth/repository.js";
-import type { CredentialThrottleRepository } from "./plugins/app/credential-throttle/repository.js";
 import type { RetentionRepository } from "./plugins/app/retention/repository.js";
 import type { SessionRepository } from "./plugins/app/sessions/repository.js";
 import type { EmailSender } from "./plugins/email/sender.js";
@@ -18,6 +18,7 @@ import type { TransactionRunner } from "./plugins/transaction.js";
 export interface RepositoryFactories {
   users: (executor: Executor) => UsersRepository;
   sessions: (executor: Executor) => SessionsRepository;
+  credentialThrottle: (executor: Executor) => CredentialThrottleRepository;
 }
 
 export interface AppOptions {
@@ -27,7 +28,6 @@ export interface AppOptions {
   sessionRepository?: SessionRepository;
   emailSender?: EmailSender;
   checkPwnedPassword?: CheckPwnedPassword;
-  credentialThrottleRepository?: CredentialThrottleRepository;
   retentionRepository?: RetentionRepository;
   repositories?: Partial<RepositoryFactories>;
   transaction?: TransactionRunner;

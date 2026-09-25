@@ -1,10 +1,10 @@
-import { eq } from "drizzle-orm";
-import type { Database } from "../../../db/client.js";
-import { credentialThrottle } from "../../../db/schema.js";
+import { eq, lt } from "drizzle-orm";
+import type { Executor } from "../../db/client.js";
+import { credentialThrottle } from "../../db/schema.js";
 import type { CredentialThrottleRepository } from "./repository.js";
 
 export function createDrizzleCredentialThrottleRepository(
-  db: Database,
+  db: Executor,
 ): CredentialThrottleRepository {
   return {
     async findThrottleByKeyHash(keyHash) {
@@ -36,6 +36,14 @@ export function createDrizzleCredentialThrottleRepository(
       await db
         .delete(credentialThrottle)
         .where(eq(credentialThrottle.keyHash, keyHash));
+    },
+
+    async purgeStale(before) {
+      const deleted = await db
+        .delete(credentialThrottle)
+        .where(lt(credentialThrottle.lastFailedAt, before))
+        .returning({ keyHash: credentialThrottle.keyHash });
+      return deleted.length;
     },
   };
 }

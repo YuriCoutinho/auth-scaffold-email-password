@@ -2,6 +2,10 @@ import { randomUUID } from "node:crypto";
 import type { RepositoryFactories } from "../../src/app-options.js";
 import type { Transaction } from "../../src/db/client.js";
 import { DEFAULT_TTL, expiresAt as expiryFrom } from "../../src/lib/ttl.js";
+import type {
+  CredentialThrottleRepository,
+  ThrottleRecord,
+} from "../../src/modules/credential-throttle/repository.js";
 import type { SessionsRepository } from "../../src/modules/sessions/repository.js";
 import type { UsersRepository } from "../../src/modules/users/repository.js";
 import type {
@@ -12,10 +16,6 @@ import type {
   VerificationCodeKey,
   VerificationPurpose,
 } from "../../src/plugins/app/auth/repository.js";
-import type {
-  CredentialThrottleRepository,
-  ThrottleRecord,
-} from "../../src/plugins/app/credential-throttle/repository.js";
 import type {
   CreateSessionInput,
   SessionRepository,
@@ -53,7 +53,7 @@ export interface InMemoryStore {
   transaction: TransactionRunner;
   // Every port a service or route still asks for by name, until task 15
   // finishes moving them to `repositories`.
-  legacy: AuthRepository & SessionRepository & CredentialThrottleRepository;
+  legacy: AuthRepository & SessionRepository;
 }
 
 const codeKey = (key: VerificationCodeKey) => `${key.userId}:${key.purpose}`;
@@ -161,9 +161,7 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
     return deletedCount;
   };
 
-  const legacy: AuthRepository &
-    SessionRepository &
-    CredentialThrottleRepository = {
+  const legacy: AuthRepository & SessionRepository = {
     async findUserByEmail(email) {
       return toUserRecord(findUserByEmail(email));
     },
@@ -327,21 +325,6 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
           expiresAt: session.expiresAt,
         }));
     },
-
-    async findThrottleByKeyHash(keyHash) {
-      return throttle.get(keyHash);
-    },
-
-    async upsertThrottleFailure(input) {
-      throttle.set(input.keyHash, {
-        failedCount: input.failedCount,
-        lastFailedAt: input.lastFailedAt,
-      });
-    },
-
-    async clearThrottle(keyHash) {
-      throttle.delete(keyHash);
-    },
   };
 
   // The new-style sessions port shares the legacy implementation over the
@@ -422,9 +405,40 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
     },
   };
 
+  // Backed by the same map the legacy port used to write, so a test that
+  // seeds or reads `store.throttle` sees whichever side wrote it.
+  const credentialThrottleRepository: CredentialThrottleRepository = {
+    async findThrottleByKeyHash(keyHash) {
+      return throttle.get(keyHash);
+    },
+
+    async upsertThrottleFailure(input) {
+      throttle.set(input.keyHash, {
+        failedCount: input.failedCount,
+        lastFailedAt: input.lastFailedAt,
+      });
+    },
+
+    async clearThrottle(keyHash) {
+      throttle.delete(keyHash);
+    },
+
+    async purgeStale(before) {
+      let purgedCount = 0;
+      for (const [keyHash, record] of throttle) {
+        if (record.lastFailedAt.getTime() < before.getTime()) {
+          throttle.delete(keyHash);
+          purgedCount++;
+        }
+      }
+      return purgedCount;
+    },
+  };
+
   const repositories: RepositoryFactories = {
     users: () => usersRepository,
     sessions: () => sessionsRepository,
+    credentialThrottle: () => credentialThrottleRepository,
   };
 
   const cloneState = () => ({

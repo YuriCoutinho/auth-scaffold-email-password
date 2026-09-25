@@ -136,9 +136,14 @@ describe("POST /auth/login", () => {
 describe("POST /auth/login throttling", () => {
   it("returns 429 with Retry-After once the free attempts are spent", async () => {
     const store = repoWithUser();
-    const credentialThrottleRepository = createInMemoryStore().legacy;
+    const throttleStore = createInMemoryStore();
     const app = buildApp(
-      makeAppOptions({ store, credentialThrottleRepository }),
+      makeAppOptions({
+        store,
+        repositories: {
+          credentialThrottle: throttleStore.repositories.credentialThrottle,
+        },
+      }),
     );
     const attempt = () =>
       app.inject({

@@ -18,6 +18,7 @@ import logoutAllRoute from "./features/logout-all/route.js";
 import meRoute from "./features/me/route.js";
 import revokeSessionRoute from "./features/revoke-session/route.js";
 import authenticate from "./http/authenticate.js";
+import credentialThrottleModule from "./modules/credential-throttle/index.js";
 import sessionsModule from "./modules/sessions/index.js";
 import usersModule from "./modules/users/index.js";
 import database from "./plugins/database.js";
@@ -50,6 +51,7 @@ const appPlugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
 
   await fastify.register(sessionsModule, opts);
   await fastify.register(usersModule, opts);
+  await fastify.register(credentialThrottleModule, opts);
   await fastify.register(authenticate, opts);
 
   await fastify.register(healthRoute);

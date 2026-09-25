@@ -4,10 +4,10 @@ import { hashPassword, verifyPassword } from "../../../lib/password.js";
 import { generateToken } from "../../../lib/session.js";
 import { hashSessionToken } from "../../../lib/token-hash.js";
 import { expiresAt } from "../../../lib/ttl.js";
+import type { CredentialThrottleService } from "../../../modules/credential-throttle/service.js";
 import { sendPasswordChanged } from "../../../modules/users/emails/password-changed.js";
 import type { EmailSender } from "../../email/sender.js";
 import type { CheckPwnedPassword } from "../../pwned-password/checker.js";
-import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
 import type { AuthRepository } from "./repository.js";
 import type { VerificationCodes } from "./verification-codes.js";
 
@@ -29,7 +29,7 @@ interface ResetPasswordServiceDeps {
   codes: Pick<VerificationCodes, "verify">;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
-  throttle: CredentialThrottle;
+  throttle: CredentialThrottleService;
   sessionTtlSeconds: number;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
   now?: () => Date;

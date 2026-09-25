@@ -69,6 +69,7 @@ async function setup(
     check: vi.fn().mockResolvedValue({ outcome: "allowed" as const }),
     registerFailure: vi.fn().mockResolvedValue(undefined),
     reset: vi.fn().mockResolvedValue(undefined),
+    purgeStale: vi.fn().mockResolvedValue(0),
   };
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const codes = createVerificationCodes({

@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import type { Executor } from "../../../../src/db/client.js";
 import { hashSessionToken } from "../../../../src/lib/token-hash.js";
 import { DEFAULT_TTL, type TtlPolicy } from "../../../../src/lib/ttl.js";
+import { createCredentialThrottleService } from "../../../../src/modules/credential-throttle/service.js";
 import { createAuth } from "../../../../src/plugins/app/auth/create-auth.js";
-import { createCredentialThrottle } from "../../../../src/plugins/app/credential-throttle/create-credential-throttle.js";
 import { FakeEmailSender } from "../../../../src/plugins/email/drivers/fake.js";
 import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
 import {
@@ -11,6 +12,10 @@ import {
 } from "../../../helpers/in-memory-store.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
+
+// The store's credential-throttle repository factory ignores the executor it
+// is handed, so any value satisfying the type stands in for a real connection.
+const db = {} as Executor;
 
 function setup(seed: InMemorySeed = {}, ttl: TtlPolicy = DEFAULT_TTL) {
   const store = createInMemoryStore(seed);
@@ -22,9 +27,9 @@ function setup(seed: InMemorySeed = {}, ttl: TtlPolicy = DEFAULT_TTL) {
     sessionRepository: repository,
     emailSender,
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
-    credentialThrottle: createCredentialThrottle({
+    credentialThrottle: createCredentialThrottleService({
       hmacSecret: TEST_HMAC_SECRET,
-      repository: store.legacy,
+      repo: store.repositories.credentialThrottle(db),
     }),
     ttl,
     now: () => NOW,

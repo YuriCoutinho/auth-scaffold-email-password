@@ -1,20 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { THROTTLE_MAX_BLOCK_SECONDS } from "../../../../src/lib/throttle.js";
-import { hashThrottleKey } from "../../../../src/lib/token-hash.js";
-import { createCredentialThrottle } from "../../../../src/plugins/app/credential-throttle/create-credential-throttle.js";
-import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
-import { createInMemoryStore } from "../../../helpers/in-memory-store.js";
+import type { Executor } from "../../../src/db/client.js";
+import { hashThrottleKey } from "../../../src/lib/token-hash.js";
+import { THROTTLE_MAX_BLOCK_SECONDS } from "../../../src/modules/credential-throttle/policy.js";
+import { createCredentialThrottleService } from "../../../src/modules/credential-throttle/service.js";
+import { TEST_HMAC_SECRET } from "../../helpers/app-options.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
 const KEY = "foo@gmail.com";
 const KEY_HASH = hashThrottleKey(TEST_HMAC_SECRET, KEY);
 
+// The store's credential-throttle repository factory ignores the executor it
+// is handed, so any value satisfying the type stands in for a real connection.
+const db = {} as Executor;
+
 let store: ReturnType<typeof createInMemoryStore>;
 
 function makeThrottle(now: Date = NOW) {
-  return createCredentialThrottle({
+  return createCredentialThrottleService({
     hmacSecret: TEST_HMAC_SECRET,
-    repository: store.legacy,
+    repo: store.repositories.credentialThrottle(db),
     now: () => now,
   });
 }
@@ -80,9 +85,9 @@ describe("check", () => {
 describe("registerFailure", () => {
   it("counts the first failure without opening a block", async () => {
     const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    const throttle = createCredentialThrottle({
+    const throttle = createCredentialThrottleService({
       hmacSecret: TEST_HMAC_SECRET,
-      repository: store.legacy,
+      repo: store.repositories.credentialThrottle(db),
       log,
       now: () => NOW,
     });
@@ -97,9 +102,9 @@ describe("registerFailure", () => {
 
   it("opens a one-minute block on the fourth consecutive failure", async () => {
     const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    const throttle = createCredentialThrottle({
+    const throttle = createCredentialThrottleService({
       hmacSecret: TEST_HMAC_SECRET,
-      repository: store.legacy,
+      repo: store.repositories.credentialThrottle(db),
       log,
       now: () => NOW,
     });
@@ -154,5 +159,22 @@ describe("reset", () => {
     });
     await makeThrottle().reset(KEY);
     expect(store.throttle.has(KEY_HASH)).toBe(false);
+  });
+});
+
+describe("purgeStale", () => {
+  it("drops trails whose last failure is before the cutoff", async () => {
+    const staleHash = hashThrottleKey(TEST_HMAC_SECRET, "stale@gmail.com");
+    store.throttle.set(KEY_HASH, { failedCount: 1, lastFailedAt: NOW });
+    store.throttle.set(staleHash, {
+      failedCount: 1,
+      lastFailedAt: new Date(NOW.getTime() - 1000),
+    });
+
+    const purgedCount = await makeThrottle().purgeStale(NOW);
+
+    expect(purgedCount).toBe(1);
+    expect(store.throttle.has(staleHash)).toBe(false);
+    expect(store.throttle.has(KEY_HASH)).toBe(true);
   });
 });

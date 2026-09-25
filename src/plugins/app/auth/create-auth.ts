@@ -1,8 +1,8 @@
 import type { FastifyBaseLogger } from "fastify";
 import type { TtlPolicy } from "../../../lib/ttl.js";
+import type { CredentialThrottleService } from "../../../modules/credential-throttle/service.js";
 import type { EmailSender } from "../../email/sender.js";
 import type { CheckPwnedPassword } from "../../pwned-password/checker.js";
-import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
 import type { SessionRepository } from "../sessions/repository.js";
 import { createChangePasswordService } from "./change-password.js";
 import { createForgotPasswordService } from "./forgot-password.js";
@@ -19,7 +19,7 @@ export interface AuthDeps {
   sessionRepository: SessionRepository;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
-  credentialThrottle: CredentialThrottle;
+  credentialThrottle: CredentialThrottleService;
   ttl: TtlPolicy;
   hmacSecret: string;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;

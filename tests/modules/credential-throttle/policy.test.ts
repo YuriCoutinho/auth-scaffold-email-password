@@ -3,7 +3,7 @@ import {
   blockedUntil,
   blockSecondsForFailures,
   THROTTLE_MAX_BLOCK_SECONDS,
-} from "../../src/lib/throttle.js";
+} from "../../../src/modules/credential-throttle/policy.js";
 
 describe("blockSecondsForFailures", () => {
   it("lets the first three consecutive failures through with no block", () => {

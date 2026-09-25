@@ -51,7 +51,7 @@ type AppOptionsOverrides = Partial<AppOptions> & {
 export function makeAppOptions(
   overrides: AppOptionsOverrides = {},
 ): AppOptions {
-  const { store: storeOverride, ...rest } = overrides;
+  const { store: storeOverride, repositories, ...rest } = overrides;
   const store = storeOverride ?? createInMemoryStore();
   return {
     config: TEST_ENV,
@@ -62,9 +62,10 @@ export function makeAppOptions(
     transaction: store.transaction,
     authRepository: store.legacy,
     sessionRepository: store.legacy,
-    credentialThrottleRepository: store.legacy,
-    repositories: store.repositories,
     ...rest,
+    // Merged rather than replaced, so a test overriding only one factory
+    // keeps the store backing every other module it did not mean to touch.
+    repositories: { ...store.repositories, ...repositories },
     rateLimit: { ...TEST_RATE_LIMITS, ...overrides.rateLimit },
   };
 }

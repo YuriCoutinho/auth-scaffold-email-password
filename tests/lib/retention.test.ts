@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { retentionCutoffs } from "../../src/lib/retention.js";
-import { THROTTLE_MAX_BLOCK_SECONDS } from "../../src/lib/throttle.js";
+import { THROTTLE_MAX_BLOCK_SECONDS } from "../../src/modules/credential-throttle/policy.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
 

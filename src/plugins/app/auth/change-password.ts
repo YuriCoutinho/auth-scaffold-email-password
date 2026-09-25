@@ -1,9 +1,9 @@
 import type { FastifyBaseLogger } from "fastify";
 import { hashPassword, verifyPassword } from "../../../lib/password.js";
+import type { CredentialThrottleService } from "../../../modules/credential-throttle/service.js";
 import { sendPasswordChanged } from "../../../modules/users/emails/password-changed.js";
 import type { EmailSender } from "../../email/sender.js";
 import type { CheckPwnedPassword } from "../../pwned-password/checker.js";
-import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
 import type { AuthRepository } from "./repository.js";
 
 export type ChangePasswordResult =
@@ -24,7 +24,7 @@ interface ChangePasswordServiceDeps {
   repo: Pick<AuthRepository, "findUserById" | "changePassword">;
   emailSender: EmailSender;
   checkPwnedPassword: CheckPwnedPassword;
-  throttle: CredentialThrottle;
+  throttle: CredentialThrottleService;
   log?: Pick<FastifyBaseLogger, "info" | "warn" | "error">;
 }
 
