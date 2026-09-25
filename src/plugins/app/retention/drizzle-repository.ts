@@ -1,4 +1,4 @@
-import { and, eq, isNull, lt, notExists, or } from "drizzle-orm";
+import { and, eq, isNull, lt, notExists } from "drizzle-orm";
 import type { Database } from "../../../db/client.js";
 import {
   credentialThrottle,
@@ -15,24 +15,15 @@ export function createDrizzleRetentionRepository(
     async purge(cutoffs) {
       const deletedSessions = await db
         .delete(sessions)
-        .where(lt(sessions.createdAt, cutoffs.sessionsCreatedBefore))
+        .where(lt(sessions.expiresAt, cutoffs.sessionsExpiredBefore))
         .returning({ id: sessions.id });
 
       const deletedCodes = await db
         .delete(verificationCodes)
         .where(
-          or(
-            and(
-              eq(verificationCodes.purpose, "signup"),
-              lt(verificationCodes.issuedAt, cutoffs.signupCodesIssuedBefore),
-            ),
-            and(
-              eq(verificationCodes.purpose, "password_reset"),
-              lt(
-                verificationCodes.issuedAt,
-                cutoffs.passwordResetCodesIssuedBefore,
-              ),
-            ),
+          lt(
+            verificationCodes.expiresAt,
+            cutoffs.verificationCodesExpiredBefore,
           ),
         )
         .returning({ userId: verificationCodes.userId });

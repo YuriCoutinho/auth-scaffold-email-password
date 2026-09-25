@@ -3,7 +3,6 @@ import {
   DEFAULT_TTL,
   expiresAt,
   hasExpired,
-  issuedAfter,
   resolveTtl,
 } from "../../src/lib/ttl.js";
 
@@ -52,12 +51,5 @@ describe("hasExpired", () => {
 
   it("is true exactly at the expiry", () => {
     expect(hasExpired(NOW, NOW)).toBe(true);
-  });
-});
-
-describe("issuedAfter", () => {
-  it("returns the oldest issue instant still valid at now", () => {
-    const cutoff = issuedAfter(60, NOW);
-    expect(cutoff).toEqual(new Date("2026-09-24T11:59:00Z"));
   });
 });

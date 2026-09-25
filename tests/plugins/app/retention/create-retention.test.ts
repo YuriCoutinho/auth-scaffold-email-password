@@ -36,7 +36,7 @@ describe("sweep", () => {
     );
     expect(deps.repository.purge).toHaveBeenCalledWith(
       expect.objectContaining({
-        signupCodesIssuedBefore: new Date(NOW.getTime() - 300_000),
+        unverifiedUsersCreatedBefore: new Date(NOW.getTime() - 300_000),
       }),
     );
   });

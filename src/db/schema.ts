@@ -70,7 +70,6 @@ export const verificationCodes = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.purpose] }),
-    index("verification_codes_issued_at_idx").on(table.issuedAt),
     index("verification_codes_expires_at_idx").on(table.expiresAt),
     check(
       "verification_codes_purpose_check",
@@ -97,7 +96,6 @@ export const sessions = pgTable(
   },
   (table) => [
     index("sessions_user_id_idx").on(table.userId),
-    index("sessions_created_at_idx").on(table.createdAt),
     index("sessions_expires_at_idx").on(table.expiresAt),
   ],
 );

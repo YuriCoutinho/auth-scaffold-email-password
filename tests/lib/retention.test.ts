@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CODE_GRACE_SECONDS,
   RETENTION_MULTIPLIER,
   retentionCutoffs,
   SESSION_GRACE_SECONDS,
@@ -19,21 +20,22 @@ function secondsAgo(seconds: number): Date {
 }
 
 describe("retentionCutoffs", () => {
-  it("keeps sessions one day past their ttl", () => {
+  it("keeps sessions one day past their expiry", () => {
     expect(SESSION_GRACE_SECONDS).toBe(24 * 60 * 60);
-    expect(retentionCutoffs(TTL, NOW).sessionsCreatedBefore).toEqual(
-      secondsAgo(1000 + 24 * 60 * 60),
+    expect(retentionCutoffs(TTL, NOW).sessionsExpiredBefore).toEqual(
+      secondsAgo(24 * 60 * 60),
     );
   });
 
-  it("keeps codes three times their own ttl", () => {
-    expect(RETENTION_MULTIPLIER).toBe(3);
-    const cutoffs = retentionCutoffs(TTL, NOW);
-    expect(cutoffs.signupCodesIssuedBefore).toEqual(secondsAgo(300));
-    expect(cutoffs.passwordResetCodesIssuedBefore).toEqual(secondsAgo(600));
+  it("keeps codes thirty minutes past their expiry, whatever the purpose", () => {
+    expect(CODE_GRACE_SECONDS).toBe(30 * 60);
+    expect(retentionCutoffs(TTL, NOW).verificationCodesExpiredBefore).toEqual(
+      secondsAgo(30 * 60),
+    );
   });
 
   it("keeps unverified users three times the signup code ttl", () => {
+    expect(RETENTION_MULTIPLIER).toBe(3);
     expect(retentionCutoffs(TTL, NOW).unverifiedUsersCreatedBefore).toEqual(
       secondsAgo(300),
     );

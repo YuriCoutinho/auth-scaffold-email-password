@@ -1,5 +1,5 @@
 import { THROTTLE_MAX_BLOCK_SECONDS } from "./throttle.js";
-import { issuedAfter, type TtlPolicy } from "./ttl.js";
+import type { TtlPolicy } from "./ttl.js";
 
 export const RETENTION_INTERVAL_SECONDS = 60 * 60;
 
@@ -7,37 +7,35 @@ export const RETENTION_INTERVAL_SECONDS = 60 * 60;
 // the sweep from racing a request that read the row an instant before.
 export const SESSION_GRACE_SECONDS = 24 * 60 * 60;
 
-// Codes, unconfirmed accounts and throttle trails outlive their validity by
-// this factor, which leaves room to count them after they stop working.
+// Codes outlive their expiry by this much, which leaves room to count them
+// after they stop working.
+export const CODE_GRACE_SECONDS = 30 * 60;
+
+// Unconfirmed accounts and throttle trails outlive their window by this
+// factor, for the same reason.
 export const RETENTION_MULTIPLIER = 3;
 
 export interface RetentionCutoffs {
-  sessionsCreatedBefore: Date;
-  signupCodesIssuedBefore: Date;
-  passwordResetCodesIssuedBefore: Date;
+  sessionsExpiredBefore: Date;
+  verificationCodesExpiredBefore: Date;
   unverifiedUsersCreatedBefore: Date;
   throttleFailedBefore: Date;
 }
 
+const secondsBefore = (now: Date, seconds: number) =>
+  new Date(now.getTime() - seconds * 1000);
+
 export function retentionCutoffs(ttl: TtlPolicy, now: Date): RetentionCutoffs {
-  const signupCutoff = issuedAfter(
-    ttl.signupCodeSeconds * RETENTION_MULTIPLIER,
-    now,
-  );
   return {
-    sessionsCreatedBefore: issuedAfter(
-      ttl.sessionSeconds + SESSION_GRACE_SECONDS,
+    sessionsExpiredBefore: secondsBefore(now, SESSION_GRACE_SECONDS),
+    verificationCodesExpiredBefore: secondsBefore(now, CODE_GRACE_SECONDS),
+    unverifiedUsersCreatedBefore: secondsBefore(
       now,
+      ttl.signupCodeSeconds * RETENTION_MULTIPLIER,
     ),
-    signupCodesIssuedBefore: signupCutoff,
-    passwordResetCodesIssuedBefore: issuedAfter(
-      ttl.passwordResetCodeSeconds * RETENTION_MULTIPLIER,
+    throttleFailedBefore: secondsBefore(
       now,
-    ),
-    unverifiedUsersCreatedBefore: signupCutoff,
-    throttleFailedBefore: issuedAfter(
       THROTTLE_MAX_BLOCK_SECONDS * RETENTION_MULTIPLIER,
-      now,
     ),
   };
 }
