@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sessionParamsSchema } from "../../src/schemas/sessions.js";
+import { sessionParamsSchema } from "../../../src/features/revoke-session/schema.js";
 
 describe("sessionParamsSchema", () => {
   it("accepts a uuid", () => {
