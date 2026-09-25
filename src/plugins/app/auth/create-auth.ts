@@ -4,7 +4,6 @@ import type { EmailSender } from "../../email/sender.js";
 import type { CheckPwnedPassword } from "../../pwned-password/checker.js";
 import type { CredentialThrottle } from "../credential-throttle/create-credential-throttle.js";
 import type { SessionRepository } from "../sessions/repository.js";
-import { createAuthenticateService } from "./authenticate.js";
 import { createChangePasswordService } from "./change-password.js";
 import { createForgotPasswordService } from "./forgot-password.js";
 import { createLoginService } from "./login.js";
@@ -68,10 +67,6 @@ export function createAuth(deps: AuthDeps) {
       createSession: deps.sessionRepository.createSession,
     },
   });
-  const { authenticate } = createAuthenticateService({
-    ...shared,
-    repo: deps.sessionRepository,
-  });
   const { changePassword } = createChangePasswordService({
     ...shared,
     emailSender: deps.emailSender,
@@ -86,7 +81,6 @@ export function createAuth(deps: AuthDeps) {
     resendCode,
     verifyCode,
     login,
-    authenticate,
     changePassword,
     // Only the public half of the record: the password hash stops here.
     async currentUser(id: string) {

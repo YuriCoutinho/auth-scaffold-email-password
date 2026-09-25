@@ -24,7 +24,7 @@ const routes: FastifyPluginAsyncZod<AppOptions> = async (app, opts) => {
       },
     },
     async (request, reply) => {
-      await app.sessions.logout(request.cookies[cookies.session.name]);
+      await app.legacySessions.logout(request.cookies[cookies.session.name]);
 
       // The full cookie options, not just the path: a deletion cookie without
       // Secure does not overwrite a Secure one in every browser, and the

@@ -1,11 +1,16 @@
-import type { FastifyInstance, RouteHandlerMethod } from "fastify";
+import type {
+  FastifyInstance,
+  FastifyRequest,
+  RouteHandlerMethod,
+} from "fastify";
 import { describe, expect, it, vi } from "vitest";
-import { buildApp } from "../../../src/app.js";
-import { cookiePolicy } from "../../../src/lib/cookies.js";
-import { hashSessionToken } from "../../../src/lib/token-hash.js";
-import { DEFAULT_TTL } from "../../../src/lib/ttl.js";
-import { makeAppOptions } from "../../helpers/app-options.js";
-import { createInMemoryStore } from "../../helpers/in-memory-store.js";
+import { buildApp } from "../../src/app.js";
+import { requireAuth } from "../../src/http/authenticate.js";
+import { cookiePolicy } from "../../src/lib/cookies.js";
+import { hashSessionToken } from "../../src/lib/token-hash.js";
+import { DEFAULT_TTL } from "../../src/lib/ttl.js";
+import { makeAppOptions } from "../helpers/app-options.js";
+import { createInMemoryStore } from "../helpers/in-memory-store.js";
 
 const TOKEN = "a-session-token";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -179,5 +184,25 @@ describe("authenticate hook", () => {
     expect(response.statusCode).toBe(401);
     expect(handler).not.toHaveBeenCalled();
     await app.close();
+  });
+});
+
+describe("requireAuth", () => {
+  it("throws when the request carries no user or session", () => {
+    const request = { user: null, session: null } as FastifyRequest;
+    expect(() => requireAuth(request)).toThrow(
+      "Route reached without the authenticate hook",
+    );
+  });
+
+  it("returns the user id and the session id when both are set", () => {
+    const request = {
+      user: { id: USER_ID },
+      session: { id: SESSION_ID },
+    } as FastifyRequest;
+    expect(requireAuth(request)).toEqual({
+      userId: USER_ID,
+      sessionId: SESSION_ID,
+    });
   });
 });

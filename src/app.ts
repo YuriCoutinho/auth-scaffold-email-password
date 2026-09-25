@@ -11,6 +11,8 @@ import {
   type ZodTypeProvider,
 } from "fastify-type-provider-zod";
 import type { AppOptions } from "./app-options.js";
+import authenticate from "./http/authenticate.js";
+import sessionsModule from "./modules/sessions/index.js";
 import database from "./plugins/database.js";
 import email from "./plugins/email/index.js";
 import errorHandler from "./plugins/error-handler.js";
@@ -38,6 +40,9 @@ const appPlugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
   await fastify.register(errorHandler);
   await fastify.register(email, opts);
   await fastify.register(pwnedPassword, opts);
+
+  await fastify.register(sessionsModule, opts);
+  await fastify.register(authenticate, opts);
 
   // Temporary: emptied feature by feature, removed in the last task.
   const load = (dir: string) =>

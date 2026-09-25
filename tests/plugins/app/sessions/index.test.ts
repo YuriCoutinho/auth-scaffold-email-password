@@ -5,17 +5,17 @@ import sessionsPlugin from "../../../../src/plugins/app/sessions/index.js";
 import databasePlugin from "../../../../src/plugins/database.js";
 import { makeAppOptions, TEST_ENV } from "../../../helpers/app-options.js";
 
-describe("sessions plugin", () => {
-  it("decorates fastify.sessions built from the app options", async () => {
+describe("legacy sessions plugin", () => {
+  it("decorates fastify.legacySessions built from the app options", async () => {
     const opts = makeAppOptions();
     const app = Fastify();
     await app.register(databasePlugin, opts);
     await app.register(sessionsPlugin, opts);
     await app.ready();
 
-    expect(typeof app.sessions.logout).toBe("function");
-    expect(typeof app.sessions.logoutAll).toBe("function");
-    expect(typeof app.sessions.listSessions).toBe("function");
+    expect(typeof app.legacySessions.logout).toBe("function");
+    expect(typeof app.legacySessions.logoutAll).toBe("function");
+    expect(typeof app.legacySessions.listSessions).toBe("function");
     await app.close();
   });
 
@@ -26,7 +26,7 @@ describe("sessions plugin", () => {
     await app.register(sessionsPlugin, opts);
     await app.ready();
 
-    expect(typeof app.sessions.logout).toBe("function");
+    expect(typeof app.legacySessions.logout).toBe("function");
     await app.close();
   });
 });

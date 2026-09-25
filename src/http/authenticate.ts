@@ -1,8 +1,12 @@
-import type { FastifyPluginAsync, onRequestAsyncHookHandler } from "fastify";
+import type {
+  FastifyPluginAsync,
+  FastifyRequest,
+  onRequestAsyncHookHandler,
+} from "fastify";
 import fp from "fastify-plugin";
-import type { AppOptions } from "../../app-options.js";
-import { cookiePolicy } from "../../lib/cookies.js";
-import { resolveTtl } from "../../lib/ttl.js";
+import type { AppOptions } from "../app-options.js";
+import { cookiePolicy } from "../lib/cookies.js";
+import { resolveTtl } from "../lib/ttl.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -27,7 +31,7 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
   fastify.decorateRequest("session", null);
 
   fastify.decorate("authenticate", async (request, reply) => {
-    const result = await fastify.auth.authenticate(
+    const result = await fastify.sessions.authenticate(
       request.cookies[sessionCookie.name],
     );
 
@@ -40,4 +44,16 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
   });
 };
 
-export default fp(plugin, { name: "authenticate", dependencies: ["auth"] });
+export default fp(plugin, { name: "authenticate", dependencies: ["sessions"] });
+
+// The routes declare the hook, so a missing user here means the hook was
+// dropped from the route, not that the caller is unauthorized.
+export function requireAuth(request: FastifyRequest): {
+  userId: string;
+  sessionId: string;
+} {
+  if (!request.user || !request.session) {
+    throw new Error("Route reached without the authenticate hook");
+  }
+  return { userId: request.user.id, sessionId: request.session.id };
+}

@@ -63,6 +63,7 @@ export function makeAppOptions(
     authRepository: store.legacy,
     sessionRepository: store.legacy,
     credentialThrottleRepository: store.legacy,
+    repositories: store.repositories,
     ...rest,
     rateLimit: { ...TEST_RATE_LIMITS, ...overrides.rateLimit },
   };

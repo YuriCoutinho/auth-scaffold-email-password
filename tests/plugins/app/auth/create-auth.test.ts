@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { hashSessionToken } from "../../../../src/lib/token-hash.js";
 import { DEFAULT_TTL, type TtlPolicy } from "../../../../src/lib/ttl.js";
 import { createAuth } from "../../../../src/plugins/app/auth/create-auth.js";
 import { createCredentialThrottle } from "../../../../src/plugins/app/credential-throttle/create-credential-throttle.js";
@@ -51,7 +52,6 @@ describe("createAuth", () => {
     expect((await auth.login("nobody@example.com", "x", null)).outcome).toBe(
       "invalid",
     );
-    expect((await auth.authenticate(undefined)).outcome).toBe("invalid");
     expect(
       (await auth.forgotPassword("nobody@example.com")).sessionToken,
     ).toBeTruthy();
@@ -84,8 +84,12 @@ describe("createAuth", () => {
     const verified = await auth.verifyCode(signup.sessionToken, code, null);
     if (verified.outcome !== "verified") throw new Error("expected verified");
 
-    const session = await auth.authenticate(verified.sessionToken);
-    expect(session.outcome).toBe("authenticated");
+    const tokenHash = hashSessionToken(verified.sessionToken);
+    expect(
+      [...store.sessions.values()].some(
+        (session) => session.tokenHash === tokenHash,
+      ),
+    ).toBe(true);
     expect(store.verificationCodes.size).toBe(0);
   });
 

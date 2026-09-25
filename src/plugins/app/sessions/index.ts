@@ -6,13 +6,13 @@ import { createDrizzleSessionRepository } from "./drizzle-repository.js";
 
 declare module "fastify" {
   interface FastifyInstance {
-    sessions: Sessions;
+    legacySessions: Sessions;
   }
 }
 
 const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
   fastify.decorate(
-    "sessions",
+    "legacySessions",
     createSessions({
       repository:
         opts.sessionRepository ?? createDrizzleSessionRepository(fastify.db),
@@ -21,4 +21,7 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
   );
 };
 
-export default fp(plugin, { name: "sessions", dependencies: ["database"] });
+export default fp(plugin, {
+  name: "legacy-sessions",
+  dependencies: ["database"],
+});

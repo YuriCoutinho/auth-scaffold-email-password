@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import type { RepositoryFactories } from "../../src/app-options.js";
 import type { Transaction } from "../../src/db/client.js";
 import { DEFAULT_TTL, expiresAt as expiryFrom } from "../../src/lib/ttl.js";
+import type { SessionsRepository } from "../../src/modules/sessions/repository.js";
 import type {
   AuthRepository,
   ConsumeVerificationCodeInput,
@@ -40,10 +42,6 @@ export interface InMemorySeed {
     Partial<CreateSessionInput> & { userId: string; tokenHash: string }
   >;
 }
-
-// No module has its own repository factory yet: each of tasks 4, 7, 8 and 9
-// adds one entry here as it migrates off the legacy ports.
-type RepositoryFactories = Record<string, never>;
 
 export interface InMemoryStore {
   users: Map<string, UserRecord>;
@@ -345,6 +343,31 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
     },
   };
 
+  // The new-style sessions port shares the legacy implementation over the
+  // same map and adds purgeExpired, which the legacy port never needed.
+  const sessionsRepository: SessionsRepository = {
+    createSession: legacy.createSession,
+    findSessionByTokenHash: legacy.findSessionByTokenHash,
+    deleteSessionByTokenHash: legacy.deleteSessionByTokenHash,
+    deleteUserSessions: legacy.deleteUserSessions,
+    deleteUserSession: legacy.deleteUserSession,
+    listUserSessions: legacy.listUserSessions,
+    async purgeExpired(at) {
+      let purgedCount = 0;
+      for (const [id, session] of sessions) {
+        if (session.expiresAt.getTime() <= at.getTime()) {
+          sessions.delete(id);
+          purgedCount++;
+        }
+      }
+      return purgedCount;
+    },
+  };
+
+  const repositories: RepositoryFactories = {
+    sessions: () => sessionsRepository,
+  };
+
   const cloneState = () => ({
     users: new Map(
       [...users].map(([id, value]) => [id, structuredClone(value)]),
@@ -400,7 +423,7 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
     verificationCodes,
     sessions,
     throttle,
-    repositories: {},
+    repositories,
     transaction,
     legacy,
   };

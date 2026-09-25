@@ -29,7 +29,7 @@ const routes: FastifyPluginAsyncZod = async (app) => {
         throw new Error("Route reached without the authenticate hook");
       }
 
-      await app.sessions.logoutAll({
+      await app.legacySessions.logoutAll({
         userId: request.user.id,
         currentSessionId: request.session.id,
       });
