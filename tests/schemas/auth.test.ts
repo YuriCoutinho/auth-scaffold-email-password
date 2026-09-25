@@ -1,30 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { signupBodySchema } from "../../src/features/signup/schema.js";
 import {
   changePasswordBodySchema,
-  forgotPasswordBodySchema,
   loginBodySchema,
   messageSchema,
   resetPasswordBodySchema,
-  signupBodySchema,
   verifyCodeBodySchema,
 } from "../../src/schemas/auth.js";
 
 describe("auth schemas", () => {
-  it("accepts a valid signup body and rejects a short password", () => {
-    expect(
-      signupBodySchema.safeParse({
-        email: "user@example.com",
-        password: "a perfectly fine passphrase",
-      }).success,
-    ).toBe(true);
-    expect(
-      signupBodySchema.safeParse({
-        email: "user@example.com",
-        password: "short",
-      }).success,
-    ).toBe(false);
-  });
-
   it("requires a non-empty password on login", () => {
     expect(
       loginBodySchema.safeParse({ email: "user@example.com", password: "" })
@@ -94,22 +78,6 @@ describe("changePasswordBodySchema", () => {
         newPassword: weak,
       }).success,
     );
-  });
-});
-
-describe("forgotPasswordBodySchema", () => {
-  it("accepts a valid address and rejects a malformed one", () => {
-    expect(
-      forgotPasswordBodySchema.safeParse({ email: "user@example.com" }).success,
-    ).toBe(true);
-    expect(
-      forgotPasswordBodySchema.safeParse({ email: "not-an-email" }).success,
-    ).toBe(false);
-    expect(
-      forgotPasswordBodySchema.safeParse({
-        email: `${"a".repeat(250)}@example.com`,
-      }).success,
-    ).toBe(false);
   });
 });
 

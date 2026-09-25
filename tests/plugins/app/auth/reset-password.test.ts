@@ -75,8 +75,6 @@ async function setup(
   const codes = createVerificationCodes({
     hmacSecret: TEST_HMAC_SECRET,
     repo,
-    emailSender,
-    ttl: DEFAULT_TTL,
     log,
     now: () => NOW,
   });

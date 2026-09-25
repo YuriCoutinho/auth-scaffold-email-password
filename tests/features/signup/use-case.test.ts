@@ -1,28 +1,31 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Executor } from "../../../src/db/client.js";
+import { createSignup } from "../../../src/features/signup/use-case.js";
 import {
   hashOtpCode,
   hashVerificationToken,
-} from "../../../../src/lib/token-hash.js";
-import { DEFAULT_TTL } from "../../../../src/lib/ttl.js";
-import { createSignupService } from "../../../../src/plugins/app/auth/signup.js";
-import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
-import { createVerifyCodeService } from "../../../../src/plugins/app/auth/verify-code.js";
-import { FakeEmailSender } from "../../../../src/plugins/email/drivers/fake.js";
-import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
+} from "../../../src/lib/token-hash.js";
+import { DEFAULT_TTL, type TtlPolicy } from "../../../src/lib/ttl.js";
+import { createOtpService } from "../../../src/modules/otp/service.js";
+import { createUsersService } from "../../../src/modules/users/service.js";
+import { FakeEmailSender } from "../../../src/plugins/email/drivers/fake.js";
+import type { EmailSender } from "../../../src/plugins/email/sender.js";
+import type { TransactionRunner } from "../../../src/plugins/transaction.js";
+import { TEST_HMAC_SECRET } from "../../helpers/app-options.js";
 import {
   createInMemoryStore,
   type InMemorySeed,
-} from "../../../helpers/in-memory-store.js";
+} from "../../helpers/in-memory-store.js";
 
 // A spy over the real implementation: every test still hashes for real, and
 // the timing cases can assert argon2 ran on each branch.
-vi.mock("../../../../src/lib/password.js", async (importOriginal) => {
+vi.mock("../../../src/lib/password.js", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("../../../../src/lib/password.js")>();
+    await importOriginal<typeof import("../../../src/lib/password.js")>();
   return { ...actual, hashPassword: vi.fn(actual.hashPassword) };
 });
 const { hashPassword, verifyPassword } = await import(
-  "../../../../src/lib/password.js"
+  "../../../src/lib/password.js"
 );
 const hashPasswordMock = vi.mocked(hashPassword);
 
@@ -32,46 +35,63 @@ const PASSWORD = "a perfectly fine passphrase";
 const OTHER_PASSWORD = "another perfectly fine passphrase";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 
+// The store's repository factories ignore the executor they are handed, so
+// any value satisfying the type stands in for a real connection.
+const db = {} as Executor;
+
 beforeEach(() => {
   hashPasswordMock.mockClear();
 });
 
-function setup(seed: InMemorySeed = {}) {
+function setup(
+  seed: InMemorySeed = {},
+  options: {
+    emailSender?: EmailSender;
+    ttl?: TtlPolicy;
+    transaction?: (
+      store: ReturnType<typeof createInMemoryStore>,
+    ) => TransactionRunner;
+  } = {},
+) {
   const store = createInMemoryStore(seed);
-  const repo = store.legacy;
-  const emailSender = new FakeEmailSender();
+  const fake = new FakeEmailSender();
+  const emailSender = options.emailSender ?? fake;
   const send = vi.spyOn(emailSender, "send");
   const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const checkPwnedPassword = vi.fn().mockResolvedValue(false);
-  const codes = createVerificationCodes({
-    hmacSecret: TEST_HMAC_SECRET,
-    repo,
-    emailSender,
-    ttl: DEFAULT_TTL,
-    log,
-    now: () => NOW,
-  });
-  const { signup } = createSignupService({
-    repo,
-    codes,
+  const buildUsers = (executor: Executor) =>
+    createUsersService({
+      repo: store.repositories.users(executor),
+      emailSender,
+      log,
+    });
+  const buildOtp = (executor: Executor) =>
+    createOtpService({
+      repo: store.repositories.otp(executor),
+      emailSender,
+      ttl: options.ttl ?? DEFAULT_TTL,
+      hmacSecret: TEST_HMAC_SECRET,
+      log,
+      now: () => NOW,
+    });
+  const users = { ...buildUsers(db), inTx: buildUsers };
+  const otp = { ...buildOtp(db), inTx: buildOtp };
+  const signup = createSignup({
+    transaction: options.transaction?.(store) ?? store.transaction,
+    users,
+    otp,
     checkPwnedPassword,
     log,
   });
-  const { verifyCode } = createVerifyCodeService({
-    repo,
-    sessionTtlSeconds: DEFAULT_TTL.sessionSeconds,
-    codes,
-    now: () => NOW,
-  });
   return {
     store,
-    repo,
-    emailSender,
+    users,
+    otp,
+    fake,
     send,
     log,
     checkPwnedPassword,
     signup,
-    verifyCode,
   };
 }
 
@@ -85,7 +105,7 @@ async function acceptedToken(
 const userByEmail = (store: ReturnType<typeof setup>["store"], email: string) =>
   [...store.users.values()].find((user) => user.email === email);
 
-describe("signup service", () => {
+describe("signup", () => {
   it("rejects a pwned password without writing or hashing anything", async () => {
     const { store, send, checkPwnedPassword, signup } = setup();
     checkPwnedPassword.mockResolvedValue(true);
@@ -93,13 +113,14 @@ describe("signup service", () => {
     expect(await signup(EMAIL, PASSWORD)).toEqual({
       outcome: "pwned-password",
     });
+    expect(hashPasswordMock).not.toHaveBeenCalled();
     expect(store.users.size).toBe(0);
     expect(store.verificationCodes.size).toBe(0);
     expect(send).not.toHaveBeenCalled();
   });
 
   it("creates an unconfirmed account with the hashed password and emails its code", async () => {
-    const { store, repo, emailSender, signup } = setup();
+    const { store, fake, signup } = setup();
 
     const token = await acceptedToken(await signup(EMAIL, PASSWORD));
 
@@ -108,14 +129,17 @@ describe("signup service", () => {
     expect(user?.passwordHash).not.toContain(PASSWORD);
     expect(await verifyPassword(user?.passwordHash ?? "", PASSWORD)).toBe(true);
 
-    const code = await repo.findVerificationCodeByTokenHash(
-      "signup",
-      hashVerificationToken(token),
+    const code = [...store.verificationCodes.values()].find(
+      (candidate) => candidate.tokenHash === hashVerificationToken(token),
     );
-    expect(code).toMatchObject({ userId: user?.id, codeSendCount: 1 });
-    await vi.waitFor(() => expect(emailSender.sent).toHaveLength(1));
-    expect(emailSender.sent[0]?.to).toBe(EMAIL);
-    const sentCode = emailSender.sent[0]?.subject.match(/\d{6}/)?.[0] ?? "";
+    expect(code).toMatchObject({
+      userId: user?.id,
+      purpose: "signup",
+      codeSendCount: 1,
+    });
+    await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
+    expect(fake.sent[0]?.to).toBe(EMAIL);
+    const sentCode = fake.sent[0]?.subject.match(/\d{6}/)?.[0] ?? "";
     expect(code?.codeHash).toBe(hashOtpCode(TEST_HMAC_SECRET, sentCode));
   });
 
@@ -147,7 +171,7 @@ describe("signup service", () => {
     expect(hashPasswordMock).toHaveBeenCalledWith(PASSWORD);
   });
 
-  it("returns a throwaway token and writes nothing for a confirmed address", async () => {
+  it("returns a throwaway token and writes or sends nothing for a confirmed address", async () => {
     const { store, send, signup } = setup({
       users: [{ id: USER_ID, email: EMAIL, passwordHash: "owner-hash" }],
     });
@@ -166,11 +190,11 @@ describe("signup service", () => {
   });
 
   it("lets the latest signup win: the password is replaced and the old token no longer confirms", async () => {
-    const { store, emailSender, signup, verifyCode } = setup();
+    const { store, otp, fake, signup } = setup();
 
     const attackerToken = await acceptedToken(await signup(EMAIL, PASSWORD));
-    await vi.waitFor(() => expect(emailSender.sent).toHaveLength(1));
-    const code = emailSender.sent[0]?.subject.match(/\d{6}/)?.[0] ?? "";
+    await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
+    const code = fake.sent[0]?.subject.match(/\d{6}/)?.[0] ?? "";
     const ownerToken = await acceptedToken(await signup(EMAIL, OTHER_PASSWORD));
 
     const user = userByEmail(store, EMAIL);
@@ -182,31 +206,55 @@ describe("signup service", () => {
     );
     expect(store.users.size).toBe(1);
 
-    expect(await verifyCode(attackerToken, code, null)).toEqual({
+    expect(await otp.verify("signup", attackerToken, code)).toEqual({
       outcome: "invalid",
     });
     expect(userByEmail(store, EMAIL)?.emailVerifiedAt).toBeNull();
-    expect(await verifyCode(ownerToken, code, null)).toMatchObject({
-      outcome: "verified",
+    expect(await otp.verify("signup", ownerToken, code)).toMatchObject({
+      outcome: "valid",
+      code: { userId: user?.id },
     });
   });
 
   it("does not send a second code for a signup repeated inside the cooldown", async () => {
-    const { emailSender, send, signup } = setup();
+    const { fake, send, signup } = setup();
 
     await signup(EMAIL, PASSWORD);
     await signup(EMAIL, OTHER_PASSWORD);
 
-    await vi.waitFor(() => expect(emailSender.sent).toHaveLength(1));
+    await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
     expect(send).toHaveBeenCalledOnce();
   });
 
   it("answers like a confirmed address when the account is confirmed between the read and the write", async () => {
-    const { store, repo, send, signup } = setup({
+    const store = createInMemoryStore({
       users: [{ id: USER_ID, email: EMAIL, passwordHash: "owner-hash" }],
     });
-    // The read misses the confirmation that a concurrent verify just landed.
-    repo.findUserByEmail = vi.fn().mockResolvedValue(undefined);
+    const emailSender = new FakeEmailSender();
+    const send = vi.spyOn(emailSender, "send");
+    const buildUsers = (executor: Executor) =>
+      createUsersService({
+        repo: store.repositories.users(executor),
+        emailSender,
+      });
+    const buildOtp = (executor: Executor) =>
+      createOtpService({
+        repo: store.repositories.otp(executor),
+        emailSender,
+        ttl: DEFAULT_TTL,
+        hmacSecret: TEST_HMAC_SECRET,
+        now: () => NOW,
+      });
+    const signup = createSignup({
+      transaction: store.transaction,
+      // The read misses the confirmation that a concurrent verify just landed.
+      users: {
+        findByEmail: vi.fn().mockResolvedValue(undefined),
+        inTx: buildUsers,
+      },
+      otp: { ...buildOtp(db), inTx: buildOtp },
+      checkPwnedPassword: vi.fn().mockResolvedValue(false),
+    });
 
     const token = await acceptedToken(await signup(EMAIL, PASSWORD));
 
@@ -217,26 +265,51 @@ describe("signup service", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("delivers the code only after the transaction resolved", async () => {
+    const events: string[] = [];
+    const { send, signup } = setup(
+      {},
+      {
+        transaction: (store) => async (work) => {
+          const result = await store.transaction(work);
+          events.push("transaction resolved");
+          return result;
+        },
+      },
+    );
+    send.mockImplementation(async () => {
+      events.push("send");
+      return { providerMessageId: "fake-1" };
+    });
+
+    await signup(EMAIL, PASSWORD);
+
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce());
+    expect(events).toEqual(["transaction resolved", "send"]);
+  });
+
   it("still accepts the signup when delivery fails", async () => {
-    const store = createInMemoryStore();
-    const repo = store.legacy;
-    const codes = createVerificationCodes({
-      hmacSecret: TEST_HMAC_SECRET,
-      repo,
-      emailSender: { send: vi.fn().mockRejectedValue(new Error("down")) },
-      ttl: DEFAULT_TTL,
-      now: () => NOW,
-    });
-    const { signup } = createSignupService({
-      repo,
-      codes,
-      checkPwnedPassword: vi.fn().mockResolvedValue(false),
-    });
+    const { store, signup } = setup(
+      {},
+      { emailSender: { send: vi.fn().mockRejectedValue(new Error("down")) } },
+    );
 
     expect((await signup(EMAIL, PASSWORD)).outcome).toBe("accepted");
     await vi.waitFor(() =>
       expect([...store.verificationCodes.values()][0]?.codeSendCount).toBe(0),
     );
+  });
+
+  it("states the configured signup ttl in the email", async () => {
+    const { fake, signup } = setup(
+      {},
+      { ttl: { ...DEFAULT_TTL, signupCodeSeconds: 10 * 60 } },
+    );
+
+    await signup(EMAIL, PASSWORD);
+
+    await vi.waitFor(() => expect(fake.sent).toHaveLength(1));
+    expect(fake.sent[0]?.text).toContain("10 minutes");
   });
 
   it("logs the signup start with the user id and never the email", async () => {

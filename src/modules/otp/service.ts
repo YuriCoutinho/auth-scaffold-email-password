@@ -185,7 +185,7 @@ export function createOtpService(deps: OtpServiceDeps) {
     // that stayed the same across calls would answer, in two requests,
     // whether the address has an account. A code already in the mailbox keeps
     // working because its validity lives in the code, not in the token.
-    // Runs inside the caller's transaction, so nothing is sent from here.
+    // Never sends: the caller dispatches once its transaction commits.
     async issue(
       owner: { id: string; email: string },
       purpose: VerificationPurpose,

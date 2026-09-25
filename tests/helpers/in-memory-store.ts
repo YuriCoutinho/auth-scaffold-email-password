@@ -171,25 +171,6 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
       return toUserRecord(users.get(id));
     },
 
-    async startSignup(user, code) {
-      const existing = findUserByEmail(user.email);
-      if (existing?.emailVerifiedAt) {
-        return null;
-      }
-      const userId = existing?.id ?? user.id;
-      if (existing) {
-        existing.passwordHash = user.passwordHash;
-      } else {
-        users.set(userId, { ...user, emailVerifiedAt: null });
-      }
-      verificationCodes.set(codeKey({ userId, purpose: "signup" }), {
-        userId,
-        purpose: "signup",
-        ...code,
-      });
-      return { userId };
-    },
-
     async findVerificationCode(key) {
       return withOwner(verificationCodes.get(codeKey(key)));
     },
@@ -349,9 +330,8 @@ export function createInMemoryStore(seed: InMemorySeed = {}): InMemoryStore {
     },
   };
 
-  // The new-style users port shares the legacy user rows and adds the shape
-  // task 7 needs, without the code-writing side of legacy.startSignup, which
-  // stays with the otp module until it moves off the legacy repository too.
+  // The new-style users port shares the legacy user rows and adds the writes
+  // the users module owns, which the legacy port never exposed on their own.
   const usersRepository: UsersRepository = {
     async findByEmail(email) {
       return toUserRecord(findUserByEmail(email));

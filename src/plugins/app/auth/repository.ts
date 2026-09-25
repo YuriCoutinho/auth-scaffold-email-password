@@ -11,12 +11,6 @@ export interface UserRecord {
   emailVerifiedAt: Date | null;
 }
 
-export interface UpsertUnverifiedUserInput {
-  id: string;
-  email: string;
-  passwordHash: string;
-}
-
 export interface VerificationCodeState {
   codeHash: string;
   codeAttempts: number;
@@ -76,14 +70,6 @@ export interface ResetPasswordInput extends ConsumeVerificationCodeInput {
 export interface AuthRepository {
   findUserByEmail(email: string): Promise<UserRecord | undefined>;
   findUserById(id: string): Promise<UserRecord | undefined>;
-  // Creates the account unconfirmed, or replaces the password of one still
-  // unconfirmed, and saves its signup code in the same transaction so a
-  // concurrent verification never pairs the new password with an old token.
-  // Null when the address belongs to a confirmed account.
-  startSignup(
-    user: UpsertUnverifiedUserInput,
-    code: Omit<SaveVerificationCodeInput, "userId" | "purpose">,
-  ): Promise<{ userId: string } | null>;
   findVerificationCode(
     key: VerificationCodeKey,
   ): Promise<VerificationCodeRecord | undefined>;

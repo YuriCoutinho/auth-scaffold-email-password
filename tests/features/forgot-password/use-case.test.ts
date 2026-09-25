@@ -1,16 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
-import { hashVerificationToken } from "../../../../src/lib/token-hash.js";
-import { DEFAULT_TTL } from "../../../../src/lib/ttl.js";
-import { createForgotPasswordService } from "../../../../src/plugins/app/auth/forgot-password.js";
-import { createVerificationCodes } from "../../../../src/plugins/app/auth/verification-codes.js";
-import { FakeEmailSender } from "../../../../src/plugins/email/drivers/fake.js";
-import type { EmailSender } from "../../../../src/plugins/email/sender.js";
-import { TEST_HMAC_SECRET } from "../../../helpers/app-options.js";
-import { createInMemoryStore } from "../../../helpers/in-memory-store.js";
+import type { Executor } from "../../../src/db/client.js";
+import { createForgotPassword } from "../../../src/features/forgot-password/use-case.js";
+import { hashVerificationToken } from "../../../src/lib/token-hash.js";
+import { DEFAULT_TTL } from "../../../src/lib/ttl.js";
+import { createOtpService } from "../../../src/modules/otp/service.js";
+import { createUsersService } from "../../../src/modules/users/service.js";
+import { FakeEmailSender } from "../../../src/plugins/email/drivers/fake.js";
+import type { EmailSender } from "../../../src/plugins/email/sender.js";
+import { TEST_HMAC_SECRET } from "../../helpers/app-options.js";
+import { createInMemoryStore } from "../../helpers/in-memory-store.js";
 
 const NOW = new Date("2026-09-24T12:00:00Z");
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const EMAIL = "reset@example.com";
+
+// The store's repository factories ignore the executor they are handed, so
+// any value satisfying the type stands in for a real connection.
+const db = {} as Executor;
 
 function setup(
   options: { emailVerifiedAt?: Date | null; emailSender?: EmailSender } = {},
@@ -27,26 +33,28 @@ function setup(
       },
     ],
   });
-  const repo = store.legacy;
   const fake = new FakeEmailSender();
   const emailSender = options.emailSender ?? fake;
   // Spied so the "nothing was sent" cases can assert synchronously, instead of
   // reading a list that a detached send may not have filled yet.
   const send = vi.spyOn(emailSender, "send");
-  const codes = createVerificationCodes({
-    hmacSecret: TEST_HMAC_SECRET,
-    repo,
+  const users = createUsersService({
+    repo: store.repositories.users(db),
+    emailSender,
+  });
+  const otp = createOtpService({
+    repo: store.repositories.otp(db),
     emailSender,
     ttl: DEFAULT_TTL,
+    hmacSecret: TEST_HMAC_SECRET,
     now: () => NOW,
   });
-  const { forgotPassword } = createForgotPasswordService({ repo, codes });
+  const forgotPassword = createForgotPassword({ users, otp });
   const findByToken = (token: string) =>
-    repo.findVerificationCodeByTokenHash(
-      "password_reset",
-      hashVerificationToken(token),
-    );
-  return { store, repo, fake, send, forgotPassword, findByToken };
+    store.repositories
+      .otp(db)
+      .findByTokenHash("password_reset", hashVerificationToken(token));
+  return { store, fake, send, forgotPassword, findByToken };
 }
 
 describe("forgotPassword", () => {

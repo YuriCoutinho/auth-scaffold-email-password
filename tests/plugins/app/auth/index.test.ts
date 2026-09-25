@@ -19,7 +19,7 @@ describe("auth plugin", () => {
     await app.register(authPlugin, opts);
     await app.ready();
 
-    expect(typeof app.auth.signup).toBe("function");
+    expect(typeof app.auth.login).toBe("function");
     expect(
       (await app.auth.login("nobody@example.com", "x", null)).outcome,
     ).toBe("invalid");
@@ -36,7 +36,7 @@ describe("auth plugin", () => {
     await app.register(authPlugin, opts);
     await app.ready();
 
-    expect(typeof app.auth.signup).toBe("function");
+    expect(typeof app.auth.login).toBe("function");
     await app.close();
   });
 

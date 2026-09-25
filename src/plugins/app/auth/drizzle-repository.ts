@@ -80,35 +80,6 @@ export function createDrizzleAuthRepository(
       return rows[0];
     },
 
-    async startSignup(user, code) {
-      return await db.transaction(async (tx) => {
-        // The WHERE on the conflict branch is what keeps a confirmed account
-        // out of reach: its row is left alone and RETURNING comes back empty.
-        const upserted = await tx
-          .insert(users)
-          .values(user)
-          .onConflictDoUpdate({
-            target: users.email,
-            set: { passwordHash: user.passwordHash },
-            setWhere: isNull(users.emailVerifiedAt),
-          })
-          .returning({ id: users.id });
-        const userId = upserted[0]?.id;
-        if (!userId) {
-          return null;
-        }
-        const values = { userId, purpose: "signup" as const, ...code };
-        await tx
-          .insert(verificationCodes)
-          .values(values)
-          .onConflictDoUpdate({
-            target: [verificationCodes.userId, verificationCodes.purpose],
-            set: code,
-          });
-        return { userId };
-      });
-    },
-
     async findVerificationCode(key) {
       const rows = await db
         .select(verificationCodeColumns)

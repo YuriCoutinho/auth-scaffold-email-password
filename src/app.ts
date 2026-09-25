@@ -11,12 +11,15 @@ import {
   type ZodTypeProvider,
 } from "fastify-type-provider-zod";
 import type { AppOptions } from "./app-options.js";
+import forgotPasswordRoute from "./features/forgot-password/route.js";
 import healthRoute from "./features/health/route.js";
 import listSessionsRoute from "./features/list-sessions/route.js";
 import logoutRoute from "./features/logout/route.js";
 import logoutAllRoute from "./features/logout-all/route.js";
 import meRoute from "./features/me/route.js";
+import resendSignupCodeRoute from "./features/resend-signup-code/route.js";
 import revokeSessionRoute from "./features/revoke-session/route.js";
+import signupRoute from "./features/signup/route.js";
 import authenticate from "./http/authenticate.js";
 import credentialThrottleModule from "./modules/credential-throttle/index.js";
 import otpModule from "./modules/otp/index.js";
@@ -33,6 +36,10 @@ import swagger from "./plugins/external/swagger.js";
 import swaggerUi from "./plugins/external/swagger-ui.js";
 import pwnedPassword from "./plugins/pwned-password/index.js";
 import transaction from "./plugins/transaction.js";
+import changePasswordRoute from "./routes/auth/change-password.js";
+import loginRoute from "./routes/auth/login.js";
+import resetPasswordRoute from "./routes/auth/reset-password.js";
+import verifyCodeRoute from "./routes/auth/verify-code.js";
 
 export type { AppOptions } from "./app-options.js";
 
@@ -67,10 +74,17 @@ const appPlugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
       forceESM: true,
     });
   await load("plugins/app");
-  // Only the auth routes are left under autoload, since every /sessions
-  // endpoint is now an explicit feature registered below in the order the
-  // route table was pinned in before this migration.
-  await load("routes");
+
+  // Registered in the order the route table was pinned in before this
+  // migration, legacy route modules and features interleaved.
+  const auth = { ...opts, prefix: "/auth" };
+  await fastify.register(changePasswordRoute, auth);
+  await fastify.register(forgotPasswordRoute, auth);
+  await fastify.register(loginRoute, auth);
+  await fastify.register(resendSignupCodeRoute, auth);
+  await fastify.register(resetPasswordRoute, auth);
+  await fastify.register(signupRoute, auth);
+  await fastify.register(verifyCodeRoute, auth);
   await fastify.register(logoutAllRoute, { prefix: "/sessions" });
   await fastify.register(logoutRoute, { ...opts, prefix: "/sessions" });
   await fastify.register(listSessionsRoute, { prefix: "/sessions" });

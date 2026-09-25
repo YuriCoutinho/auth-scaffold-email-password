@@ -15,17 +15,6 @@ const CODE = {
   expiresAt: new Date(NOW.getTime() + 15 * 60 * 1000),
 };
 
-function newUser(
-  overrides: Partial<{ id: string; passwordHash: string }> = {},
-) {
-  return {
-    id: OWNER,
-    email: "user@example.com",
-    passwordHash: "hash-1",
-    ...overrides,
-  };
-}
-
 const SESSION_EXPIRES_AT = new Date(NOW.getTime() + 60 * 60 * 1000);
 
 function session(id: string) {
@@ -130,69 +119,6 @@ describe("transaction", () => {
     });
 
     expect(store.users.get(OWNER)).toMatchObject({ passwordHash: "new-hash" });
-  });
-});
-
-describe("legacy.startSignup", () => {
-  it("creates an unconfirmed account with its signup code", async () => {
-    const { legacy: repo } = createInMemoryStore();
-
-    await expect(repo.startSignup(newUser(), CODE)).resolves.toEqual({
-      userId: OWNER,
-    });
-
-    expect(await repo.findUserByEmail("user@example.com")).toEqual({
-      id: OWNER,
-      email: "user@example.com",
-      passwordHash: "hash-1",
-      emailVerifiedAt: null,
-    });
-    expect(
-      await repo.findVerificationCodeByTokenHash("signup", "token-hash"),
-    ).toMatchObject({ userId: OWNER, codeHash: "code-hash" });
-  });
-
-  it("refuses a confirmed account and leaves it untouched", async () => {
-    const store = createInMemoryStore({
-      users: [
-        { id: OWNER, email: "user@example.com", passwordHash: "old-hash" },
-      ],
-    });
-    const repo = store.legacy;
-
-    await expect(repo.startSignup(newUser({ id: OTHER }), CODE)).resolves.toBe(
-      null,
-    );
-
-    expect(await repo.findUserById(OWNER)).toMatchObject({
-      passwordHash: "old-hash",
-    });
-    expect(store.users.size).toBe(1);
-    expect(store.verificationCodes.size).toBe(0);
-  });
-
-  it("overwrites the password of an unconfirmed account and replaces its token", async () => {
-    const store = repoWithPendingSignup();
-    const repo = store.legacy;
-
-    await expect(
-      repo.startSignup(newUser({ id: OTHER, passwordHash: "hash-2" }), {
-        ...CODE,
-        tokenHash: "token-hash-2",
-      }),
-    ).resolves.toEqual({ userId: OWNER });
-
-    expect(await repo.findUserById(OWNER)).toMatchObject({
-      passwordHash: "hash-2",
-      emailVerifiedAt: null,
-    });
-    expect(store.users.size).toBe(1);
-    expect(
-      await repo.findVerificationCodeByTokenHash("signup", "token-hash"),
-    ).toBeUndefined();
-    expect(
-      await repo.findVerificationCodeByTokenHash("signup", "token-hash-2"),
-    ).toMatchObject({ userId: OWNER, passwordHash: "hash-2" });
   });
 });
 
