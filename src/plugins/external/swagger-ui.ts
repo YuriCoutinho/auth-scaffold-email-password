@@ -1,9 +1,9 @@
 import swaggerUi from "@fastify/swagger-ui";
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
-import type { AppOptions } from "../../app-options.js";
+import type { Env } from "../../config/env.js";
 
-const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
+const plugin: FastifyPluginAsync<{ config: Env }> = async (fastify, opts) => {
   if (opts.config.NODE_ENV === "production") {
     return;
   }
@@ -12,5 +12,5 @@ const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
 
 export default fp(plugin, {
   name: "swagger-ui",
-  dependencies: ["@fastify/swagger"],
+  dependencies: ["swagger"],
 });

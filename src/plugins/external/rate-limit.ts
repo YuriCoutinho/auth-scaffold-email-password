@@ -1,10 +1,11 @@
 import rateLimit from "@fastify/rate-limit";
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
-import type { AppOptions } from "../../app-options.js";
-import { rateLimitFor } from "../../lib/rate-limit.js";
+import { type RateLimitOverrides, rateLimitFor } from "../../lib/rate-limit.js";
 
-const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
+const plugin: FastifyPluginAsync<{
+  rateLimit?: RateLimitOverrides;
+}> = async (fastify, opts) => {
   // The default in-memory store is the right one here: a counter per instance
   // is disposable state, and writing it to Postgres would be one write per
   // attempt, including the attempts about to be rejected.

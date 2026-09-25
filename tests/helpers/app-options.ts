@@ -2,12 +2,8 @@ import { vi } from "vitest";
 import type { AppOptions } from "../../src/app-options.js";
 import type { Env } from "../../src/config/env.js";
 import type { RateLimitOverrides } from "../../src/lib/rate-limit.js";
-import type { AuthRepository } from "../../src/plugins/app/auth/repository.js";
-import { FakeEmailSender } from "../../src/plugins/app/email/drivers/fake.js";
-import type { RetentionRepository } from "../../src/plugins/app/retention/repository.js";
-import type { SessionRepository } from "../../src/plugins/app/sessions/repository.js";
-import { createInMemoryAuthRepository } from "./auth/in-memory-repository.js";
-import { createInMemoryCredentialThrottleRepository } from "./credential-throttle/in-memory-repository.js";
+import { FakeEmailSender } from "../../src/plugins/email/drivers/fake.js";
+import { createInMemoryStore, type InMemoryStore } from "./in-memory-store.js";
 
 export const TEST_HMAC_SECRET = "test-hmac-secret-with-32-characters!";
 
@@ -33,39 +29,28 @@ const TEST_RATE_LIMITS: RateLimitOverrides = {
   resetPassword: { max: 10_000, timeWindow: "1 minute" },
 };
 
-// The sweep timer never fires within a test, but the default adapter would
-// still be wired to the database, so tests get a port that touches nothing.
-export const noopRetentionRepository: RetentionRepository = {
-  purge: async () => ({
-    sessions: 0,
-    verificationCodes: 0,
-    unverifiedUsers: 0,
-    throttleTrails: 0,
-  }),
-};
-
-// The in-memory helper implements both ports over one store, so a test that
-// overrides the repository gets the same rows on both sides instead of the
-// route reading one store while the session hook reads another.
-type AppOptionsOverrides = Partial<Omit<AppOptions, "authRepository">> & {
-  authRepository?: AuthRepository & SessionRepository;
+// The in-memory store backs every repository over the same maps, so a test
+// that overrides the store gets the same rows everywhere instead of the route
+// reading one store while the session hook reads another.
+type AppOptionsOverrides = Partial<AppOptions> & {
+  store?: InMemoryStore;
 };
 
 export function makeAppOptions(
   overrides: AppOptionsOverrides = {},
 ): AppOptions {
-  const authRepository =
-    overrides.authRepository ?? createInMemoryAuthRepository();
+  const { store: storeOverride, repositories, ...rest } = overrides;
+  const store = storeOverride ?? createInMemoryStore();
   return {
     config: TEST_ENV,
     logger: false,
     emailSender: new FakeEmailSender(),
     checkPwnedPassword: vi.fn().mockResolvedValue(false),
-    credentialThrottleRepository: createInMemoryCredentialThrottleRepository(),
-    retentionRepository: noopRetentionRepository,
-    ...overrides,
-    authRepository,
-    sessionRepository: overrides.sessionRepository ?? authRepository,
+    transaction: store.transaction,
+    ...rest,
+    // Merged rather than replaced, so a test overriding only one factory
+    // keeps the store backing every other module it did not mean to touch.
+    repositories: { ...store.repositories, ...repositories },
     rateLimit: { ...TEST_RATE_LIMITS, ...overrides.rateLimit },
   };
 }
