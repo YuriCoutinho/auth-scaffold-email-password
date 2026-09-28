@@ -1,9 +1,9 @@
 import cors from "@fastify/cors";
 import type { FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
-import type { AppOptions } from "../../app-options.js";
+import type { Env } from "../../config/env.js";
 
-const plugin: FastifyPluginAsync<AppOptions> = async (fastify, opts) => {
+const plugin: FastifyPluginAsync<{ config: Env }> = async (fastify, opts) => {
   const origin = opts.config.FRONTEND_ORIGIN;
   if (!origin) {
     return;

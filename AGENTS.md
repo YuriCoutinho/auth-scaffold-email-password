@@ -31,33 +31,69 @@ Postgres e Mailpit sobem com `docker compose up -d`. O Mailpit tem interface web
 
 ## Onde as coisas ficam
 
-O projeto segue a arquitetura de plugins do Fastify, no formato do repositório oficial `fastify/demo`: `app.ts` é um plugin que carrega três pastas com `@fastify/autoload`, nesta ordem, e cada plugin declara sua posição com `fastify-plugin` (`name` e `dependencies`).
+O código se divide em quatro camadas, e cada uma só importa das camadas à direita dela:
 
-O critério para decidir onde um arquivo novo entra:
+```
+features/  ──►  http/  ──►  modules/  ──►  plugins/
+    │             │            │             │
+    └─────────────┴────────────┴─────────────┴──►  lib/, db/, config/
+```
 
-* Pacote de terceiro registrado na instância vai para `src/plugins/external/`, um arquivo por pacote
-* Código próprio que uma rota consome vai para `src/plugins/app/`. Plugin de um arquivo só fica na raiz da pasta. Plugin com implementação interna vira uma pasta com `index.ts`, e os arquivos irmãos são detalhes dele: o autoload carrega só o `index.ts` quando a pasta tem um, então os irmãos não viram plugin por acidente
-* Dentro de uma pasta de plugin, o nome do arquivo não repete o nome da pasta: `auth/repository.ts`, nunca `auth/auth-repository.ts`
-* Função pura sem colaborador para injetar vai para `src/lib/`. Se precisa de comportamento diferente em teste e em produção, é plugin
-* `src/db/` guarda só o schema Drizzle e a fábrica de conexão. Repositório é detalhe do domínio que o usa e mora na pasta do plugin dele
+* `src/plugins/` é infraestrutura sem regra de negócio: `database.ts` decora `fastify.db` e fecha o pool no `onClose`, `transaction.ts` decora `fastify.transaction`, `error-handler.ts` responde 5xx com mensagem genérica e loga o erro, `email/` decora `fastify.emailSender` (a interface `EmailSender`, a fábrica que escolhe o driver pelo `config` e os drivers fake, mailpit e resend), e `pwned-password/` decora `fastify.checkPwnedPassword` com a chamada à API do Have I Been Pwned. Pacote de terceiro registrado na instância vai para `plugins/external/`, um arquivo por pacote: hoje cookie, cors, helmet, rate-limit, swagger e swagger-ui
+* `src/modules/` guarda as capacidades reutilizáveis, uma por tabela dona: `users`, `sessions`, `otp` (a tabela `verification_codes`) e `credential-throttle`. Um módulo não sabe de HTTP e não importa outro módulo
+* `src/http/` guarda o que é HTTP e é compartilhado por várias features: `authenticate.ts` decora o hook `fastify.authenticate`, que publica `request.user` e `request.session`, e exporta `requireAuth(request)`, enquanto `schemas.ts` tem os schemas Zod reusados. Essa camada existe para que nenhuma feature precise importar outra e para que o hook de sessão não vá parar em `plugins/`, onde dependeria de um módulo
+* `src/features/` tem um diretório por caso de uso, e uma feature não importa outra
+* `src/lib/`, `src/db/` e `src/config/` são a base, importável por qualquer camada e sem importar nenhuma delas. `db/` guarda só o schema Drizzle e `createDatabase`, e `config/` guarda a validação de ambiente com Zod
 
-O que existe hoje:
+A direção das setas não é só convenção, porque `tests/architecture.test.ts` varre `src/` e falha quando um import a quebra. O mesmo teste impede que um arquivo de módulo importe de `fastify` algo além dos tipos `FastifyBaseLogger`, `FastifyInstance` e `FastifyPluginAsync`, e que outro arquivo do módulo que não o `index.ts` use `fastify-plugin`.
 
-* `src/plugins/external/`: cookie, cors, helmet, rate-limit, swagger e swagger-ui
-* `src/plugins/app/database.ts` decora `fastify.db` e fecha o pool no `onClose`; `pwned-password/` decora `fastify.checkPwnedPassword` no `index.ts`, e `checker.ts` tem a chamada à API do Have I Been Pwned; `error-handler.ts` registra o `setErrorHandler` que responde 5xx com mensagem genérica e loga o erro; `authenticate.ts` decora o hook `fastify.authenticate`, que publica `request.user` e `request.session`
-* `src/plugins/app/email/` decora `fastify.emailSender` no `index.ts`. `sender.ts` tem a interface `EmailSender` e o `EmailProviderError`, `create-sender.ts` escolhe o driver pelo `config`, e `drivers/` tem fake, mailpit e resend
-* `src/plugins/app/auth/` guarda a identidade e decora `fastify.auth` no `index.ts`. `repository.ts` é a interface `AuthRepository`, que cobre `users` e `verification_codes`, `drizzle-repository.ts` é o adaptador Drizzle dela e dono das transações de cadastro, confirmação, troca e recuperação de senha, `create-auth.ts` monta os fluxos, e `signup.ts`, `resend-code.ts`, `verify-code.ts`, `login.ts`, `authenticate.ts`, `change-password.ts`, `forgot-password.ts` e `reset-password.ts` são os services. `verification-codes.ts` é o módulo único do código por email, usado pelo cadastro e pela recuperação de senha: teto de envios, cooldown, tentativas, rotação do token, envio fora da requisição e compensação de entrega falha. `send-password-changed.ts` é o aviso de senha alterada, e `emails/` guarda os templates
-* `src/plugins/app/sessions/` guarda a sessão e decora `fastify.sessions` no `index.ts`. A tabela só tem sessões vivas: encerrar uma sessão apaga a linha. `repository.ts` é a interface `SessionRepository`, `drizzle-repository.ts` é o adaptador Drizzle dela e também aceita uma transação aberta fora, que é o que mantém atômicos o autologin e as trocas de senha, `create-sessions.ts` monta os fluxos, e `logout.ts`, `logout-all.ts`, `list-sessions.ts` e `revoke-session.ts` são os services. A dependência é de mão única: `auth` pode importar de `sessions`, e nenhum arquivo de `sessions` importa de `auth`
-* `src/plugins/app/credential-throttle/` decora `fastify.credentialThrottle`, o bloqueio progressivo por email, com porta, adaptador Drizzle e os fluxos em `create-credential-throttle.ts`
-* `src/plugins/app/retention/` roda de hora em hora a limpeza das linhas que deixaram de valer, com porta `RetentionRepository`, adaptador Drizzle e o sweep em `create-retention.ts`, e decora `fastify.retention`
-* `src/routes/` guarda plugins de rota, autoloaded. O nome da pasta vira prefixo: `routes/auth/signup.ts` expõe `/auth/signup`, e `routes/sessions/` é a coleção que responde por `GET /sessions`, `DELETE /sessions`, `DELETE /sessions/current` e `DELETE /sessions/:sessionId`. A camada é fina: valida com o schema, chama `fastify.auth` ou `fastify.sessions`, monta a resposta
-* `src/schemas/` guarda os schemas Zod compartilhados pelas rotas
-* `src/db/` guarda o schema Drizzle e `createDatabase`
-* `src/lib/` guarda só funções puras e constantes: hash, tokens e política de envio de código (`session.ts`), código, geração de id, a política de TTL (`ttl.ts`), os cortes de retenção (`retention.ts`), a curva do bloqueio, os limites por IP, o rótulo de dispositivo e a política dos cookies, que deriva o `Max-Age` do TTL configurado
-* `src/config/` guarda a validação de ambiente com Zod
-* `tests/` espelha a árvore de `src/`, mais `tests/helpers/` com `app-options.ts`, `auth/in-memory-repository.ts`, o adaptador em memória que implementa `AuthRepository` e `SessionRepository` sobre um store só, e `credential-throttle/in-memory-repository.ts`
+### Registro em `app.ts`
 
-`server.ts` carrega o ambiente, chama `buildApp({ config })`, arma o `close-with-grace` e dá `listen`. O autoload repassa `AppOptions` a todo plugin, então um teste substitui um colaborador passando `authRepository`, `sessionRepository`, `emailSender`, `checkPwnedPassword`, `credentialThrottleRepository` ou `retentionRepository` em `buildApp`, sem banco nem rede. Os tempos de vida de sessão e de código também chegam por ali, em `ttl`, validados com Zod e com defaults quando omitidos.
+`app.ts` registra tudo explicitamente, sem autoload, na ordem das camadas: `plugins/external`, a infraestrutura, os módulos, `http/authenticate` e depois as features, com `health`, `me` e o job do sweep sem prefixo antes das de `/auth` e de `/sessions`. Assim o arquivo serve de índice do sistema, e dá para ler nele, de cima para baixo, toda a infraestrutura, todos os módulos e todos os endpoints. Os prefixos `/auth` e `/sessions` vêm do `register`, e não de caminho absoluto no `route.ts`, o que mantém uma rota `"/"` sob `/sessions` respondendo tanto em `/sessions` quanto em `/sessions/`. A ordem de registro não é livre, porque `tests/characterization.test.ts` fixa em snapshot a tabela de rotas e o documento OpenAPI, e reordenar uma feature muda os dois. Cada plugin de infraestrutura ou de módulo continua declarando `name` e `dependencies` no `fastify-plugin`, e é isso que faz o boot falhar se a ordem quebrar entre eles. Uma feature não declara `dependencies`, porque lê `app.users`, `app.otp` e os demais decorators só no momento do registro, então uma feature fora de ordem sobe sem erro e falha apenas na primeira requisição que a usa. Por isso a ordem das features depende de registrá-las depois dos módulos em `app.ts`, e é `tests/characterization.test.ts` que fixa essa ordem em snapshot.
+
+`server.ts` carrega o ambiente, chama `buildApp({ config })`, arma o `close-with-grace` e dá `listen`.
+
+### Formato de um módulo
+
+```
+modules/users/
+  index.ts              plugin que decora fastify.users
+  service.ts            createUsersService, com as regras da capacidade
+  repository.ts         interface UsersRepository, a porta
+  drizzle-repository.ts createDrizzleUsersRepository, o SQL
+```
+
+O `index.ts` decora o service montado sobre `fastify.db` e acrescenta `inTx(tx)`, que devolve o mesmo service montado sobre uma transação aberta fora. A porta fica separada do adaptador porque é ela que deixa testar tudo com o store em memória, sem banco. Política que só uma capacidade usa mora no módulo dela, em `policy.ts`: a curva do bloqueio em `credential-throttle/policy.ts`, e o gerador de código com o cooldown, o teto de envios e o teto de tentativas em `otp/policy.ts`. Templates de email seguem o mesmo critério e ficam em `emails/` dentro do módulo que os envia.
+
+Dentro de uma pasta, o nome do arquivo não repete o nome da pasta: `users/repository.ts`, nunca `users/users-repository.ts`.
+
+### Formato de uma feature
+
+```
+features/change-password/
+  route.ts     plugin da rota: monta o use-case com os decorators e traduz o resultado em resposta
+  schema.ts    schemas Zod do corpo, da resposta e o texto do OpenAPI
+  use-case.ts  createChangePassword, a orquestração dos módulos
+```
+
+`health` não tem `use-case.ts`, porque não orquestra nada. `retention-sweep` é uma feature sem rota: `job.ts` ocupa o lugar do `route.ts` e agenda de hora em hora o `use-case.ts`, que chama o purge de cada módulo, e `cutoffs.ts` guarda os cortes de retenção, que só o sweep usa.
+
+### Transações
+
+A transação é decidida no use-case. Ele abre `fastify.transaction(async (tx) => ...)` e usa `modulo.inTx(tx)` dentro dela, de modo que escritas em módulos diferentes commitam ou desfazem juntas. Para desfazer tudo e ainda devolver um resultado, como no código de cadastro de uma conta que já foi confirmada, o use-case chama `rollback(valor)`, e o runner converte isso no valor em vez de propagar erro. O email de código nunca sai de dentro da transação: `otp.inTx(tx).issue(...)` só devolve a intenção de envio, e o use-case chama `fastify.otp.dispatch(issued)` depois do commit, para que o email não saia de um cadastro que desfez e a compensação de entrega falha rode sobre o banco, e não sobre uma transação já encerrada.
+
+### Onde um arquivo novo entra
+
+* Função pura e genérica, que mais de uma capacidade usa, vai para `src/lib/`. Hoje ela guarda `cookies`, `device-label`, `email`, `id`, `password`, `rate-limit`, `token`, `token-hash` e `ttl`
+* Política de uma capacidade vai para o módulo dela, mesmo sendo função pura
+* Algo que precisa de comportamento diferente em teste e em produção não é função de `lib/`, e sim plugin ou módulo, para poder ser injetado
+* Repositório é detalhe da capacidade que o usa e mora na pasta do módulo, nunca em `db/`
+
+### Injeção em teste
+
+`buildApp` recebe `AppOptions` e repassa a cada plugin, então um teste troca um colaborador sem banco nem rede. `repositories` recebe uma fábrica por módulo (`users`, `sessions`, `otp` e `credentialThrottle`), e `transaction` recebe o runner. Também chegam por ali `emailSender`, `checkPwnedPassword`, `rateLimit` e os tempos de vida de sessão e de código em `ttl`, validados com Zod e com defaults quando omitidos.
+
+`tests/` espelha a árvore de `src/`. Em `tests/helpers/`, `createInMemoryStore(seed)` implementa as quatro portas sobre um store só e expõe `repositories`, `transaction` e os `Map`s para inspeção, e o runner em memória tira um snapshot do store antes da transação e o restaura se ela desfizer. `makeAppOptions({ store })` monta as opções de teste sobre esse store, e um teste que precisa sobrescrever uma única fábrica passa `repositories` junto, sem perder o store nos outros módulos.
 
 ## Código
 
@@ -69,8 +105,8 @@ O que existe hoje:
 ## Testes
 
 * Vitest com mocks, sem banco real. Testes de integração ainda não foram adotados no projeto
-* Teste de rota usa o adaptador em memória de `AuthRepository`. O adaptador Drizzle só é coberto por teste de integração, que ainda não foi adotado
-* Todo endpoint novo precisa de teste de service e de rota
+* Teste de use-case e de rota usa o store em memória de `tests/helpers/in-memory-store.ts`. O adaptador Drizzle só é coberto por teste de integração, que ainda não foi adotado
+* Todo endpoint novo precisa de teste de use-case e de rota
 * Em fluxo de autenticação, cubra explicitamente os caminhos de erro, porque é neles que mora a proteção contra enumeração de contas
 
 ## Commits
@@ -87,7 +123,7 @@ Exemplo: `feat(auth): add post /auth/login endpoint with timing-safe credential 
 * Título em Conventional Commit, em inglês, porque o merge é squash e ele vira a mensagem do commit na `main`
 * Corpo segue `.github/PULL_REQUEST_TEMPLATE.md`, com as seções Resumo, Verificação e Notas da revisão
 * O corpo **nunca** leva assinatura de agente ou ferramenta, nem menção a ferramenta de IA, nem emoji de robô
-* Sempre com `--assignee YuriCoutinho` e com a label de tipo (`feature`, `fix` ou `documentation`)
+* Sempre com `--assignee YuriCoutinho` e com a label de tipo (`feature`, `fix`, `refactor` ou `documentation`)
 * Merge sempre por squash, que o ruleset da `main` já impõe
 
 ## Board de planejamento

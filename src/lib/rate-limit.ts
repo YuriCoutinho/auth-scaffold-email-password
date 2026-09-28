@@ -18,8 +18,8 @@ export type RateLimitOverrides = Partial<
 >;
 
 // Per minute where the attack is brute force, per hour where each call costs an
-// outbound email. The code-checking routes stay looser because the per-signup
-// attempt cap in MAX_CODE_ATTEMPTS is the real control there.
+// outbound email. The code-checking routes stay looser because the per-code
+// attempt cap in the otp module is the real control there.
 export const RATE_LIMITS: Record<RateLimitScope, RateLimitPolicy> = {
   global: { max: 100, timeWindow: "1 minute" },
   login: { max: 10, timeWindow: "1 minute" },
